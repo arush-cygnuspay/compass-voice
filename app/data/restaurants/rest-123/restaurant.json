@@ -1,0 +1,44 @@
+{
+  "restaurant_id": "rest-001",
+  "name": "Shake Shack",
+  "brand_type": "Fast Casual",
+  "description": "Shake Shack serves modern American classics like burgers, fries, shakes, and frozen custard, made with premium ingredients.",
+  "contact": {
+    "phone": "+1-212-889-6600",
+    "email": "info@shakeshack.com",
+    "website": "https://www.shakeshack.com"
+  },
+  "location": {
+    "address_line_1": "Madison Square Park",
+    "address_line_2": "E 23rd St & Madison Ave",
+    "city": "New York",
+    "state": "NY",
+    "postal_code": "10010",
+    "country": "USA"
+  },
+  "hours": {
+    "monday": "11:00 AM - 10:00 PM",
+    "tuesday": "11:00 AM - 10:00 PM",
+    "wednesday": "11:00 AM - 10:00 PM",
+    "thursday": "11:00 AM - 10:00 PM",
+    "friday": "11:00 AM - 11:00 PM",
+    "saturday": "11:00 AM - 11:00 PM",
+    "sunday": "11:00 AM - 10:00 PM"
+  },
+  "services": {
+    "dine_in": true,
+    "takeout": true,
+    "delivery": true,
+    "drive_thru": false
+  },
+  "payment_methods": [
+    "Cash",
+    "Credit Card",
+    "Debit Card",
+    "Apple Pay",
+    "Google Pay"
+  ],
+  "timezone": "America/New_York",
+  "currency": "USD",
+  "support_voice_ordering": true
+}
