@@ -139,7 +139,7 @@ class ConfirmingHandler(BaseHandler):
                     if g.is_required and len(current) < g.min_selector:
                         return HandlerResult(
                             next_state=ConversationState.WAITING_FOR_SIDE,
-                            response_key="ask_for_side",
+                            response_key="ask_for_side_group",
                         )
 
                 # Move forward

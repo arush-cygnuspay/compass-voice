@@ -44,6 +44,8 @@ class ConversationContext:
     #   "value_id": "...",
     # }
 
+    skipped_modifier_groups: set[str] = field(default_factory=set) # in case a modifier group can be skipped
+
     def reset(self) -> None:
         """
         Resets the context after task completion or cancellation.
