@@ -155,6 +155,58 @@ class ConfirmingHandler(BaseHandler):
                 )
 
         # -------------------------------------------------
+        # MODIFIER CONFIRMATION
+        # -------------------------------------------------
+        if confirmation_type == "modifier":
+
+            group_id = confirmation["group_id"]
+            value_id = confirmation["value_id"]
+
+            if intent == Intent.DENY:
+                context.awaiting_confirmation_for = None
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="ask_for_modifier",
+                )
+
+            if intent == Intent.CONFIRM:
+                item = self.menu_repo.items.get(context.current_item_id)
+                if not item:
+                    return HandlerResult(
+                        next_state=ConversationState.ERROR_RECOVERY,
+                        response_key="item_context_missing",
+                    )
+
+                group = next(
+                    (g for g in item.modifier_groups if g.group_id == group_id),
+                    None,
+                )
+
+                if not group:
+                    return HandlerResult(
+                        next_state=ConversationState.ERROR_RECOVERY,
+                        response_key="modifier_group_missing",
+                    )
+
+                selected = context.selected_modifier_groups.setdefault(group_id, [])
+
+                if len(selected) >= group.max_selector:
+                    context.awaiting_confirmation_for = None
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_MODIFIER,
+                        response_key="modifier_limit_reached",
+                    )
+
+                selected.append(value_id)
+                context.awaiting_confirmation_for = None
+
+                # Continue modifier flow
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="ask_for_modifier",
+                )
+
+        # -------------------------------------------------
         # FALLBACK: repeat confirmation
         # -------------------------------------------------
         return HandlerResult(
