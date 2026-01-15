@@ -1,6 +1,8 @@
 # app/menu/repository.py
 
+from typing import Optional
 from app.menu.store import MenuStore
+from app.menu.models import MenuItem
 
 
 class MenuRepository:
@@ -11,7 +13,7 @@ class MenuRepository:
     def __init__(self, store: MenuStore):
         self.store = store
 
-    def resolve_item_by_entity(self, text: str):
+    def resolve_item_by_entity(self, text: str) -> Optional[MenuItem]:
         matches = self.store.find_entity(text, allowed_types={"item"})
         if not matches:
             return None
