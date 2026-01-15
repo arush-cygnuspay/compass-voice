@@ -207,6 +207,27 @@ class ConfirmingHandler(BaseHandler):
                 )
 
         # -------------------------------------------------
+        # SIZE (VARIANT) CONFIRMATION
+        # -------------------------------------------------
+        if confirmation_type == "size":
+
+            if intent == Intent.DENY:
+                context.awaiting_confirmation_for = None
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIZE,
+                    response_key="ask_for_size",
+                )
+
+            if intent == Intent.CONFIRM:
+                context.selected_variant_id = confirmation["value_id"]
+                context.awaiting_confirmation_for = None
+
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_QUANTITY,
+                    response_key="ask_for_quantity",
+                )
+
+        # -------------------------------------------------
         # FALLBACK: repeat confirmation
         # -------------------------------------------------
         return HandlerResult(
