@@ -1,5 +1,5 @@
 # app/state_machine/handlers/item/confirming_handler.py
-
+from app.cart.cart import Cart
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.conversation_state import ConversationState
@@ -14,8 +14,9 @@ class ConfirmingHandler(BaseHandler):
     All mutations happen ONLY on confirmation here.
     """
 
-    def __init__(self, menu_repo: MenuRepository) -> None:
+    def __init__(self, menu_repo: MenuRepository, cart: Cart) -> None:
         self.menu_repo = menu_repo
+        self.cart = cart
 
     def handle(
         self,
@@ -240,11 +241,19 @@ class ConfirmingHandler(BaseHandler):
                 )
 
             if intent == Intent.CONFIRM:
-                context.quantity = confirmation["value"]
-                context.awaiting_confirmation_for = None
+                from app.cart.cart_item import CartItem
 
-                # At this point, the item is fully specified.
-                # Cart mutation will be handled by the cart domain later.
+                cart_item = CartItem.create(
+                    item_id=context.current_item_id,
+                    quantity=confirmation["value"],
+                    variant_id=context.selected_variant_id,
+                    sides=context.selected_side_groups,
+                    modifiers=context.selected_modifier_groups,
+                )
+
+                self.cart.add_item(cart_item)
+
+                # Clean up context AFTER successful cart mutation
                 context.reset()
 
                 return HandlerResult(
