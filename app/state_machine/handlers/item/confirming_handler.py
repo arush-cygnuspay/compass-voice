@@ -228,6 +228,31 @@ class ConfirmingHandler(BaseHandler):
                 )
 
         # -------------------------------------------------
+        # QUANTITY CONFIRMATION
+        # -------------------------------------------------
+        if confirmation_type == "quantity":
+
+            if intent == Intent.DENY:
+                context.awaiting_confirmation_for = None
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_QUANTITY,
+                    response_key="ask_for_quantity",
+                )
+
+            if intent == Intent.CONFIRM:
+                context.quantity = confirmation["value"]
+                context.awaiting_confirmation_for = None
+
+                # At this point, the item is fully specified.
+                # Cart mutation will be handled by the cart domain later.
+                context.reset()
+
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_added_successfully",
+                )
+
+        # -------------------------------------------------
         # FALLBACK: repeat confirmation
         # -------------------------------------------------
         return HandlerResult(
