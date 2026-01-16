@@ -22,15 +22,24 @@ MENU_PATH = BASE_PATH / "menu.json"
 ENTITY_INDEX_PATH = BASE_PATH / "entity_index.json"
 
 TEST_QUERIES = [
-    "chicken taco",
-    "chick taco",
-    "ice mocha",
-    "iced mocha",
-    "sprite",
-    "chkn taco",
-    "coke",
-    "taco chicken",
-    "random nonsense item",
+    "i want a chicken taco"
+    # "chicken taco",
+    # "chick taco",
+    # "ice mocha",
+    # "iced mocha",
+    # "sprite",
+    # "chkn taco",
+    # "coke",
+    # "taco chicken",
+    # "random nonsense item",
+    # "i want a coke",
+    # "i would like to have a coke",
+    # "a coke",
+    # "a iced mocha",
+    # "give me a chicken taco",
+    # "i would like to have a chicken burger",
+    # "give platter seafood",
+    # "I want a chicken taco, a coke, a sprite."
 ]
 
 # =================================================

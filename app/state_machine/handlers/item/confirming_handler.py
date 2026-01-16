@@ -48,39 +48,43 @@ class ConfirmingHandler(BaseHandler):
         if confirmation_type == "item":
 
             if intent == Intent.DENY:
-                context.candidate_item_id = None
                 context.awaiting_confirmation_for = None
+                context.candidate_item_id = None
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
-                    response_key="item_confirmation_denied",
+                    response_key="item_selection_cancelled",
                 )
 
             if intent == Intent.CONFIRM:
-                item_id = context.candidate_item_id
-                context.current_item_id = item_id
+                context.current_item_id = confirmation["value_id"]
                 context.candidate_item_id = None
                 context.awaiting_confirmation_for = None
 
-                item = self.menu_repo.items.get(item_id)
+                # Fetch item to decide next step
+                item = self.menu_repo.store.get_item(context.current_item_id)
 
-                if not item:
-                    return HandlerResult(
-                        next_state=ConversationState.ERROR_RECOVERY,
-                        response_key="item_context_missing",
-                    )
-
+                # Side flow first (if exists)
                 if item.side_groups:
                     return HandlerResult(
                         next_state=ConversationState.WAITING_FOR_SIDE,
                         response_key="ask_for_side",
                     )
 
+                # Then modifiers
+                if item.modifier_groups:
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_MODIFIER,
+                        response_key="ask_for_modifier",
+                    )
+
+                # Then size
                 if item.pricing.mode == "variant":
                     return HandlerResult(
                         next_state=ConversationState.WAITING_FOR_SIZE,
                         response_key="ask_for_size",
                     )
 
+                # Else quantity
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_QUANTITY,
                     response_key="ask_for_quantity",

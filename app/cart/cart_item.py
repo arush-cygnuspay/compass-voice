@@ -33,9 +33,6 @@ class CartItem:
         sides: Dict[str, List[str]],
         modifiers: Dict[str, List[str]],
     ) -> "CartItem":
-        """
-        Factory method to create a new CartItem with a unique ID.
-        """
         return CartItem(
             cart_item_id=str(uuid.uuid4()),
             item_id=item_id,
@@ -43,4 +40,29 @@ class CartItem:
             variant_id=variant_id,
             sides=sides.copy(),
             modifiers=modifiers.copy(),
+        )
+
+    # ---------------------------
+    # Serialization
+    # ---------------------------
+
+    def to_dict(self) -> dict:
+        return {
+            "cart_item_id": self.cart_item_id,
+            "item_id": self.item_id,
+            "quantity": self.quantity,
+            "variant_id": self.variant_id,
+            "sides": self.sides,
+            "modifiers": self.modifiers,
+        }
+
+    @staticmethod
+    def from_dict(data: dict) -> "CartItem":
+        return CartItem(
+            cart_item_id=data["cart_item_id"],
+            item_id=data["item_id"],
+            quantity=data["quantity"],
+            variant_id=data.get("variant_id"),
+            sides=data.get("sides", {}),
+            modifiers=data.get("modifiers", {}),
         )

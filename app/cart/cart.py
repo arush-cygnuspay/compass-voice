@@ -34,16 +34,9 @@ class Cart:
     # ---------------------------
 
     def add_item(self, item: CartItem) -> None:
-        """
-        Adds a fully specified CartItem to the cart.
-        """
         self._items.append(item)
 
     def remove_item(self, cart_item_id: str) -> bool:
-        """
-        Removes an item from the cart by cart_item_id.
-        Returns True if removed, False if not found.
-        """
         for i, item in enumerate(self._items):
             if item.cart_item_id == cart_item_id:
                 del self._items[i]
@@ -51,7 +44,23 @@ class Cart:
         return False
 
     def clear(self) -> None:
-        """
-        Empties the cart completely.
-        """
         self._items.clear()
+
+    # ---------------------------
+    # Serialization
+    # ---------------------------
+
+    def to_dict(self) -> dict:
+        """
+        Serialize Cart aggregate into plain dict.
+        """
+        return {
+            "items": [item.to_dict() for item in self._items]
+        }
+
+    @staticmethod
+    def from_dict(data: dict) -> "Cart":
+        cart = Cart()
+        for item_data in data.get("items", []):
+            cart.add_item(CartItem.from_dict(item_data))
+        return cart
