@@ -10,7 +10,7 @@ from app.menu.repository import MenuRepository
 
 class WaitingForSizeHandler(BaseHandler):
     """
-    Handles pricing variant (size) selection for items with variant pricing.
+    Resolves size for the current size_target (item for now).
     """
 
     def __init__(self, menu_repo: MenuRepository) -> None:
@@ -23,7 +23,6 @@ class WaitingForSizeHandler(BaseHandler):
         user_text: str,
     ) -> HandlerResult:
 
-        # Global cancel
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
@@ -31,27 +30,24 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="action_cancelled",
             )
 
-        item = self.menu_repo.items.get(context.current_item_id)
-        if not item:
+        if not context.size_target or context.size_target["type"] != "item":
+            # Defensive guard
+            return HandlerResult(
+                next_state=ConversationState.ERROR_RECOVERY,
+                response_key="size_target_missing",
+            )
+
+        item = self.menu_repo.get_item(context.current_item_id)
+        if not item or item.pricing.mode != "variant":
             return HandlerResult(
                 next_state=ConversationState.ERROR_RECOVERY,
                 response_key="item_context_missing",
             )
 
-        pricing = item.pricing
-        if pricing.mode != "variant" or not pricing.variants:
-            # Defensive: size not applicable
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_QUANTITY,
-                response_key="ask_for_quantity",
-            )
-
-        user_text_lower = user_text.lower()
         matched_variant = None
-
-        for variant in pricing.variants:
-            if variant.label.lower() in user_text_lower:
-                matched_variant = variant
+        for v in item.pricing.variants:
+            if v.label.lower() in user_text.lower():
+                matched_variant = v
                 break
 
         if not matched_variant:
@@ -60,13 +56,25 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="repeat_size_options",
             )
 
-        # Ask for confirmation
-        context.awaiting_confirmation_for = {
-            "type": "size",
-            "value_id": matched_variant.variant_id,
-        }
+        # ✅ Commit
+        context.selected_variant_id = matched_variant.variant_id
+        context.size_target = None   # 🔑 IMPORTANT
+
+        # ✅ Decide next step
+        if item.side_groups:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_SIDE,
+                response_key="ask_for_side",
+            )
+
+        if item.modifier_groups:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_MODIFIER,
+                response_key="ask_for_modifier",
+            )
 
         return HandlerResult(
-            next_state=ConversationState.CONFIRMING,
-            response_key="confirm_size_selection",
+            next_state=ConversationState.WAITING_FOR_QUANTITY,
+            response_key="ask_for_quantity",
         )
+

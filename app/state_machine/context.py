@@ -30,6 +30,8 @@ class ConversationContext:
     selected_side_groups: Dict[str, List[str]] = field(default_factory=dict)
 
     # === Modifier selections (by group) ===
+    current_modifier_group_index: int = 0
+
     # group_id -> list[modifier_id]
     selected_modifier_groups: Dict[str, List[str]] = field(default_factory=dict)
 
@@ -59,6 +61,7 @@ class ConversationContext:
         self.candidate_item_id = None
         self.selected_variant_id = None
         self.current_side_group_index = 0
+        self.current_modifier_group_index = 0
         self.selected_side_groups.clear()
         self.selected_modifier_groups.clear()
         self.quantity = None

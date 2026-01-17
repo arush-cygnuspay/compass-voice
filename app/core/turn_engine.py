@@ -1,13 +1,25 @@
 # app/core/turn_engine.py
+from dataclasses import dataclass
+from typing import Optional
+
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.session.session import Session
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
+from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
 from app.state_machine.state_router import StateRouter
 from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
+
+
+# Internal DTO for Turn Result
+@dataclass
+class TurnOutput:
+    response_key: str
+    response_payload: Optional[dict] = None
+
 
 
 class TurnEngine:
@@ -24,6 +36,7 @@ class TurnEngine:
             "idle_handler": AddItemHandler(menu_repo),
             "waiting_for_side_handler": WaitingForSideHandler(menu_repo),
             "confirming_handler": ConfirmingHandler(menu_repo),
+            "waiting_for_modifier_handler": WaitingForModifierHandler(menu_repo),
             # add later:
             # "waiting_for_modifier_handler": ...
             # "waiting_for_size_handler": ...
@@ -33,7 +46,7 @@ class TurnEngine:
             self,
             session: Session,
             user_text: str,
-    ) -> str:
+    ) -> TurnOutput:
 
         # 1️⃣ Pure NLU
         intent_result = resolve_intent(user_text)
@@ -45,24 +58,57 @@ class TurnEngine:
         )
 
         if not route.allowed:
-            return "intent_not_allowed"
+            return TurnOutput(
+                response_key="intent_not_allowed"
+            )
 
         handler = self.handlers.get(route.handler_name)
         if not handler:
-            return "handler_not_implemented"
+            return TurnOutput(
+                response_key="handler_not_implemented"
+            )
 
         # 3️⃣ Execute handler
         result = handler.handle(
-            intent=intent_result.intent,  # ← pass original intent
+            intent=intent_result.intent,
             context=session.conversation_context,
             user_text=user_text,
         )
 
-        # 4️⃣ Persist FSM changes
+        # 🔑 Apply side-effects centrally
+        if result.command:
+            self._apply_command(session, result.command)
+            session.conversation_context.reset()
+
         session.conversation_state = result.next_state
         session.last_intent = intent_result.intent
         session.last_response_key = result.response_key
         session.turn_count += 1
 
-        return result.response_key
+        return TurnOutput(
+            response_key=result.response_key,
+            response_payload=result.response_payload,
+        )
+
+    def _apply_command(self, session: Session, command: dict) -> None:
+        command_type = command["type"]
+
+        if command_type == "ADD_ITEM_TO_CART":
+            from app.cart.cart_item import CartItem
+
+            payload = command["payload"]
+
+            cart_item = CartItem.create(
+                item_id=payload["item_id"],
+                quantity=payload["quantity"],
+                variant_id=payload.get("variant_id"),
+                sides=payload.get("sides", {}),
+                modifiers=payload.get("modifiers", {}),
+            )
+
+            session.cart.add_item(cart_item)
+
+        else:
+            raise ValueError(f"Unknown command type: {command_type}")
+
 

@@ -1,4 +1,4 @@
-# app/state_machine/handlers/item/waiting_for_modifier_handler.py
+# app/state_machine/handlers/item/add_item/waiting_for_modifier_handler.py
 
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
@@ -6,6 +6,7 @@ from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
 from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
+from app.utils.choice_matching import match_choice
 
 
 class WaitingForModifierHandler(BaseHandler):
@@ -32,79 +33,93 @@ class WaitingForModifierHandler(BaseHandler):
                 response_key="action_cancelled",
             )
 
-        item = self.menu_repo.items.get(context.current_item_id)
+        item = self.menu_repo.get_item(context.current_item_id)
         if not item:
             return HandlerResult(
                 next_state=ConversationState.ERROR_RECOVERY,
                 response_key="item_context_missing",
             )
 
-        # Find next modifier group
-        next_group = None
-        for group in item.modifier_groups:
-            if group.group_id in context.skipped_modifier_groups:
-                continue
+        idx = context.current_modifier_group_index
+        total = len(item.modifier_groups)
 
-            selected = context.selected_modifier_groups.get(group.group_id, [])
+        # -------------------------------------------------
+        # NO MODIFIER GROUPS LEFT → FINALIZE ITEM
+        # -------------------------------------------------
+        if idx >= total:
+            return self._finalize_item(context, item)
 
-            if group.is_required and len(selected) < group.min_selector:
-                next_group = group
-                break
+        group = item.modifier_groups[idx]
 
-            if not group.is_required and group.group_id not in context.selected_modifier_groups:
-                next_group = group
-                break
-
-        if not next_group:
-            # No more modifiers needed
-            if item.pricing.mode == "variant":
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_SIZE,
-                    response_key="ask_for_size",
-                )
-
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_QUANTITY,
-                response_key="ask_for_quantity",
-            )
-
-        # Handle skip / deny
+        # -------------------------------------------------
+        # USER SKIPS OPTIONAL MODIFIER
+        # -------------------------------------------------
         if intent == Intent.DENY:
-            if next_group.is_required:
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_MODIFIER,
-                    response_key="modifier_required",
-                )
+            next_index = idx + 1
+            context.current_modifier_group_index = next_index
 
-            context.skipped_modifier_groups.add(next_group.group_id)
+            if next_index >= total:
+                return self._finalize_item(context, item)
+
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="ask_for_modifier",
             )
 
-        # Try to match modifier choice
-        user_text_lower = user_text.lower()
-        matched = None
+        # -------------------------------------------------
+        # MATCH MODIFIER
+        # -------------------------------------------------
+        matched_choice = match_choice(user_text, group.choices)
 
-        for choice in next_group.choices:
-            if choice.name.lower() in user_text_lower:
-                matched = choice
-                break
-
-        if not matched:
+        if not matched_choice:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="repeat_modifier_options",
             )
 
-        # Ask for confirmation
-        context.awaiting_confirmation_for = {
-            "type": "modifier",
-            "group_id": next_group.group_id,
-            "value_id": matched.modifier_id,
-        }
+        # -------------------------------------------------
+        # COMMIT MODIFIER
+        # -------------------------------------------------
+        context.selected_modifier_groups.setdefault(group.group_id, []).append(
+            matched_choice.modifier_id
+        )
+
+        next_index = idx + 1
+        context.current_modifier_group_index = next_index
+
+        if next_index >= total:
+            return self._finalize_item(context, item)
 
         return HandlerResult(
-            next_state=ConversationState.CONFIRMING,
-            response_key="confirm_modifier_selection",
+            next_state=ConversationState.WAITING_FOR_MODIFIER,
+            response_key="ask_for_modifier",
         )
+
+    # -------------------------------------------------
+    # FINALIZATION (single authority)
+    # -------------------------------------------------
+    def _finalize_item(
+        self,
+        context: ConversationContext,
+        item,
+    ) -> HandlerResult:
+        return HandlerResult(
+            next_state=ConversationState.IDLE,
+            response_key="item_added_successfully",
+            command={
+                "type": "ADD_ITEM_TO_CART",
+                "payload": {
+                    "item_id": context.current_item_id,
+                    "quantity": context.quantity or 1,
+                    "variant_id": context.selected_variant_id,
+                    "sides": context.selected_side_groups,
+                    "modifiers": context.selected_modifier_groups,
+                },
+            },
+            response_payload={
+                "item_id": context.current_item_id,
+                "item_name": item.name,
+                "quantity": context.quantity or 1,
+            },
+        )
+

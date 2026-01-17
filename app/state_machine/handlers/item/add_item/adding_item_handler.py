@@ -64,4 +64,5 @@ class AddItemHandler(BaseHandler):
         return HandlerResult(
             next_state=next_state,
             response_key=_response_key_for_state(next_state),
+            response_payload=None
         )

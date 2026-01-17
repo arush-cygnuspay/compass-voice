@@ -6,6 +6,7 @@ from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
 from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
+from app.utils.choice_matching import match_choice
 
 
 class WaitingForSideHandler(BaseHandler):
@@ -24,7 +25,7 @@ class WaitingForSideHandler(BaseHandler):
         user_text: str,
     ) -> HandlerResult:
 
-        # Cancellation is always allowed
+        # Global cancel
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
@@ -39,9 +40,12 @@ class WaitingForSideHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        # Are we out of side groups?
-        if context.current_side_group_index >= len(item.side_groups):
-            # After sides → modifiers (if any) → size → quantity
+        idx = context.current_side_group_index
+
+        # -------------------------------------------------
+        # END OF SIDE GROUPS
+        # -------------------------------------------------
+        if idx >= len(item.side_groups):
             if item.modifier_groups:
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_MODIFIER,
@@ -59,64 +63,41 @@ class WaitingForSideHandler(BaseHandler):
                 response_key="ask_for_quantity",
             )
 
-        group = item.side_groups[context.current_side_group_index]
+        group = item.side_groups[idx]
 
-        # -----------------------------
-        # Matching helpers
-        # -----------------------------
-        def normalize(text: str) -> str:
-            return text.lower().strip()
+        # -------------------------------------------------
+        # MATCH SIDE
+        # -------------------------------------------------
+        matched_choice = match_choice(user_text, group.choices)
 
-        def tokens(text: str) -> set[str]:
-            return set(normalize(text).split())
-
-        user_norm = normalize(user_text)
-        user_tokens = tokens(user_text)
-
-        matched_choice = None
-
-        for choice in group.choices:
-            choice_norm = normalize(choice.name)
-            choice_tokens = tokens(choice.name)
-
-            # 1️⃣ Phrase containment (BEST)
-            if choice_norm in user_norm:
-                matched_choice = choice
-                break
-
-            # 2️⃣ All tokens present (order independent)
-            if choice_tokens.issubset(user_tokens):
-                matched_choice = choice
-                break
-
-            # 3️⃣ Partial token overlap (fallback)
-            if user_tokens & choice_tokens:
-                matched_choice = choice
-
-        # ❌ No match at all
         if not matched_choice:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
                 response_key="repeat_side_options",
             )
 
-        # -----------------------------
-        # Commit selection
-        # -----------------------------
+        # -------------------------------------------------
+        # COMMIT
+        # -------------------------------------------------
         context.selected_side_groups.setdefault(group.group_id, []).append(
             matched_choice.item_id
         )
 
-        context.current_side_group_index += 1
+        next_index = idx + 1
 
-        # Ask next side group
-        if context.current_side_group_index < len(item.side_groups):
+        # -------------------------------------------------
+        # ADVANCE OR TRANSITION
+        # -------------------------------------------------
+        if next_index < len(item.side_groups):
+            context.current_side_group_index = next_index
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
                 response_key="ask_for_side",
             )
 
-        # Continue flow
+        # side groups finished
+        context.current_side_group_index = next_index
+
         if item.modifier_groups:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,

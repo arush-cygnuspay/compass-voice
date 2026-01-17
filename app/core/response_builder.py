@@ -1,6 +1,8 @@
 # app/core/response_builder.py
+from typing import Optional
+
 from app.menu.models import MenuItem
-from app.responses.side_responses import ask_for_side
+from app.responses.item_responses import ask_for_side, ask_for_modifier, item_added_successfully
 from app.state_machine.context import ConversationContext
 from app.menu.repository import MenuRepository
 
@@ -13,7 +15,12 @@ class ResponseBuilder:
     def __init__(self, menu_repo: MenuRepository):
         self.menu_repo = menu_repo
 
-    def build(self, response_key: str, context: ConversationContext) -> str:
+    def build(
+            self,
+            response_key: str,
+            context: ConversationContext,
+            payload: Optional[dict] = None,
+    ) -> str:
         if response_key == "confirm_item":
             item = self.menu_repo.store.get_item(context.candidate_item_id)
             return f"You want a {item.name}, right? Please say yes or no."
@@ -22,13 +29,7 @@ class ResponseBuilder:
             return ask_for_side(context, self.menu_repo)
 
         if response_key == "ask_for_modifier":
-            item = self.menu_repo.store.get_item(context.current_item_id)
-            lines = [f"Would you like to add any modifiers to your {item.name}?"]
-            for group in item.modifier_groups:
-                for i, choice in enumerate(group.choices, start=1):
-                    lines.append(f"{i}. {choice.name}")
-            lines.append("You can also say no.")
-            return "\n".join(lines)
+            return ask_for_modifier(context, self.menu_repo)
 
         if response_key == "ask_for_size":
             item = self.menu_repo.store.get_item(context.current_item_id)
@@ -42,7 +43,7 @@ class ResponseBuilder:
             return "How many would you like?"
 
         if response_key == "item_added_successfully":
-            return "Got it! Your item has been added to the cart. Would you like to add anything else?"
+            return item_added_successfully(payload)
 
         if response_key == "item_not_found":
             return "Sorry, I couldn't find that item. Please try again."

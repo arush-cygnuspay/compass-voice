@@ -1,7 +1,7 @@
 # app/session/session.py
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Dict, Any
 
 from app.menu.models import MenuItem
 from app.state_machine.conversation_state import ConversationState
@@ -34,3 +34,4 @@ class Session:
     turn_count: int = 0
     last_intent: Optional[Intent] = None
     last_response_key: Optional[str] = None
+    last_response_payload: Optional[Dict[str, Any]] = None

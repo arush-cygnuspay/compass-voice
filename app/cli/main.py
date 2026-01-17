@@ -66,15 +66,18 @@ def main():
             print("Goodbye!")
             break
 
-        response_key = engine.process_turn(
+        turn_output = engine.process_turn(
             session=session,
             user_text=user_input,
         )
 
-        # Persist session after each turn
         save_session(session)
 
-        reply = responder.build(response_key, session.conversation_context)
+        reply = responder.build(
+            response_key=turn_output.response_key,
+            context=session.conversation_context,
+            payload=turn_output.response_payload,
+        )
 
         print(f"\nBOT: {reply}")
 
