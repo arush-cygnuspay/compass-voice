@@ -8,6 +8,7 @@ from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
+from app.state_machine.handlers.item.add_item.waiting_for_size_handler import WaitingForSizeHandler
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
 from app.state_machine.state_router import StateRouter
 from app.nlu.intent_resolution.intent import Intent
@@ -19,7 +20,6 @@ from app.menu.repository import MenuRepository
 class TurnOutput:
     response_key: str
     response_payload: Optional[dict] = None
-
 
 
 class TurnEngine:
@@ -37,9 +37,7 @@ class TurnEngine:
             "waiting_for_side_handler": WaitingForSideHandler(menu_repo),
             "confirming_handler": ConfirmingHandler(menu_repo),
             "waiting_for_modifier_handler": WaitingForModifierHandler(menu_repo),
-            # add later:
-            # "waiting_for_modifier_handler": ...
-            # "waiting_for_size_handler": ...
+            "waiting_for_size_handler": WaitingForSizeHandler(menu_repo),
         }
 
     def process_turn(

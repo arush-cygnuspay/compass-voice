@@ -57,6 +57,14 @@ def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository) ->
 
     return "\n".join(lines)
 
+def ask_for_size(context: ConversationContext, menu_repo: MenuRepository) -> str:
+    item = menu_repo.store.get_item(context.current_item_id)
+    lines = ["Which size would you like?"]
+
+    for v in item.pricing.variants:
+        lines.append(f"- {v.label} (${v.price_cents / 100:.2f})")
+
+    return "\n".join(lines)
 
 def item_added_successfully(
     payload: dict,

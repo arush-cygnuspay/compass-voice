@@ -41,3 +41,20 @@ def _response_key_for_state(state: ConversationState) -> str:
         ConversationState.ADDING_ITEM: "ready_to_add_item",
     }.get(state, "unhandled_state")
 
+def determine_next_add_item_state(item: MenuItem, context: ConversationContext) -> ConversationState:
+    # 1️⃣ Item size FIRST
+    if item.pricing.mode == "variant":
+        context.size_target = {"type": "item"}
+        return ConversationState.WAITING_FOR_SIZE
+
+    # 2️⃣ Then sides
+    if item.side_groups:
+        return ConversationState.WAITING_FOR_SIDE
+
+    # 3️⃣ Then modifiers
+    if item.modifier_groups:
+        return ConversationState.WAITING_FOR_MODIFIER
+
+    # 4️⃣ Finally quantity
+    return ConversationState.WAITING_FOR_QUANTITY
+

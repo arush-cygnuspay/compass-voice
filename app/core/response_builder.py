@@ -2,7 +2,7 @@
 from typing import Optional
 
 from app.menu.models import MenuItem
-from app.responses.item_responses import ask_for_side, ask_for_modifier, item_added_successfully
+from app.responses.item_responses import ask_for_side, ask_for_modifier, item_added_successfully, ask_for_size
 from app.state_machine.context import ConversationContext
 from app.menu.repository import MenuRepository
 
@@ -32,12 +32,7 @@ class ResponseBuilder:
             return ask_for_modifier(context, self.menu_repo)
 
         if response_key == "ask_for_size":
-            item = self.menu_repo.store.get_item(context.current_item_id)
-            variants = item.pricing.variants or []
-            lines = ["Which size would you like?"]
-            for v in variants:
-                lines.append(f"- {v.label}")
-            return "\n".join(lines)
+            return ask_for_size(context, self.menu_repo)
 
         if response_key == "ask_for_quantity":
             return "How many would you like?"

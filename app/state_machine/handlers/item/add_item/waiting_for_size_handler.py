@@ -58,7 +58,7 @@ class WaitingForSizeHandler(BaseHandler):
 
         # ✅ Commit
         context.selected_variant_id = matched_variant.variant_id
-        context.size_target = None   # 🔑 IMPORTANT
+        context.size_target = None  # 🔑 reset size mode
 
         # ✅ Decide next step
         if item.side_groups:
@@ -73,8 +73,25 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="ask_for_modifier",
             )
 
+        # ✅ SIZE-ONLY ITEM → FINALIZE
         return HandlerResult(
-            next_state=ConversationState.WAITING_FOR_QUANTITY,
-            response_key="ask_for_quantity",
+            next_state=ConversationState.IDLE,
+            response_key="item_added_successfully",
+            command={
+                "type": "ADD_ITEM_TO_CART",
+                "payload": {
+                    "item_id": context.current_item_id,
+                    "quantity": 1,
+                    "variant_id": context.selected_variant_id,
+                    "sides": {},
+                    "modifiers": {},
+                },
+            },
+            response_payload={
+                "item_id": context.current_item_id,
+                "item_name": item.name,
+                "quantity": 1,
+            },
         )
+
 
