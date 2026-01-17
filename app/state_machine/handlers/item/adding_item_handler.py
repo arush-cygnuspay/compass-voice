@@ -4,7 +4,7 @@ from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
-from app.nlu.intent import Intent
+from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
 
 

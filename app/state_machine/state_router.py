@@ -2,9 +2,10 @@
 
 from typing import Dict, Set
 
+from app.nlu.intent_resolution.intent_result import IntentResult
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.route_result import RouteResult
-from app.nlu.intent import Intent
+from app.nlu.intent_resolution.intent import Intent
 
 
 class StateRouter:
@@ -101,7 +102,7 @@ class StateRouter:
     def route(
         self,
         state: ConversationState,
-        intent: Intent,
+        intent_result: IntentResult,
     ) -> RouteResult:
         """
         Determines whether the given intent is allowed in the current state.
@@ -109,14 +110,14 @@ class StateRouter:
 
         allowed_intents = self._allowed_intents.get(state, set())
 
-        if intent in allowed_intents:
+        if intent_result.intent in allowed_intents:
             return RouteResult(
                 allowed=True,
                 handler_name=f"{state.name.lower()}_handler",
             )
 
         # Cancellation override (global escape hatch)
-        if intent == Intent.CANCEL and state != ConversationState.IDLE:
+        if intent_result.intent == Intent.CANCEL and state != ConversationState.IDLE:
             return RouteResult(
                 allowed=True,
                 handler_name="cancel_handler",

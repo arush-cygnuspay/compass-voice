@@ -8,7 +8,7 @@ from app.core.response_builder import ResponseBuilder
 from app.menu.repository import MenuRepository
 from app.menu.store import MenuStore
 from app.menu.exceptions import MenuLoadError
-from app.nlu.intent import Intent
+from app.nlu.intent_resolution.intent import Intent
 from app.state_machine.state_router import StateRouter
 from app.session.repository import load_session, save_session
 

@@ -6,7 +6,7 @@ from typing import Optional
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
 from app.cart.cart import Cart
-from app.nlu.intent import Intent
+from app.nlu.intent_resolution.intent import Intent
 
 
 @dataclass

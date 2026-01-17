@@ -1,9 +1,9 @@
 # app/core/turn_engine.py
-
+from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.session.session import Session
 from app.state_machine.handlers.item.adding_item_handler import AddItemHandler
 from app.state_machine.state_router import StateRouter
-from app.nlu.intent import Intent
+from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
 
 
@@ -28,10 +28,12 @@ class TurnEngine:
         user_text: str,
     ) -> str:
 
+        intent_result = resolve_intent(user_text)
+
         # Route based on SESSION state
         route = self.router.route(
             state=session.conversation_state,
-            intent=intent,
+            intent_result=intent_result,
         )
 
         if not route.allowed:
