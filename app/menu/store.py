@@ -255,3 +255,4 @@ class MenuStore:
 
     def find_item_exact(self, name: str) -> Optional[MenuItem]:
         return self._item_by_name.get(_norm(name))
+

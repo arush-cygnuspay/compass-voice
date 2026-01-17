@@ -10,7 +10,7 @@ Rules:
 - Regex + lexical heuristics only
 """
 
-from app.nlu.intent_patterns import (
+from app.nlu.intent_patterns.add_item import (
     ADD_STRONG_VERB_PAT,
     ADD_DESIRE_PAT,
     ADD_CONFIRMATION_PAT,

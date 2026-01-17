@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from app.menu.models import MenuItem
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
 from app.cart.cart import Cart

@@ -100,24 +100,36 @@ class StateRouter:
         }
 
     def route(
-        self,
-        state: ConversationState,
-        intent_result: IntentResult,
+            self,
+            state: ConversationState,
+            intent_result: IntentResult,
     ) -> RouteResult:
-        """
-        Determines whether the given intent is allowed in the current state.
-        """
+
+        # 🔹 Start with linguistic intent
+        effective_intent = intent_result.intent
+
+        # 🔒 State-based interpretation (NO mutation)
+        if state in {
+            ConversationState.WAITING_FOR_SIDE,
+            ConversationState.WAITING_FOR_MODIFIER,
+            ConversationState.WAITING_FOR_SIZE,
+            ConversationState.WAITING_FOR_QUANTITY,
+        }:
+            # Selection text like "american cheese"
+            # should NOT be treated as ADD_ITEM
+            if effective_intent == Intent.ADD_ITEM:
+                effective_intent = Intent.UNKNOWN
 
         allowed_intents = self._allowed_intents.get(state, set())
 
-        if intent_result.intent in allowed_intents:
+        if effective_intent in allowed_intents:
             return RouteResult(
                 allowed=True,
                 handler_name=f"{state.name.lower()}_handler",
             )
 
-        # Cancellation override (global escape hatch)
-        if intent_result.intent == Intent.CANCEL and state != ConversationState.IDLE:
+        # Global cancel escape hatch
+        if effective_intent == Intent.CANCEL and state != ConversationState.IDLE:
             return RouteResult(
                 allowed=True,
                 handler_name="cancel_handler",
@@ -126,7 +138,8 @@ class StateRouter:
         return RouteResult(
             allowed=False,
             reason=(
-                f"Intent {intent.name} not allowed in state {state.name}. "
+                f"Intent {effective_intent.name} not allowed in state {state.name}. "
                 "Please complete or cancel the current action first."
             ),
         )
+

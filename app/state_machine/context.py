@@ -14,6 +14,7 @@ class ConversationContext:
     # === Item focus ===
     # Canonical menu item currently being worked on
     current_item_id: Optional[str] = None
+    current_item_name: Optional[str] = None  # optional, UX-only
 
     # Candidate item awaiting confirmation
     candidate_item_id: Optional[str] = None
@@ -22,6 +23,9 @@ class ConversationContext:
     selected_variant_id: Optional[str] = None   # e.g. small / medium / large
 
     # === Side selections (by group) ===
+    # Which side group is currently being asked
+    current_side_group_index: int = 0
+
     # group_id -> list[item_id]
     selected_side_groups: Dict[str, List[str]] = field(default_factory=dict)
 
@@ -51,8 +55,10 @@ class ConversationContext:
         Resets the context after task completion or cancellation.
         """
         self.current_item_id = None
+        self.current_item_name = None
         self.candidate_item_id = None
         self.selected_variant_id = None
+        self.current_side_group_index = 0
         self.selected_side_groups.clear()
         self.selected_modifier_groups.clear()
         self.quantity = None

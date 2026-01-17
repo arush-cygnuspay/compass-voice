@@ -1,11 +1,12 @@
 # app/state_machine/handlers/item/confirming_handler.py
 from app.cart.cart import Cart
+from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
 from app.nlu.intent_resolution.intent import Intent
-from app.menu.menu_repository import MenuRepository
+from app.menu.repository import MenuRepository
 
 
 class ConfirmingHandler(BaseHandler):
@@ -14,17 +15,19 @@ class ConfirmingHandler(BaseHandler):
     All mutations happen ONLY on confirmation here.
     """
 
-    def __init__(self, menu_repo: MenuRepository, cart: Cart) -> None:
+    def __init__(self, menu_repo: MenuRepository) -> None:
         self.menu_repo = menu_repo
-        self.cart = cart
 
     def handle(
-        self,
-        intent: Intent,
-        context: ConversationContext,
+            self,
+            session: Session,
+            intent: Intent,
+            user_text: str,
     ) -> HandlerResult:
 
+        context = session.conversation_context
         confirmation = context.awaiting_confirmation_for
+
 
         if not confirmation:
             return HandlerResult(
@@ -106,14 +109,13 @@ class ConfirmingHandler(BaseHandler):
                 )
 
             if intent == Intent.CONFIRM:
-                item = self.menu_repo.items.get(context.current_item_id)
+                item = self.menu_repo.store.get_item(context.current_item_id)
                 if not item:
                     return HandlerResult(
                         next_state=ConversationState.ERROR_RECOVERY,
                         response_key="item_context_missing",
                     )
 
-                # Find side group
                 group = next(
                     (g for g in item.side_groups if g.group_id == group_id),
                     None,
@@ -135,19 +137,21 @@ class ConfirmingHandler(BaseHandler):
                         response_key="side_selection_limit_reached",
                     )
 
+                # ✅ Commit side
                 selected.append(value_id)
                 context.awaiting_confirmation_for = None
 
-                # Check if more sides are needed
-                for g in item.side_groups:
-                    current = context.selected_side_groups.get(g.group_id, [])
-                    if g.is_required and len(current) < g.min_selector:
-                        return HandlerResult(
-                            next_state=ConversationState.WAITING_FOR_SIDE,
-                            response_key="ask_for_side_group",
-                        )
+                # Move to next side group
+                context.current_side_group_index += 1
 
-                # Move forward
+                # Are there more side groups?
+                if context.current_side_group_index < len(item.side_groups):
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_SIDE,
+                        response_key="ask_for_side",
+                    )
+
+                # Continue flow
                 if item.pricing.mode == "variant":
                     return HandlerResult(
                         next_state=ConversationState.WAITING_FOR_SIZE,
@@ -255,7 +259,7 @@ class ConfirmingHandler(BaseHandler):
                     modifiers=context.selected_modifier_groups,
                 )
 
-                self.cart.add_item(cart_item)
+                session.cart.add_item(cart_item)
 
                 # Clean up context AFTER successful cart mutation
                 context.reset()

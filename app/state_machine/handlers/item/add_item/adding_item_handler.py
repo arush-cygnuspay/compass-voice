@@ -6,6 +6,8 @@ from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
 from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
+from app.state_machine.handlers.item.add_item.add_item_flow import _response_key_for_state, \
+    determine_next_add_item_state
 
 
 class AddItemHandler(BaseHandler):
@@ -44,13 +46,22 @@ class AddItemHandler(BaseHandler):
         # -----------------------------
         # Ask for confirmation
         # -----------------------------
-        context.candidate_item_id = item.item_id
-        context.awaiting_confirmation_for = {
-            "type": "item",
-            "value_id": item.item_id,
-        }
+        # After resolving item
+        context.current_item_id = item.item_id
+        context.current_item_name = item.name
+        context.pending_action = "add"
+        context.current_side_group_index = 0
+
+        context.candidate_item_id = None
+        context.awaiting_confirmation_for = None
+        context.selected_side_groups.clear()
+        context.selected_modifier_groups.clear()
+        context.selected_variant_id = None
+        context.quantity = None
+
+        next_state = determine_next_add_item_state(item, context)
 
         return HandlerResult(
-            next_state=ConversationState.CONFIRMING,
-            response_key="confirm_item",
+            next_state=next_state,
+            response_key=_response_key_for_state(next_state),
         )

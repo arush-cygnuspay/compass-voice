@@ -1,6 +1,6 @@
 # app/core/response_builder.py
-
 from app.menu.models import MenuItem
+from app.responses.side_responses import ask_for_side
 from app.state_machine.context import ConversationContext
 from app.menu.repository import MenuRepository
 
@@ -19,12 +19,7 @@ class ResponseBuilder:
             return f"You want a {item.name}, right? Please say yes or no."
 
         if response_key == "ask_for_side":
-            item = self.menu_repo.store.get_item(context.current_item_id)
-            lines = [f"Which side would you like with your {item.name}?"]
-            for group in item.side_groups:
-                for i, choice in enumerate(group.choices, start=1):
-                    lines.append(f"{i}. {choice.name}")
-            return "\n".join(lines)
+            return ask_for_side(context, self.menu_repo)
 
         if response_key == "ask_for_modifier":
             item = self.menu_repo.store.get_item(context.current_item_id)

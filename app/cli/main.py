@@ -13,21 +13,6 @@ from app.state_machine.state_router import StateRouter
 from app.session.repository import load_session, save_session
 
 
-def simple_intent_classifier(text: str) -> Intent:
-    t = text.lower()
-
-    if any(x in t for x in ["yes", "yeah", "yep"]):
-        return Intent.CONFIRM
-    if any(x in t for x in ["no", "nah"]):
-        return Intent.DENY
-    if any(x in t for x in ["cancel", "stop"]):
-        return Intent.CANCEL
-    if "cart" in t:
-        return Intent.SHOW_CART
-
-    return Intent.ADD_ITEM
-
-
 def load_menu_store(restaurant_id: str) -> MenuStore:
     project_root = Path(__file__).resolve().parents[2]
     data_root = project_root / "app" / "data" / "restaurants" / restaurant_id
@@ -81,11 +66,8 @@ def main():
             print("Goodbye!")
             break
 
-        intent = simple_intent_classifier(user_input)
-
         response_key = engine.process_turn(
             session=session,
-            intent=intent,
             user_text=user_input,
         )
 

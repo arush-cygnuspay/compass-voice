@@ -49,3 +49,6 @@ class MenuRepository:
             return token_match
 
         return None
+
+    def get_item(self, item_id: str) -> Optional[MenuItem]:
+        return self.store.get_item(item_id)

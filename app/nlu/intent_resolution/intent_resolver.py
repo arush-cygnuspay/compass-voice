@@ -2,6 +2,7 @@
 
 from typing import Set
 
+from app.nlu.intent_resolution.common_intent_resolver import match_yes_no
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.intent_resolution.item_intent_resolver import match_add_item
@@ -31,8 +32,8 @@ def resolve_intent(text: str) -> IntentResult:
     if match_add_item(normalized):
         matches.add(Intent.ADD_ITEM)
 
-    if match_yes_no(normalized):
-        matches.add(Intent.CONFIRM)
+    # if match_yes_no(normalized):
+    #     matches.add(Intent.CONFIRM)
 
     # -----------------------------------------
     # Priority resolution
