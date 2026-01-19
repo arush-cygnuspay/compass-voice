@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from difflib import SequenceMatcher
 from typing import Dict, List, Optional, Set
 
 from app.menu.exceptions import MenuLoadError
@@ -18,34 +17,73 @@ from app.menu.models import (
     ModifierChoice,
 )
 
+# =========================================================
+# Internal Helpers (LOW-LEVEL, DETERMINISTIC)
+# =========================================================
 
 def _norm(text: str) -> str:
+    """
+    Canonical normalization for menu indexing.
+    NOTE:
+    - Lowercase only
+    - No punctuation removal
+    - No stemming
+    This function MUST remain cheap and deterministic.
+    """
     return text.lower().strip()
 
 
-def _similarity(a: str, b: str) -> float:
-    return SequenceMatcher(None, a, b).ratio()
+def _token_score(query_tokens: set[str], item_tokens: set[str]) -> float:
+    """
+    Simple overlap ratio used ONLY for cheap fallback heuristics.
 
+    IMPORTANT:
+    - This is NOT a semantic score.
+    - This MUST NOT be used for final decision-making.
+    - Business-level resolution happens in MenuRepository.
+    """
+    if not item_tokens:
+        return 0.0
+    return len(query_tokens & item_tokens) / len(item_tokens)
+
+
+# =========================================================
+# MenuStore
+# =========================================================
 
 class MenuStore:
     """
     Immutable, in-memory menu store.
-    Loads menu.json + entity_index.json and parses them into models.
+
+    Responsibilities:
+    -----------------
+    - Load menu.json and entity_index.json
+    - Parse raw JSON into domain models
+    - Build cheap runtime indexes
+    - Provide deterministic, low-level lookup helpers
+
+    NON-Responsibilities:
+    ---------------------
+    - Intent interpretation
+    - Scoring strategies
+    - Ambiguity resolution
+    - Conversational logic
+
+    All "which item should win?" decisions belong to MenuRepository.
     """
 
     def __init__(self, menu_path: Path, entity_index_path: Path):
         self.menu_path = menu_path
         self.entity_index_path = entity_index_path
 
-        # Canonical data (MODELS)
+        # Canonical parsed data
         self.items: Dict[str, MenuItem] = {}
         self.categories: Dict[str, dict] = {}
         self.entity_index: Dict[str, List[dict]] = {}
 
-        # Runtime indexes
+        # Runtime indexes (cheap, deterministic)
         self._item_by_name: Dict[str, MenuItem] = {}
         self._item_tokens: Dict[str, Set[str]] = {}
-        self._items_by_category: Dict[str, List[MenuItem]] = {}
 
         self._load()
 
@@ -54,6 +92,13 @@ class MenuStore:
     # =================================================
 
     def _load(self) -> None:
+        """
+        Loads menu.json and entity_index.json and builds indexes.
+
+        This method MUST:
+        - Fail fast on malformed input
+        - Leave MenuStore in a fully consistent state
+        """
         try:
             with open(self.menu_path, "r", encoding="utf-8") as f:
                 raw_menu = json.load(f)
@@ -126,7 +171,7 @@ class MenuStore:
         raise MenuLoadError(f"Unknown pricing mode: {mode}")
 
     def _parse_side_groups(self, groups: List[dict]) -> List[SideGroup]:
-        parsed = []
+        parsed: List[SideGroup] = []
 
         for g in groups:
             choices = [
@@ -152,7 +197,7 @@ class MenuStore:
         return parsed
 
     def _parse_modifier_groups(self, groups: List[dict]) -> List[ModifierGroup]:
-        parsed = []
+        parsed: List[ModifierGroup] = []
 
         for g in groups:
             choices = [
@@ -182,39 +227,55 @@ class MenuStore:
     # =================================================
 
     def _build_indexes(self) -> None:
+        """
+        Builds cheap runtime indexes for deterministic lookup.
+
+        NOTE:
+        - These indexes must NEVER encode business rules.
+        - They exist purely for speed and convenience.
+        """
         self._item_by_name.clear()
         self._item_tokens.clear()
-        self._items_by_category.clear()
 
         for item in self.items.values():
             key = _norm(item.name)
             self._item_by_name[key] = item
             self._item_tokens[key] = set(key.split())
 
-        for item in self.items.values():
-            for cat_id in self.categories:
-                if cat_id in self.categories:
-                    self._items_by_category.setdefault(cat_id, []).append(item)
-
     # =================================================
-    # Queries
+    # Queries (LOW-LEVEL ONLY)
     # =================================================
 
     def get_item(self, item_id: str) -> MenuItem:
+        """
+        Fetch item by ID.
+        This is a hard lookup and MUST raise if missing.
+        """
         item = self.items.get(item_id)
         if not item:
             raise KeyError(f"Item not found: {item_id}")
         return item
 
-    def find_entity(self,key: str,*,allowed_types: set[str] | None = None,parent_item_id: str | None = None,) -> List[dict]:
+    def find_entity(
+        self,
+        key: str,
+        *,
+        allowed_types: set[str] | None = None,
+        parent_item_id: str | None = None,
+    ) -> List[dict]:
+        """
+        Entity index lookup.
 
+        Returns RAW entity index entries.
+        DOES NOT rank, score, or select winners.
+        """
         key = _norm(key)
         raw = self.entity_index.get(key)
         if not raw:
             return []
 
         entries = raw if isinstance(raw, list) else [raw]
-        results = []
+        results: List[dict] = []
 
         for e in entries:
             etype = e.get("type")
@@ -235,24 +296,30 @@ class MenuStore:
 
         return results
 
+    def find_item_exact(self, name: str) -> Optional[MenuItem]:
+        """
+        Exact name match (after normalization).
+        """
+        return self._item_by_name.get(_norm(name))
 
     def find_item_by_tokens(self, text: str) -> Optional[MenuItem]:
         """
-        Token overlap heuristic.
-        Deterministic, cheap fallback after entity index.
-        """
-        tokens = set(_norm(text).split())
-        best_item: Optional[MenuItem] = None
-        best_score = 0
+        Token-overlap fallback heuristic.
 
-        for name, name_tokens in self._item_tokens.items():
-            overlap = len(tokens & name_tokens)
-            if overlap > best_score:
-                best_score = overlap
+        WARNING:
+        - This is intentionally weak.
+        - Only used as a LAST RESORT.
+        - Threshold prevents garbage matches.
+        """
+        query_tokens = set(_norm(text).split())
+
+        best_item: Optional[MenuItem] = None
+        best_score = 0.0
+
+        for name, item_tokens in self._item_tokens.items():
+            score = _token_score(query_tokens, item_tokens)
+            if score > best_score:
+                best_score = score
                 best_item = self._item_by_name[name]
 
-        return best_item if best_score > 0 else None
-
-    def find_item_exact(self, name: str) -> Optional[MenuItem]:
-        return self._item_by_name.get(_norm(name))
-
+        return best_item if best_score >= 0.6 else None
