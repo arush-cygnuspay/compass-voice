@@ -63,16 +63,28 @@ def _serialize(session: Session) -> str:
 
         "conversation_context": {
             "current_item_id": session.conversation_context.current_item_id,
+            "current_item_name": session.conversation_context.current_item_name,
+
             "candidate_item_id": session.conversation_context.candidate_item_id,
+
             "selected_variant_id": session.conversation_context.selected_variant_id,
+
+            "current_side_group_index": session.conversation_context.current_side_group_index,
+            "current_modifier_group_index": session.conversation_context.current_modifier_group_index,
+
             "selected_side_groups": session.conversation_context.selected_side_groups,
             "selected_modifier_groups": session.conversation_context.selected_modifier_groups,
+
             "quantity": session.conversation_context.quantity,
             "pending_action": session.conversation_context.pending_action,
             "awaiting_confirmation_for": session.conversation_context.awaiting_confirmation_for,
+
             "skipped_modifier_groups": list(
                 session.conversation_context.skipped_modifier_groups
             ),
+
+            # 🔑 THIS IS THE BUG FIX
+            "size_target": session.conversation_context.size_target,
         },
 
         "cart": session.cart.to_dict(),
@@ -94,23 +106,40 @@ def _deserialize(raw: str) -> Session:
 
     # Restore context
     ctx = ConversationContext()
+
     ctx.current_item_id = data["conversation_context"].get("current_item_id")
+    ctx.current_item_name = data["conversation_context"].get("current_item_name")
+
     ctx.candidate_item_id = data["conversation_context"].get("candidate_item_id")
+
     ctx.selected_variant_id = data["conversation_context"].get("selected_variant_id")
+
+    ctx.current_side_group_index = data["conversation_context"].get(
+        "current_side_group_index", 0
+    )
+    ctx.current_modifier_group_index = data["conversation_context"].get(
+        "current_modifier_group_index", 0
+    )
+
     ctx.selected_side_groups = data["conversation_context"].get(
         "selected_side_groups", {}
     )
     ctx.selected_modifier_groups = data["conversation_context"].get(
         "selected_modifier_groups", {}
     )
+
     ctx.quantity = data["conversation_context"].get("quantity")
     ctx.pending_action = data["conversation_context"].get("pending_action")
     ctx.awaiting_confirmation_for = data["conversation_context"].get(
         "awaiting_confirmation_for"
     )
+
     ctx.skipped_modifier_groups = set(
         data["conversation_context"].get("skipped_modifier_groups", [])
     )
+
+    # 🔑 CRITICAL
+    ctx.size_target = data["conversation_context"].get("size_target")
 
     session.conversation_context = ctx
 

@@ -52,7 +52,7 @@ class ResponseBuilder:
 
         if response_key == "order_completed":
             return (
-                "✅ Payment confirmed!\n"
+                "Payment confirmed!\n"
                 "Your order will be ready in 25 minutes.\n"
                 "Thank you for calling the compass."
             )
@@ -68,7 +68,7 @@ class ResponseBuilder:
 
         if response_key == "payment_link_sent":
             return (
-                "💳 I’ve sent you a payment link.\n"
+                "I’ve sent you a payment link.\n"
                 "Please complete the payment and tell me once you’re done."
             )
 

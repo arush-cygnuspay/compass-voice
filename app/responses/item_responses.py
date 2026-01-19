@@ -74,11 +74,11 @@ def item_added_successfully(
 
     if quantity > 1:
         return (
-            f"✅ {quantity} {item_name}s have been added to your cart.\n"
+            f"{quantity} {item_name}s have been added to your cart.\n"
             "Would you like to add anything else?"
         )
 
     return (
-        f"✅ Your {item_name} has been added to the cart.\n"
+        f"Your {item_name} has been added to the cart.\n"
         "Would you like to add anything else?"
     )

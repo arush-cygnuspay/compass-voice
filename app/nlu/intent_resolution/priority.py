@@ -6,9 +6,19 @@ INTENT_PRIORITY: list[Intent] = [
     # ---- Terminal / Irreversible ----
     Intent.PAYMENT_DONE,
 
+    # ---- Hard Stops / Escapes ----
+    Intent.CANCEL,
+
+    # ---- Payment Flow ----
+    Intent.PAYMENT_REQUEST,
+
     # ---- Explicit Order Control ----
     Intent.ORDER_STATUS,
     Intent.START_ORDER,
+
+    # ---- Confirmation / Rejection ----
+    Intent.CONFIRM,
+    Intent.DENY,
 
     # ---- Flow Transition ----
     Intent.END_ADDING,
@@ -23,12 +33,7 @@ INTENT_PRIORITY: list[Intent] = [
     Intent.SHOW_TOTAL,
     Intent.SHOW_MENU,
 
-    # ---- Conversational Responses ----
-    Intent.CONFIRM,
-    Intent.DENY,
-    Intent.CANCEL,
-
-    # ---- Low-Power Meta ----
+    # ---- Meta / Repair ----
     Intent.META_CLARIFY,
 
     # ---- Fallback ----

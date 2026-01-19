@@ -1,4 +1,5 @@
 # app/state_machine/handlers/item/waiting_for_size_handler.py
+from dataclasses import dataclass
 from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
@@ -6,11 +7,21 @@ from app.state_machine.conversation_state import ConversationState
 from app.state_machine.context import ConversationContext
 from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
+from app.utils.choice_matching import match_choice
+
+
+@dataclass
+class _VariantChoice:
+    variant_id: str
+    name: str
 
 
 class WaitingForSizeHandler(BaseHandler):
     """
     Resolves size for the current size_target (item for now).
+
+    Uses the SAME deterministic matcher as sides & modifiers
+    for consistency and ASR robustness.
     """
 
     def __init__(self, menu_repo: MenuRepository) -> None:
@@ -24,6 +35,7 @@ class WaitingForSizeHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
+        # Global cancel
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
@@ -31,8 +43,8 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="action_cancelled",
             )
 
+        # Defensive guard
         if not context.size_target or context.size_target["type"] != "item":
-            # Defensive guard
             return HandlerResult(
                 next_state=ConversationState.ERROR_RECOVERY,
                 response_key="size_target_missing",
@@ -45,11 +57,18 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        matched_variant = None
-        for v in item.pricing.variants:
-            if v.label.lower() in user_text.lower():
-                matched_variant = v
-                break
+        # -------------------------------------------------
+        # ADAPT VARIANTS → MATCHABLE CHOICES
+        # -------------------------------------------------
+        variant_choices = [
+            _VariantChoice(
+                variant_id=v.variant_id,
+                name=v.label,
+            )
+            for v in item.pricing.variants
+        ]
+
+        matched_variant = match_choice(user_text, variant_choices)
 
         if not matched_variant:
             return HandlerResult(
@@ -57,11 +76,15 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="repeat_size_options",
             )
 
-        # ✅ Commit
+        # -------------------------------------------------
+        # COMMIT SIZE
+        # -------------------------------------------------
         context.selected_variant_id = matched_variant.variant_id
         context.size_target = None  # 🔑 reset size mode
 
-        # ✅ Decide next step
+        # -------------------------------------------------
+        # NEXT STEP
+        # -------------------------------------------------
         if item.side_groups:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
@@ -74,7 +97,7 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="ask_for_modifier",
             )
 
-        # ✅ SIZE-ONLY ITEM → FINALIZE
+        # SIZE-ONLY ITEM → FINALIZE
         return HandlerResult(
             next_state=ConversationState.IDLE,
             response_key="item_added_successfully",
@@ -95,5 +118,4 @@ class WaitingForSizeHandler(BaseHandler):
             },
             reset_context=True,
         )
-
 

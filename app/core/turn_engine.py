@@ -4,6 +4,7 @@ from typing import Optional
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
+from app.nlu.query_normalization.base import basic_cleanup
 from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
 from app.session.session import Session
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
@@ -58,15 +59,17 @@ class TurnEngine:
             user_text: str,
     ) -> TurnOutput:
 
+        preclean_text = basic_cleanup(user_text)
+
         # 1️⃣ Pure NLU
         intent_result = resolve_intent(
-            user_text,
+            preclean_text,
             state=session.conversation_state
         )
 
         # 🔥 NORMALIZE ONCE, HERE
         normalized_text = self.normalizer.normalize(
-            text=user_text,
+            text=preclean_text,
             intent=intent_result.intent,
             state=session.conversation_state,
         )
@@ -81,6 +84,7 @@ class TurnEngine:
             return TurnOutput(
                 response_key="intent_not_allowed"
             )
+
 
         handler = self.handlers.get(route.handler_name)
         if not handler:

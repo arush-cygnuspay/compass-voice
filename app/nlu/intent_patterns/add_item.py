@@ -98,7 +98,7 @@ FILLER_PAT = re.compile(
 CHOICE_FILLER_PAT = re.compile(
     r"""
     ^(
-        i'?ll\s+(?:take|go\s+with|have|get) |
+        i(?:ll| will)\s+(?:take|go\s+with|have|get) |
         i\s+(?:want|choose|prefer) |
         let\s+me\s+(?:get|have) |
         make\s+it |

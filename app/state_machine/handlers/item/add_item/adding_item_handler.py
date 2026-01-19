@@ -62,6 +62,18 @@ class AddItemHandler(BaseHandler):
 
         next_state = determine_next_add_item_state(item, context)
 
+        print("✅ SETTING SIZE TARGET:", {
+            "type": "item",
+            "item_id": item.item_id
+        })
+
+        # after resolving item and before returning
+        if item.pricing.mode == "variant":
+            context.size_target = {
+                "type": "item",
+                "item_id": item.item_id,
+            }
+
         return HandlerResult(
             next_state=next_state,
             response_key=_response_key_for_state(next_state),

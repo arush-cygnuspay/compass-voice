@@ -19,19 +19,30 @@ PAYMENT_REQUEST_PAT = re.compile(
 PAYMENT_DONE_PAT = re.compile(
     r"""
     \b(
-        i(\s+|')?ve\s+paid |
+        ive\s+paid |
         i\s+paid |
+        i(\s+|')?(have\s+)?paid |
+        i\s+have\s+done\s+payment |
         paid\s+already |
         already\s+paid |
-        payment\s+(is\s+)?done |
-        payment\s+completed |
+
+        payment\s+(is\s+)?(done|complete|completed|successful) |
+        transaction\s+(is\s+)?completed |
+        finished\s+payment |
+        completed\s+payment |
         payment\s+successful |
         transaction\s+completed |
-        finished\s+payment |
-        completed\s+payment
+
+        # voice / conversational
+        i(\s+|')?m\s+done |
+        all\s+done |
+        im\s+done |
+        im\s+finished
+        done\s+(with\s+)?payment
     )\b
     """,
     re.I | re.X,
 )
+
 
 

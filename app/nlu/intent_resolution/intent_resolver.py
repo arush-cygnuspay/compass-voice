@@ -30,14 +30,33 @@ def resolve_intent(text: str, state: ConversationState) -> IntentResult:
     matches: set[Intent] = set()
 
     # ----------------------------------
-    # YES / NO (state-sensitive)
+    # 🔒 PAYMENT STATE OVERRIDE
+    # ----------------------------------
+    if state == ConversationState.WAITING_FOR_PAYMENT:
+        payment_matches = match_payment_intent(normalized)
+
+        if payment_matches:
+            # Respect priority inside payment intents
+            for intent in INTENT_PRIORITY:
+                if intent in payment_matches:
+                    return IntentResult(intent=intent, raw_text=normalized)
+
+        # Allow explicit cancel / deny
+        yn = match_yes_no(normalized)
+        if yn:
+            return IntentResult(intent=yn, raw_text=normalized)
+
+        return IntentResult(Intent.UNKNOWN, normalized)
+
+    # ----------------------------------
+    # YES / NO (general)
     # ----------------------------------
     yn = match_yes_no(normalized)
     if yn:
         matches.add(yn)
 
     # ----------------------------------
-    # ORDER intents (always allowed)
+    # ORDER + PAYMENT intents (general)
     # ----------------------------------
     matches |= match_order_intent(normalized)
     matches |= match_payment_intent(normalized)

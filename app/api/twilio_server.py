@@ -76,21 +76,21 @@ async def voice(request: Request):
     call_sid = form.get("CallSid")
     restaurant_id = "demo"
 
-    print(f"[CALL START] SID={call_sid}")
-
     session = load_session(call_sid, restaurant_id)
 
-    vr = VoiceResponse()
+    # 🔒 HARD GUARD
+    if session.turn_count > 0:
+        # Do NOT restart gather
+        return Response("", media_type="application/xml")
 
-    if session.turn_count == 0:
-        greeting = "Hello! Thank you for calling Compass. What would you like to order?"
-    else:
-        greeting = None
+    print(f"[CALL START] SID={call_sid}")
+
+    vr = VoiceResponse()
 
     vr.append(
         gather(
             action_url=str(request.url_for("process_speech")),
-            say=greeting,
+            say="Hello! Thank you for calling Compass. What would you like to order?",
         )
     )
 
