@@ -9,6 +9,7 @@ class ConversationState(Enum):
     At any given time, the system MUST be in exactly one state.
     """
 
+    WAITING_FOR_PAYMENT = auto()
     GREETING = auto()                 # Initial welcome message
     IDLE = auto()                     # Neutral, no active task
 
@@ -27,6 +28,8 @@ class ConversationState(Enum):
 
     SHOWING_CART = auto()             # Showing cart content
     SHOWING_TOTAL = auto()            # Showing cart total
+
+    CONFIRMING_ORDER = auto()         # Order confirmation state
 
     CANCELLATION_CONFIRMATION = auto()# Asking user to cancel current flow
     ERROR_RECOVERY = auto()            # Fallback / repair state

@@ -2,16 +2,18 @@
 from dataclasses import dataclass
 from typing import Optional
 
+from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.session.session import Session
-from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
 from app.state_machine.handlers.item.add_item.waiting_for_size_handler import WaitingForSizeHandler
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
+from app.state_machine.handlers.order.confirm_order_handler import ConfirmOrderHandler
+from app.state_machine.handlers.order.start_order_handler import StartOrderHandler
+from app.state_machine.handlers.payment.waiting_for_payment_handler import WaitingForPaymentHandler
 from app.state_machine.state_router import StateRouter
-from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
 
 
@@ -30,6 +32,8 @@ class TurnEngine:
 
     def __init__(self, router: StateRouter, menu_repo: MenuRepository):
         self.router = router
+        self.menu_repo = menu_repo
+        self.cart_summary_builder = CartSummaryBuilder(menu_repo)
 
         # Explicit handler registry
         self.handlers = {
@@ -38,6 +42,9 @@ class TurnEngine:
             "confirming_handler": ConfirmingHandler(menu_repo),
             "waiting_for_modifier_handler": WaitingForModifierHandler(menu_repo),
             "waiting_for_size_handler": WaitingForSizeHandler(menu_repo),
+            "start_order_handler": StartOrderHandler(self.cart_summary_builder),
+            "confirming_order_handler": ConfirmOrderHandler(),
+            "waiting_for_payment_handler": WaitingForPaymentHandler(),
         }
 
     def process_turn(
@@ -47,7 +54,10 @@ class TurnEngine:
     ) -> TurnOutput:
 
         # 1️⃣ Pure NLU
-        intent_result = resolve_intent(user_text)
+        intent_result = resolve_intent(
+            user_text,
+            state=session.conversation_state
+        )
 
         # 2️⃣ Route based on STATE + intent
         route = self.router.route(
@@ -71,11 +81,14 @@ class TurnEngine:
             intent=intent_result.intent,
             context=session.conversation_context,
             user_text=user_text,
+            session=session,
         )
 
         # 🔑 Apply side-effects centrally
         if result.command:
             self._apply_command(session, result.command)
+
+        if result.reset_context:
             session.conversation_context.reset()
 
         session.conversation_state = result.next_state

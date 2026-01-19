@@ -1,5 +1,5 @@
 # app/state_machine/handlers/item/add_item/waiting_for_modifier_handler.py
-
+from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.conversation_state import ConversationState
@@ -23,6 +23,7 @@ class WaitingForModifierHandler(BaseHandler):
         intent: Intent,
         context: ConversationContext,
         user_text: str,
+        session: Session = None,
     ) -> HandlerResult:
 
         # Global cancel
@@ -121,5 +122,6 @@ class WaitingForModifierHandler(BaseHandler):
                 "item_name": item.name,
                 "quantity": context.quantity or 1,
             },
+            reset_context=True,
         )
 

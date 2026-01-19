@@ -20,9 +20,10 @@ class ConfirmingHandler(BaseHandler):
 
     def handle(
             self,
-            session: Session,
             intent: Intent,
+            context: ConversationContext,
             user_text: str,
+            session: Session = None,
     ) -> HandlerResult:
 
         context = session.conversation_context

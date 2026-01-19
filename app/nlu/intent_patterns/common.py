@@ -1,3 +1,4 @@
+# app/nlu/intent_patterns/common.py
 import re
 
 # YES_STRONG_PAT (VERY HIGH confidence)

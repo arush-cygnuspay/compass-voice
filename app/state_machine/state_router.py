@@ -28,6 +28,8 @@ class StateRouter:
                 Intent.SHOW_MENU,
                 Intent.SHOW_CART,
                 Intent.SHOW_TOTAL,
+                Intent.END_ADDING,
+                Intent.START_ORDER,
             },
 
             ConversationState.WAITING_FOR_SIDE: {
@@ -53,6 +55,13 @@ class StateRouter:
 
             ConversationState.WAITING_FOR_QUANTITY: {
                 Intent.CONFIRM,
+                Intent.DENY,
+                Intent.CANCEL,
+                Intent.UNKNOWN,
+            },
+
+            ConversationState.WAITING_FOR_PAYMENT: {
+                Intent.PAYMENT_DONE,
                 Intent.DENY,
                 Intent.CANCEL,
                 Intent.UNKNOWN,
@@ -97,26 +106,40 @@ class StateRouter:
                 Intent.CANCEL,
                 Intent.UNKNOWN,
             },
+
+            ConversationState.CONFIRMING_ORDER: {
+                Intent.CONFIRM,
+                Intent.DENY,
+                Intent.CANCEL,
+            },
+
         }
 
-    def route(
-            self,
-            state: ConversationState,
-            intent_result: IntentResult,
-    ) -> RouteResult:
-
-        # 🔹 Start with linguistic intent
+    def route(self, state: ConversationState, intent_result: IntentResult) -> RouteResult:
         effective_intent = intent_result.intent
 
-        # 🔒 State-based interpretation (NO mutation)
+        if state == ConversationState.IDLE and effective_intent in {
+            Intent.END_ADDING,
+            Intent.START_ORDER,
+        }:
+            return RouteResult(
+                allowed=True,
+                handler_name="start_order_handler"
+            )
+
+        if state == ConversationState.WAITING_FOR_PAYMENT:
+            return RouteResult(
+                allowed=True,
+                handler_name="waiting_for_payment_handler"
+            )
+
+        # 🔒 State-based interpretation
         if state in {
             ConversationState.WAITING_FOR_SIDE,
             ConversationState.WAITING_FOR_MODIFIER,
             ConversationState.WAITING_FOR_SIZE,
             ConversationState.WAITING_FOR_QUANTITY,
         }:
-            # Selection text like "american cheese"
-            # should NOT be treated as ADD_ITEM
             if effective_intent == Intent.ADD_ITEM:
                 effective_intent = Intent.UNKNOWN
 
@@ -128,18 +151,11 @@ class StateRouter:
                 handler_name=f"{state.name.lower()}_handler",
             )
 
-        # Global cancel escape hatch
         if effective_intent == Intent.CANCEL and state != ConversationState.IDLE:
             return RouteResult(
                 allowed=True,
                 handler_name="cancel_handler",
             )
 
-        return RouteResult(
-            allowed=False,
-            reason=(
-                f"Intent {effective_intent.name} not allowed in state {state.name}. "
-                "Please complete or cancel the current action first."
-            ),
-        )
+        return RouteResult(allowed=False)
 

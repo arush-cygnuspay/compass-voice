@@ -2,42 +2,36 @@
 from app.nlu.intent_resolution.intent import Intent
 
 INTENT_PRIORITY: list[Intent] = [
-    # # ---- Social / Control ----
-    # Intent.GREETING,
-    # Intent.THANKS,
-    # Intent.GOODBYE,
-    # Intent.YES,
-    # Intent.NO,
-    #
-    # # ---- Cart State ----
-    # Intent.CLEAR_CART,
-    # Intent.CART_TOTAL,
-    # Intent.CART_DETAILS,
-    # Intent.CART_ITEM_QUERY,
+
+    # ---- Terminal / Irreversible ----
+    Intent.PAYMENT_DONE,
+
+    # ---- Explicit Order Control ----
+    Intent.ORDER_STATUS,
+    Intent.START_ORDER,
+
+    # ---- Flow Transition ----
+    Intent.END_ADDING,
 
     # ---- Cart Mutation ----
-    Intent.REMOVE_ITEM,
-    Intent.MODIFY_ITEM,
     Intent.ADD_ITEM,
+    Intent.MODIFY_ITEM,
+    Intent.REMOVE_ITEM,
 
-    # # ---- Item Information ----
-    # Intent.ITEM_PRICE,
-    # Intent.ITEM_DESCRIPTION,
-    # Intent.ITEM_AVAILABILITY,
-    # Intent.ITEM_VARIANTS,
-    # Intent.ITEM_COMPARISON,
-    #
-    # # ---- Menu / Restaurant ----
-    # Intent.MENU,
-    # Intent.MENU_CATEGORY,
-    # Intent.RESTAURANT_INFO,
-    #
-    # # ---- Order / Payment ----
-    # Intent.CONFIRM_ORDER,
-    # Intent.ORDER_STATUS,
-    # Intent.PAYMENT_HELP,
-    # Intent.PAYMENT_METHOD_QUERY,
-    # Intent.PAYMENT_LOCATION,
-    # Intent.SEND_PAYMENT_LINK,
-    # Intent.CONFIRM_PAYMENT,
+    # ---- Informational ----
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+    Intent.SHOW_MENU,
+
+    # ---- Conversational Responses ----
+    Intent.CONFIRM,
+    Intent.DENY,
+    Intent.CANCEL,
+
+    # ---- Low-Power Meta ----
+    Intent.META_CLARIFY,
+
+    # ---- Fallback ----
+    Intent.UNKNOWN,
 ]
+

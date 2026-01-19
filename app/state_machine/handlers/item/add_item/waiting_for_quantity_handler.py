@@ -1,5 +1,5 @@
 # app/state_machine/handlers/item/waiting_for_quantity_handler.py
-
+from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.conversation_state import ConversationState
@@ -32,6 +32,7 @@ class WaitingForQuantityHandler(BaseHandler):
         intent: Intent,
         context: ConversationContext,
         user_text: str,
+        session: Session = None,
     ) -> HandlerResult:
 
         # Global cancel

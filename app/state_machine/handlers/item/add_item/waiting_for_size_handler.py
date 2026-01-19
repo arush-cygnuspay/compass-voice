@@ -1,5 +1,5 @@
 # app/state_machine/handlers/item/waiting_for_size_handler.py
-
+from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.conversation_state import ConversationState
@@ -21,6 +21,7 @@ class WaitingForSizeHandler(BaseHandler):
         intent: Intent,
         context: ConversationContext,
         user_text: str,
+        session: Session = None,
     ) -> HandlerResult:
 
         if intent == Intent.CANCEL:
@@ -92,6 +93,7 @@ class WaitingForSizeHandler(BaseHandler):
                 "item_name": item.name,
                 "quantity": 1,
             },
+            reset_context=True,
         )
 
 

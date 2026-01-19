@@ -17,3 +17,4 @@ class HandlerResult:
     end_turn: bool = True             # whether to wait for next user input
     command: Optional[Dict[str, Any]] = None
     response_payload: Optional[Dict[str, Any]] = None
+    reset_context: bool = False      # weather or not reset context
