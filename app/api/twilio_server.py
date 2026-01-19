@@ -57,7 +57,7 @@ def gather(action_url: str, say: str | None = None) -> Gather:
         input="speech",
         action=action_url,
         method="POST",
-        timeout=60,
+        timeout=15,
         speechTimeout="auto",
         bargeIn=True,
     )

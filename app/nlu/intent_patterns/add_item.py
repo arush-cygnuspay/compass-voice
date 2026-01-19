@@ -103,6 +103,7 @@ CHOICE_FILLER_PAT = re.compile(
         let\s+me\s+(?:get|have) |
         make\s+it |
         that'?ll\s+be |
+        a|an|the|
         just |
         only
     )\s+
