@@ -116,46 +116,44 @@ class StateRouter:
         }
 
     def route(self, state: ConversationState, intent_result: IntentResult) -> RouteResult:
-        effective_intent = intent_result.intent
+        intent = intent_result.intent
 
-        if state == ConversationState.IDLE and effective_intent in {
+        # 🔹 ADD ITEM always starts add-item task
+        if state == ConversationState.IDLE and intent == Intent.ADD_ITEM:
+            return RouteResult(
+                allowed=True,
+                handler_name="add_item_handler",
+            )
+
+        # 🔹 END ADDING / START ORDER
+        if state == ConversationState.IDLE and intent in {
             Intent.END_ADDING,
             Intent.START_ORDER,
         }:
             return RouteResult(
                 allowed=True,
-                handler_name="start_order_handler"
+                handler_name="start_order_handler",
             )
 
+        # 🔹 Payment flow
         if state == ConversationState.WAITING_FOR_PAYMENT:
             return RouteResult(
                 allowed=True,
-                handler_name="waiting_for_payment_handler"
+                handler_name="waiting_for_payment_handler",
             )
 
-        # 🔒 State-based interpretation
-        if state in {
-            ConversationState.WAITING_FOR_SIDE,
-            ConversationState.WAITING_FOR_MODIFIER,
-            ConversationState.WAITING_FOR_SIZE,
-            ConversationState.WAITING_FOR_QUANTITY,
-        }:
-            if effective_intent == Intent.ADD_ITEM:
-                effective_intent = Intent.UNKNOWN
-
+        # 🔒 Default state-based routing
         allowed_intents = self._allowed_intents.get(state, set())
-
-        if effective_intent in allowed_intents:
+        if intent in allowed_intents:
             return RouteResult(
                 allowed=True,
                 handler_name=f"{state.name.lower()}_handler",
             )
 
-        if effective_intent == Intent.CANCEL and state != ConversationState.IDLE:
+        if intent == Intent.CANCEL and state != ConversationState.IDLE:
             return RouteResult(
                 allowed=True,
                 handler_name="cancel_handler",
             )
 
         return RouteResult(allowed=False)
-

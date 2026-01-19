@@ -95,6 +95,20 @@ FILLER_PAT = re.compile(
     re.I,
 )
 
+CHOICE_FILLER_PAT = re.compile(
+    r"""
+    ^(
+        i'?ll\s+(?:take|go\s+with|have|get) |
+        i\s+(?:want|choose|prefer) |
+        let\s+me\s+(?:get|have) |
+        make\s+it |
+        that'?ll\s+be |
+        just |
+        only
+    )\s+
+    """,
+    re.I | re.X,
+)
 
 # def strip_fillers(text: str) -> str:
 #     prev = None

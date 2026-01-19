@@ -4,6 +4,7 @@ from typing import Optional
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
+from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
 from app.session.session import Session
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
@@ -35,9 +36,13 @@ class TurnEngine:
         self.menu_repo = menu_repo
         self.cart_summary_builder = CartSummaryBuilder(menu_repo)
 
+        self.normalizer = QueryNormalizationPipeline()
+
         # Explicit handler registry
         self.handlers = {
-            "idle_handler": AddItemHandler(menu_repo),
+            "add_item_handler": AddItemHandler(
+                menu_repo=menu_repo,
+            ),
             "waiting_for_side_handler": WaitingForSideHandler(menu_repo),
             "confirming_handler": ConfirmingHandler(menu_repo),
             "waiting_for_modifier_handler": WaitingForModifierHandler(menu_repo),
@@ -59,6 +64,13 @@ class TurnEngine:
             state=session.conversation_state
         )
 
+        # 🔥 NORMALIZE ONCE, HERE
+        normalized_text = self.normalizer.normalize(
+            text=user_text,
+            intent=intent_result.intent,
+            state=session.conversation_state,
+        )
+
         # 2️⃣ Route based on STATE + intent
         route = self.router.route(
             state=session.conversation_state,
@@ -78,9 +90,9 @@ class TurnEngine:
 
         # 3️⃣ Execute handler
         result = handler.handle(
-            intent=intent_result.intent,
+            intent=intent_result.intent,  # ← pass original intent
             context=session.conversation_context,
-            user_text=user_text,
+            user_text=normalized_text,
             session=session,
         )
 
