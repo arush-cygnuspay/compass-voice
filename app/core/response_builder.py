@@ -60,6 +60,24 @@ class ResponseBuilder:
         if response_key == "cart_empty":
             return "Your cart is empty. Please add items before placing an order."
 
+        if response_key == "show_cart":
+            return render_cart_summary(payload)
+
+        if response_key == "show_total":
+            return f"Your total so far is: {payload['total']}"
+
+        if response_key == "resume_previous_state":
+            return "Okay, continuing."
+
+        if response_key == "awaiting_ack":
+            return "Okay."
+
+        if response_key == "confirm_clear_cart":
+            return "Are you sure you want to clear your cart?"
+
+        if response_key == "cart_cleared":
+            return "Your cart has been cleared."
+
         if response_key == "order_cancelled":
             return "No problem. You can continue adding items."
 

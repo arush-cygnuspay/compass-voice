@@ -2,6 +2,7 @@
 
 from typing import Set
 
+from app.nlu.intent_resolution.cart_intent_resolver import match_cart_intent
 from app.nlu.intent_resolution.common_intent_resolver import match_yes_no
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
@@ -61,11 +62,22 @@ def resolve_intent(text: str, state: ConversationState) -> IntentResult:
     matches |= match_order_intent(normalized)
     matches |= match_payment_intent(normalized)
 
+    # CART intents (pure, global)
+    matches |= match_cart_intent(normalized)
+
     # ----------------------------------
     # ADD ITEM (ONLY when IDLE)
     # ----------------------------------
     if state == ConversationState.IDLE:
-        if match_add_item(normalized):
+        allow_bare = not bool(
+            matches & {
+                Intent.SHOW_CART,
+                Intent.SHOW_TOTAL,
+                Intent.ORDER_STATUS,
+            }
+        )
+
+        if match_add_item(normalized, allow_bare=allow_bare):
             matches.add(Intent.ADD_ITEM)
 
     # ----------------------------------

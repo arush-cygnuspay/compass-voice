@@ -118,6 +118,41 @@ class StateRouter:
     def route(self, state: ConversationState, intent_result: IntentResult) -> RouteResult:
         intent = intent_result.intent
 
+        # 🔹 Read-only cart utilities (global, non-destructive)
+        if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
+            # ❌ Hard block during payment - not allowed while we are doing payment
+            if state == ConversationState.WAITING_FOR_PAYMENT:
+                return RouteResult(allowed=False)
+
+            return RouteResult(
+                allowed=True,
+                handler_name="cart_handler",
+            )
+
+        # 🔹 Destructive cart utility
+        if intent == Intent.CLEAR_CART:
+
+            # ❌ Never allowed during payment
+            if state == ConversationState.WAITING_FOR_PAYMENT:
+                return RouteResult(allowed=False)
+
+            # ✅ Safe in IDLE
+            if state == ConversationState.IDLE:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="cart_handler",
+                )
+
+            # ⚠️ Requires confirmation if order is being confirmed
+            if state == ConversationState.CONFIRMING_ORDER:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="cart_handler",
+                )
+
+            # ❌ Block everywhere else
+            return RouteResult(allowed=False)
+
         # 🔹 ADD ITEM always starts add-item task
         if state == ConversationState.IDLE and intent == Intent.ADD_ITEM:
             return RouteResult(

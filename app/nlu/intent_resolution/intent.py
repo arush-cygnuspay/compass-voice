@@ -18,6 +18,7 @@ class Intent(Enum):
     SHOW_MENU = auto()
     SHOW_CART = auto()
     SHOW_TOTAL = auto()
+    CLEAR_CART = auto()
 
     CONFIRM = auto()     # yes / correct / okay
     DENY = auto()        # no / wrong

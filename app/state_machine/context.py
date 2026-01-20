@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Any
 
+from app.state_machine.conversation_state import ConversationState
+
 
 @dataclass
 class ConversationContext:
@@ -67,6 +69,7 @@ class ConversationContext:
     #   "choice_id": "..."
     # }
 
+    return_state: Optional[ConversationState] = None
 
     def reset(self) -> None:
         """

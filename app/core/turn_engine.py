@@ -7,6 +7,8 @@ from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.nlu.query_normalization.base import basic_cleanup
 from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
 from app.session.session import Session
+from app.state_machine.handlers.cart.cart_handlers import CartHandler, ShowingCartHandler, ShowingTotalHandler
+from app.state_machine.handlers.common.cancellation_confirmation_handler import CancellationConfirmationHandler
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
@@ -51,6 +53,13 @@ class TurnEngine:
             "start_order_handler": StartOrderHandler(self.cart_summary_builder),
             "confirming_order_handler": ConfirmOrderHandler(),
             "waiting_for_payment_handler": WaitingForPaymentHandler(),
+
+            # Cart utilities
+            "cart_handler": CartHandler(self.cart_summary_builder),
+            "showing_cart_handler": ShowingCartHandler(),
+            "showing_total_handler": ShowingTotalHandler(),
+
+            "cancellation_confirmation_handler": CancellationConfirmationHandler(),
         }
 
     def process_turn(
@@ -135,7 +144,9 @@ class TurnEngine:
 
             session.cart.add_item(cart_item)
 
+        elif command_type == "CLEAR_CART":
+            session.cart.clear()
+
         else:
             raise ValueError(f"Unknown command type: {command_type}")
-
 

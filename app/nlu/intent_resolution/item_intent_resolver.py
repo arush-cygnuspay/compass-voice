@@ -19,9 +19,13 @@ from app.nlu.intent_patterns.add_item import (
 )
 
 
-def match_add_item(text: str) -> bool:
+def match_add_item(text: str, *, allow_bare: bool = True) -> bool:
     """
     Returns True if text linguistically resembles an add-item request.
+
+    allow_bare:
+        - True  → allow ultra-loose bare item matching
+        - False → disable bare item fallback
     """
 
     if ADD_STRONG_VERB_PAT.search(text):
@@ -36,8 +40,9 @@ def match_add_item(text: str) -> bool:
     if QUANTITY_ITEM_PAT.search(text):
         return True
 
-    # ⚠️ last-resort implicit add
-    if BARE_ITEM_PAT.fullmatch(text):
+    # ⚠️ LAST RESORT (dangerous)
+    if allow_bare and BARE_ITEM_PAT.fullmatch(text):
         return True
 
     return False
+
