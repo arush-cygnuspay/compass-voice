@@ -230,17 +230,38 @@ class MenuStore:
         """
         Builds cheap runtime indexes for deterministic lookup.
 
-        NOTE:
-        - These indexes must NEVER encode business rules.
-        - They exist purely for speed and convenience.
+        Category normalization rules:
+        - Singular / plural equivalence
+        - Lowercase only
+        - No stemming libraries (deterministic)
         """
         self._item_by_name.clear()
         self._item_tokens.clear()
 
+        # -----------------------------
+        # Item indexes (unchanged)
+        # -----------------------------
         for item in self.items.values():
             key = _norm(item.name)
             self._item_by_name[key] = item
             self._item_tokens[key] = set(key.split())
+
+        # -----------------------------
+        # Category name index (NEW)
+        # -----------------------------
+        self._category_name_index: Dict[str, dict] = {}
+
+        for cat in self.categories.values():
+            name = cat["name"].lower().strip()
+
+            # canonical
+            self._category_name_index[name] = cat
+
+            # plural ↔ singular normalization
+            if name.endswith("s"):
+                self._category_name_index[name[:-1]] = cat
+            else:
+                self._category_name_index[f"{name}s"] = cat
 
     # =================================================
     # Queries (LOW-LEVEL ONLY)
@@ -323,3 +344,14 @@ class MenuStore:
                 best_item = self._item_by_name[name]
 
         return best_item if best_score >= 0.6 else None
+
+    def find_category_by_name(self, text: str) -> Optional[dict]:
+        """
+        Resolve category by normalized name with plural tolerance.
+
+        Deterministic:
+        - No fuzzy guessing
+        - No scoring
+        """
+        key = _norm(text)
+        return self._category_name_index.get(key)

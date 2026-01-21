@@ -84,6 +84,7 @@ class ShowingCartHandler(BaseHandler):
             response_key="resume_previous_state",
         )
 
+
 class ShowingTotalHandler(BaseHandler):
     def handle(self, intent, context, user_text, session=None):
 
@@ -96,7 +97,9 @@ class ShowingTotalHandler(BaseHandler):
                 response_key="resume_previous_state",
             )
 
+        # No waiting state — just acknowledge
         return HandlerResult(
-            next_state=ConversationState.SHOWING_TOTAL,
+            next_state=context.return_state or ConversationState.IDLE,
             response_key="awaiting_ack",
         )
+

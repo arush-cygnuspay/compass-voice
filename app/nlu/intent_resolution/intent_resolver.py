@@ -7,6 +7,7 @@ from app.nlu.intent_resolution.common_intent_resolver import match_yes_no
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.intent_resolution.item_intent_resolver import match_add_item
+from app.nlu.intent_resolution.menu_intent_resolver import match_ask_menu_info
 from app.nlu.intent_resolution.order_intent_resolver import match_order_intent
 from app.nlu.intent_resolution.payment_intent_resolver import match_payment_intent
 from app.nlu.intent_resolution.priority import INTENT_PRIORITY
@@ -66,6 +67,11 @@ def resolve_intent(text: str, state: ConversationState) -> IntentResult:
     matches |= match_cart_intent(normalized)
 
     # ----------------------------------
+    # ASK MENU INFO (NEW, global, read-only)
+    # ----------------------------------
+    matches |= match_ask_menu_info(normalized)
+
+    # ----------------------------------
     # ADD ITEM (ONLY when IDLE)
     # ----------------------------------
     if state == ConversationState.IDLE:
@@ -75,6 +81,7 @@ def resolve_intent(text: str, state: ConversationState) -> IntentResult:
                 Intent.SHOW_TOTAL,
                 Intent.ORDER_STATUS,
                 Intent.CLEAR_CART,
+                Intent.ASK_MENU_INFO,
             }
         )
 

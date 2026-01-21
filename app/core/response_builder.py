@@ -1,9 +1,9 @@
 # app/core/response_builder.py
 from typing import Optional
 
-from app.menu.models import MenuItem
 from app.responses.cart_responses import render_cart_summary
-from app.responses.item_responses import ask_for_side, ask_for_modifier, item_added_successfully, ask_for_size
+from app.responses.item_responses import *
+from app.responses.menu_responses import *
 from app.state_machine.context import ConversationContext
 from app.menu.repository import MenuRepository
 
@@ -22,6 +22,8 @@ class ResponseBuilder:
         context: ConversationContext,
         payload: Optional[dict] = None,
     ) -> str:
+
+        payload = payload or {}
 
         # -------------------------
         # Meta / Safety / Errors
@@ -64,6 +66,21 @@ class ResponseBuilder:
             return "Let’s finish adding the current item first."
 
         # -------------------------
+        # Menu Info (NEW)
+        # -------------------------
+        if response_key == "show_category":
+            return show_category_response(payload)
+
+        if response_key == "show_item_info":
+            return show_item_info_response(payload)
+
+        if response_key == "menu_ambiguity":
+            return menu_ambiguity_response(payload)
+
+        if response_key == "menu_not_found":
+            return menu_not_found_response()
+
+        # -------------------------
         # Cart display utilities
         # -------------------------
         if response_key == "show_cart":
@@ -91,7 +108,7 @@ class ResponseBuilder:
             return "Okay."
 
         if response_key == "resume_order_confirmation":
-            return "Okay, let’s continue with your order. Would you like to proceed?"
+            return "Okay, let’s continue with your order."
 
         if response_key == "order_cancelled":
             return "No problem. You can continue adding items."
@@ -101,10 +118,7 @@ class ResponseBuilder:
         # -------------------------
         if response_key == "confirm_order_summary":
             summary = render_cart_summary(payload)
-            return (
-                f"{summary}\n\n"
-                "Would you like to proceed?"
-            )
+            return f"{summary}\n\nWould you like to proceed?"
 
         if response_key == "payment_link_sent":
             return (
@@ -126,4 +140,3 @@ class ResponseBuilder:
         # Fallback (last resort)
         # -------------------------
         return "Sorry, I didn’t understand that."
-

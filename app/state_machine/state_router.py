@@ -105,6 +105,18 @@ class StateRouter:
         intent = intent_result.intent
 
         # --------------------------------------------------
+        # ASK MENU INFO (GLOBAL, READ-ONLY)
+        # --------------------------------------------------
+        if intent == Intent.ASK_MENU_INFO:
+            if state == ConversationState.WAITING_FOR_PAYMENT:
+                return RouteResult(allowed=False)
+
+            return RouteResult(
+                allowed=True,
+                handler_name="ask_menu_info_handler",
+            )
+
+        # --------------------------------------------------
         # CART OVERLAYS (GLOBAL, NON-TASK)
         # --------------------------------------------------
         if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:

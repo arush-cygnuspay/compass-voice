@@ -27,6 +27,7 @@ class AddItemHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
+        # Defensive: this should never happen post-refiner
         if intent != Intent.ADD_ITEM:
             return HandlerResult(
                 next_state=ConversationState.IDLE,
@@ -45,13 +46,14 @@ class AddItemHandler(BaseHandler):
             )
 
         # -----------------------------
-        # Ask for confirmation
+        # Initialize add-item context
         # -----------------------------
-        # After resolving item
         context.current_item_id = item.item_id
         context.current_item_name = item.name
         context.pending_action = "add"
+
         context.current_side_group_index = 0
+        context.current_modifier_group_index = 0
 
         context.candidate_item_id = None
         context.awaiting_confirmation_for = None
@@ -62,7 +64,6 @@ class AddItemHandler(BaseHandler):
 
         next_state = determine_next_add_item_state(item, context)
 
-        # after resolving item and before returning
         if item.pricing.mode == "variant":
             context.size_target = {
                 "type": "item",
@@ -72,5 +73,5 @@ class AddItemHandler(BaseHandler):
         return HandlerResult(
             next_state=next_state,
             response_key=_response_key_for_state(next_state),
-            response_payload=None
+            response_payload=None,
         )

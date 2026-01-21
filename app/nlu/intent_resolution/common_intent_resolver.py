@@ -41,3 +41,4 @@ def match_yes_no(text: str) -> Optional[Intent]:
         return Intent.CONFIRM
 
     return None
+

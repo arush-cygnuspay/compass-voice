@@ -16,6 +16,7 @@ class Intent(Enum):
     PAYMENT_DONE = auto()  # "I have paid" -> user intends to tell he has paid
 
     SHOW_MENU = auto()
+    ASK_MENU_INFO = auto()  # User wants info about a category or item
     SHOW_CART = auto()
     SHOW_TOTAL = auto()
     CLEAR_CART = auto()

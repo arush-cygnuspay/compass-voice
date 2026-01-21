@@ -10,7 +10,11 @@
     "c0f18535-ebd5-4807-b917-64898a887d1b": {
       "category_id": "c0f18535-ebd5-4807-b917-64898a887d1b",
       "name": "Tacos",
-      "item_ids": []
+      "item_ids": [
+        "e267fa3a-db86-4bf7-8124-c1523ddd6258",
+        "0f75d6f9-1b9f-4f94-be86-09a04dab5f27",
+        "f2544785-4d89-439e-9154-f6709c3e1a0d"
+      ]
     },
     "61aed6ed-5f74-4c18-aeea-98ab6c596ac6": {
       "category_id": "61aed6ed-5f74-4c18-aeea-98ab6c596ac6",
@@ -1371,7 +1375,7 @@
     },
     "b47a8f92-4631-4051-929a-0bee56dc7111": {
       "item_id": "b47a8f92-4631-4051-929a-0bee56dc7111",
-      "name": "#4. Dungeness Crab legs Platte",
+      "name": "#4. Dungeness Crab legs Platter",
       "description": "5 lb. of Dungeness Crab Legs with Butter.",
       "status": "active",
       "categories": [
@@ -1880,7 +1884,7 @@
     },
     "d83a28ea-450c-4bd5-829e-b5d9cb2dc973": {
       "item_id": "d83a28ea-450c-4bd5-829e-b5d9cb2dc973",
-      "name": "33. Jumbo Lump Crabcake Platte",
+      "name": "33. Jumbo Lump Crabcake Platter",
       "description": "2 Jumbo Lump Crab Cakes along with 2 side orders of your choice.",
       "status": "active",
       "categories": [
@@ -2189,7 +2193,7 @@
     },
     "fbafc150-1cbb-45cf-bdba-a7535c3b2ab7": {
       "item_id": "fbafc150-1cbb-45cf-bdba-a7535c3b2ab7",
-      "name": "30. Stuffed Lobster Tail Platt",
+      "name": "30. Stuffed Lobster Tail Platter",
       "description": "1 Stuffed Lobster Tail along with the 2 Side Orders of your Choice. Tail is stuffed with Crab Meat.",
       "status": "active",
       "categories": [

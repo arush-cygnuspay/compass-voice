@@ -16,6 +16,9 @@ INTENT_PRIORITY: list[Intent] = [
     # ---- Payment Flow ----
     Intent.PAYMENT_REQUEST,
 
+    # ---- INFO (item/categories) ----
+    Intent.ASK_MENU_INFO,
+
     # ---- Explicit Order Control ----
     Intent.ORDER_STATUS,
     Intent.START_ORDER,

@@ -3,12 +3,15 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
+from app.nlu.intent_refinement.intent_refiner import IntentRefiner
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
+from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.query_normalization.base import basic_cleanup
 from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
 from app.session.session import Session
 from app.state_machine.handlers.cart.cart_handlers import CartHandler, ShowingCartHandler, ShowingTotalHandler
 from app.state_machine.handlers.common.cancellation_confirmation_handler import CancellationConfirmationHandler
+from app.state_machine.handlers.info.ask_menu_info_handler import AskMenuInfoHandler
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
@@ -40,6 +43,7 @@ class TurnEngine:
         self.cart_summary_builder = CartSummaryBuilder(menu_repo)
 
         self.normalizer = QueryNormalizationPipeline()
+        self.intent_refiner = IntentRefiner(menu_repo)
 
         # Explicit handler registry
         self.handlers = {
@@ -60,6 +64,9 @@ class TurnEngine:
             "showing_total_handler": ShowingTotalHandler(),
 
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
+
+            # Info Handlers
+            "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
         }
 
     def process_turn(
@@ -81,6 +88,18 @@ class TurnEngine:
             text=preclean_text,
             intent=intent_result.intent,
             state=session.conversation_state,
+        )
+
+        # NEW STEP: refine intent using menu -> i want tacos vs i want beef tacos (item vs category)
+        refined_intent = self.intent_refiner.refine(
+            intent=intent_result.intent,
+            normalized_text=normalized_text,
+            state=session.conversation_state,
+        )
+
+        intent_result = IntentResult(
+            intent=refined_intent,
+            raw_text=intent_result.raw_text,
         )
 
         # 2️⃣ Route based on STATE + intent
