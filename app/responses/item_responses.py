@@ -9,6 +9,9 @@ def ask_for_side(context: ConversationContext, menu_repo: MenuRepository) -> str
     idx = context.current_side_group_index
     group = item.side_groups[idx]
 
+    verb = "choose"
+    group_name = normalize_group_name(group.name, verb)
+
     prefix = (
         "Please choose"
         if idx == 0
@@ -16,7 +19,7 @@ def ask_for_side(context: ConversationContext, menu_repo: MenuRepository) -> str
     )
 
     lines = [
-        f"{prefix} {group.name} for your {item.name}.",
+        f"{prefix} {group_name} for your {item.name}.",
         f"You can choose {group.min_selector} option(s):"
     ]
 
@@ -36,6 +39,9 @@ def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository) ->
     idx = context.current_modifier_group_index
     group = item.modifier_groups[idx]
 
+    verb = "add"
+    group_name = normalize_group_name(group.name, verb)
+
     prefix = (
         "Would you like to add"
         if idx == 0
@@ -43,7 +49,7 @@ def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository) ->
     )
 
     lines = [
-        f"{prefix} {group.name} to your {item.name}?",
+        f"{prefix} {group_name} to your {item.name}?",
         "You can choose one option or say no:"
     ]
 
@@ -82,3 +88,19 @@ def item_added_successfully(
         f"Your {item_name} has been added to the cart.\n"
         "Would you like to add anything else?"
     )
+
+
+def normalize_group_name(group_name: str, verb: str) -> str:
+    """
+    Ensures we don't duplicate verbs like:
+    'choose choose cheese'
+    """
+    normalized = group_name.strip()
+
+    lower = normalized.lower()
+    verb_lower = verb.lower()
+
+    if lower.startswith(verb_lower):
+        return normalized[len(verb):].lstrip()
+
+    return normalized
