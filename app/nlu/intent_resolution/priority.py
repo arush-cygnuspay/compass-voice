@@ -27,6 +27,7 @@ INTENT_PRIORITY: list[Intent] = [
     Intent.SHOW_CART,
     Intent.SHOW_TOTAL,
     Intent.SHOW_MENU,
+    Intent.CLEAR_CART,
 
     # ---- Cart Mutation ----
     Intent.ADD_ITEM,

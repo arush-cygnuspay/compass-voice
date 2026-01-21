@@ -7,6 +7,5 @@ def render_cart_summary(payload):
             f"- {item['quantity']} {item['name']} — {item['line_total']}"
         )
     lines.append(f"\nTotal: {payload['total']}")
-    lines.append("Would you like to proceed?")
 
     return "\n".join(lines)

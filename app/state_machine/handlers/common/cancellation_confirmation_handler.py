@@ -13,6 +13,8 @@ class CancellationConfirmationHandler(BaseHandler):
     """
 
     def handle(self, intent, context, user_text, session=None):
+        # NOTE:
+        # This handler MUST only be entered from CONFIRMING_ORDER → CLEAR_CART
 
         # 🛑 Safety guard: wrong state
         if session.conversation_state != ConversationState.CANCELLATION_CONFIRMATION:

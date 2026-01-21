@@ -2,19 +2,24 @@
 
 from typing import Dict, Set
 
+from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.route_result import RouteResult
-from app.nlu.intent_resolution.intent import Intent
 
 
 class StateRouter:
     """
     Authoritative router that decides whether a detected intent
     is allowed to execute in the current conversation state.
+
+    IMPORTANT:
+    - Cart utilities are overlays, NOT states
+    - SHOWING_* states do not exist
     """
 
     def __init__(self) -> None:
+        # Only TASK states belong here
         self._allowed_intents: Dict[ConversationState, Set[Intent]] = {
             ConversationState.GREETING: {
                 Intent.CONFIRM,
@@ -26,8 +31,6 @@ class StateRouter:
                 Intent.MODIFY_ITEM,
                 Intent.REMOVE_ITEM,
                 Intent.SHOW_MENU,
-                Intent.SHOW_CART,
-                Intent.SHOW_TOTAL,
                 Intent.END_ADDING,
                 Intent.START_ORDER,
             },
@@ -36,7 +39,7 @@ class StateRouter:
                 Intent.CONFIRM,
                 Intent.DENY,
                 Intent.CANCEL,
-                Intent.UNKNOWN,   # side matching happens here
+                Intent.UNKNOWN,
             },
 
             ConversationState.WAITING_FOR_MODIFIER: {
@@ -60,19 +63,6 @@ class StateRouter:
                 Intent.UNKNOWN,
             },
 
-            ConversationState.WAITING_FOR_PAYMENT: {
-                Intent.PAYMENT_DONE,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.CONFIRMING: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-            },
-
             ConversationState.MODIFYING_ITEM: {
                 Intent.CONFIRM,
                 Intent.DENY,
@@ -86,13 +76,9 @@ class StateRouter:
                 Intent.CANCEL,
             },
 
-            ConversationState.SHOWING_CART: {
+            ConversationState.CONFIRMING_ORDER: {
                 Intent.CONFIRM,
-                Intent.CANCEL,
-            },
-
-            ConversationState.SHOWING_TOTAL: {
-                Intent.CONFIRM,
+                Intent.DENY,
                 Intent.CANCEL,
             },
 
@@ -101,26 +87,27 @@ class StateRouter:
                 Intent.DENY,
             },
 
+            ConversationState.WAITING_FOR_PAYMENT: {
+                Intent.PAYMENT_DONE,
+                Intent.DENY,
+                Intent.CANCEL,
+                Intent.UNKNOWN,
+            },
+
             ConversationState.ERROR_RECOVERY: {
                 Intent.CONFIRM,
                 Intent.CANCEL,
                 Intent.UNKNOWN,
             },
-
-            ConversationState.CONFIRMING_ORDER: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-            },
-
         }
 
     def route(self, state: ConversationState, intent_result: IntentResult) -> RouteResult:
         intent = intent_result.intent
 
-        # 🔹 Read-only cart utilities (global, non-destructive)
+        # --------------------------------------------------
+        # CART OVERLAYS (GLOBAL, NON-TASK)
+        # --------------------------------------------------
         if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
-            # ❌ Hard block during payment - not allowed while we are doing payment
             if state == ConversationState.WAITING_FOR_PAYMENT:
                 return RouteResult(allowed=False)
 
@@ -129,38 +116,33 @@ class StateRouter:
                 handler_name="cart_handler",
             )
 
-        # 🔹 Destructive cart utility
+        # --------------------------------------------------
+        # CLEAR CART (DESTRUCTIVE, STRICT)
+        # --------------------------------------------------
         if intent == Intent.CLEAR_CART:
-
-            # ❌ Never allowed during payment
-            if state == ConversationState.WAITING_FOR_PAYMENT:
-                return RouteResult(allowed=False)
-
-            # ✅ Safe in IDLE
-            if state == ConversationState.IDLE:
+            if state in {
+                ConversationState.IDLE,
+                ConversationState.CONFIRMING_ORDER,
+            }:
                 return RouteResult(
                     allowed=True,
                     handler_name="cart_handler",
                 )
 
-            # ⚠️ Requires confirmation if order is being confirmed
-            if state == ConversationState.CONFIRMING_ORDER:
-                return RouteResult(
-                    allowed=True,
-                    handler_name="cart_handler",
-                )
-
-            # ❌ Block everywhere else
             return RouteResult(allowed=False)
 
-        # 🔹 ADD ITEM always starts add-item task
+        # --------------------------------------------------
+        # ADD ITEM (ENTRY POINT)
+        # --------------------------------------------------
         if state == ConversationState.IDLE and intent == Intent.ADD_ITEM:
             return RouteResult(
                 allowed=True,
                 handler_name="add_item_handler",
             )
 
-        # 🔹 END ADDING / START ORDER
+        # --------------------------------------------------
+        # END ADDING / START ORDER
+        # --------------------------------------------------
         if state == ConversationState.IDLE and intent in {
             Intent.END_ADDING,
             Intent.START_ORDER,
@@ -170,14 +152,18 @@ class StateRouter:
                 handler_name="start_order_handler",
             )
 
-        # 🔹 Payment flow
+        # --------------------------------------------------
+        # PAYMENT FLOW
+        # --------------------------------------------------
         if state == ConversationState.WAITING_FOR_PAYMENT:
             return RouteResult(
                 allowed=True,
                 handler_name="waiting_for_payment_handler",
             )
 
-        # 🔒 Default state-based routing
+        # --------------------------------------------------
+        # DEFAULT TASK-STATE ROUTING
+        # --------------------------------------------------
         allowed_intents = self._allowed_intents.get(state, set())
         if intent in allowed_intents:
             return RouteResult(
@@ -185,6 +171,9 @@ class StateRouter:
                 handler_name=f"{state.name.lower()}_handler",
             )
 
+        # --------------------------------------------------
+        # GLOBAL CANCEL (TASKS ONLY)
+        # --------------------------------------------------
         if intent == Intent.CANCEL and state != ConversationState.IDLE:
             return RouteResult(
                 allowed=True,

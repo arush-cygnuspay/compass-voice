@@ -74,6 +74,7 @@ def resolve_intent(text: str, state: ConversationState) -> IntentResult:
                 Intent.SHOW_CART,
                 Intent.SHOW_TOTAL,
                 Intent.ORDER_STATUS,
+                Intent.CLEAR_CART,
             }
         )
 

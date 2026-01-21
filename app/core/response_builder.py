@@ -17,11 +17,27 @@ class ResponseBuilder:
         self.menu_repo = menu_repo
 
     def build(
-            self,
-            response_key: str,
-            context: ConversationContext,
-            payload: Optional[dict] = None,
+        self,
+        response_key: str,
+        context: ConversationContext,
+        payload: Optional[dict] = None,
     ) -> str:
+
+        # -------------------------
+        # Meta / Safety / Errors
+        # -------------------------
+        if response_key == "intent_not_allowed":
+            return "Sorry, I can’t do that right now."
+
+        if response_key == "handler_not_implemented":
+            return "That feature isn’t available yet."
+
+        if response_key == "confirmation_state_error":
+            return "Something went wrong. Let’s start over."
+
+        # -------------------------
+        # Item confirmation & build flow
+        # -------------------------
         if response_key == "confirm_item":
             item = self.menu_repo.store.get_item(context.candidate_item_id)
             return f"You want a {item.name}, right? Please say yes or no."
@@ -47,30 +63,17 @@ class ResponseBuilder:
         if response_key == "finish_current_item_first":
             return "Let’s finish adding the current item first."
 
-        if response_key == "confirm_order_summary":
-            return render_cart_summary(payload)
-
-        if response_key == "order_completed":
-            return (
-                "Payment confirmed!\n"
-                "Your order will be ready in 25 minutes.\n"
-                "Thank you for calling the compass."
-            )
-
-        if response_key == "cart_empty":
-            return "Your cart is empty. Please add items before placing an order."
-
+        # -------------------------
+        # Cart display utilities
+        # -------------------------
         if response_key == "show_cart":
             return render_cart_summary(payload)
 
         if response_key == "show_total":
             return f"Your total so far is: {payload['total']}"
 
-        if response_key == "resume_previous_state":
-            return "Okay, continuing."
-
-        if response_key == "awaiting_ack":
-            return "Okay."
+        if response_key == "cart_empty":
+            return "Your cart is empty. Please add items before placing an order."
 
         if response_key == "confirm_clear_cart":
             return "Are you sure you want to clear your cart?"
@@ -78,11 +81,30 @@ class ResponseBuilder:
         if response_key == "cart_cleared":
             return "Your cart has been cleared."
 
+        # -------------------------
+        # Flow resume / acknowledgements
+        # -------------------------
+        if response_key == "resume_previous_state":
+            return "Okay, continuing."
+
+        if response_key == "awaiting_ack":
+            return "Okay."
+
+        if response_key == "resume_order_confirmation":
+            return "Okay, let’s continue with your order. Would you like to proceed?"
+
         if response_key == "order_cancelled":
             return "No problem. You can continue adding items."
 
-        if response_key == "cart_show":
-            return "Here is what you have in your cart."
+        # -------------------------
+        # Order & payment flow
+        # -------------------------
+        if response_key == "confirm_order_summary":
+            summary = render_cart_summary(payload)
+            return (
+                f"{summary}\n\n"
+                "Would you like to proceed?"
+            )
 
         if response_key == "payment_link_sent":
             return (
@@ -93,8 +115,15 @@ class ResponseBuilder:
         if response_key == "waiting_for_payment":
             return "I’m waiting for your payment confirmation."
 
-        if response_key == "repeat_order_confirmation":
-            return "Please say yes to proceed or no to cancel."
+        if response_key == "order_completed":
+            return (
+                "Payment confirmed!\n"
+                "Your order will be ready in 25 minutes.\n"
+                "Thank you for calling the compass."
+            )
 
-        # fallback
+        # -------------------------
+        # Fallback (last resort)
+        # -------------------------
         return "Sorry, I didn’t understand that."
+
