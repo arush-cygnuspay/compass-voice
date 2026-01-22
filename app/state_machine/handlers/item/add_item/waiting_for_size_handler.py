@@ -18,10 +18,11 @@ class _VariantChoice:
 
 class WaitingForSizeHandler(BaseHandler):
     """
-    Resolves size for the current size_target (item for now).
+    Resolves size for the current size_target (item).
 
-    Uses the SAME deterministic matcher as sides & modifiers
-    for consistency and ASR robustness.
+    Size selection is REQUIRED:
+    - DENY is not allowed
+    - Unknown input re-prompts with options
     """
 
     def __init__(self, menu_repo: MenuRepository) -> None:
@@ -35,7 +36,9 @@ class WaitingForSizeHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
+        # -------------------------
         # Global cancel
+        # -------------------------
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
@@ -43,8 +46,10 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="action_cancelled",
             )
 
+        # -------------------------
         # Defensive guard
-        if not context.size_target or context.size_target["type"] != "item":
+        # -------------------------
+        if not context.size_target or context.size_target.get("type") != "item":
             return HandlerResult(
                 next_state=ConversationState.ERROR_RECOVERY,
                 response_key="size_target_missing",
@@ -57,9 +62,18 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        # -------------------------------------------------
-        # ADAPT VARIANTS → MATCHABLE CHOICES
-        # -------------------------------------------------
+        # -------------------------
+        # DENY is NOT allowed for size
+        # -------------------------
+        if intent == Intent.DENY:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_SIZE,
+                response_key="required_size_cannot_skip",
+            )
+
+        # -------------------------
+        # Build matchable choices
+        # -------------------------
         variant_choices = [
             _VariantChoice(
                 variant_id=v.variant_id,
@@ -76,15 +90,15 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="repeat_size_options",
             )
 
-        # -------------------------------------------------
-        # COMMIT SIZE
-        # -------------------------------------------------
+        # -------------------------
+        # Commit size
+        # -------------------------
         context.selected_variant_id = matched_variant.variant_id
-        context.size_target = None  # 🔑 reset size mode
+        context.size_target = None
 
-        # -------------------------------------------------
-        # NEXT STEP
-        # -------------------------------------------------
+        # -------------------------
+        # Next step
+        # -------------------------
         if item.side_groups:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
@@ -97,7 +111,6 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="ask_for_modifier",
             )
 
-        # SIZE-ONLY ITEM → FINALIZE
         return HandlerResult(
             next_state=ConversationState.IDLE,
             response_key="item_added_successfully",
@@ -118,4 +131,5 @@ class WaitingForSizeHandler(BaseHandler):
             },
             reset_context=True,
         )
+
 

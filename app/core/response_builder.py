@@ -50,8 +50,23 @@ class ResponseBuilder:
         if response_key == "ask_for_modifier":
             return ask_for_modifier(context, self.menu_repo)
 
+        # -------------------------
+        # Required group enforcement
+        # -------------------------
+        if response_key == "required_side_cannot_skip":
+            return required_side_cannot_skip(context, self.menu_repo)
+
+        if response_key == "required_modifier_cannot_skip":
+            return required_modifier_cannot_skip(context, self.menu_repo)
+
         if response_key == "ask_for_size":
             return ask_for_size(context, self.menu_repo)
+
+        if response_key == "required_size_cannot_skip":
+            return required_size_cannot_skip(context, self.menu_repo)
+
+        if response_key == "repeat_size_options":
+            return required_size_cannot_skip(context, self.menu_repo)
 
         if response_key == "ask_for_quantity":
             return "How many would you like?"
@@ -146,3 +161,4 @@ class ResponseBuilder:
         # Fallback (last resort)
         # -------------------------
         return "Sorry, I didn’t understand that."
+

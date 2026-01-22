@@ -4,41 +4,31 @@ from typing import Optional
 from app.nlu.intent_patterns.common import *
 from app.nlu.intent_resolution.intent import Intent
 
+# app/nlu/intent_resolution/yes_no.py
 
 def match_yes_no(text: str) -> Optional[Intent]:
     """
-    Resolves YES / NO confirmation intent.
+    Resolve yes / no / cancel intent.
 
-    Used in:
-    - order confirmation
-    - payment confirmation
-    - generic confirm prompts
-
-    Priority:
-    - NO > YES
+    Semantic priority:
+    1. CANCEL  → abort current task
+    2. DENY    → refuse current option
+    3. CONFIRM → accept
     """
 
-    # -------------------------
-    # NO / DENY (higher priority)
-    # -------------------------
-    if (
-        NO_STRONG_PAT.search(text)
-        or NO_CANCEL_PAT.search(text)
-        or NO_NEGATION_PAT.search(text)
-        or NO_REVERSAL_PAT.search(text)
-        or NO_DEFER_PAT.search(text)
-    ):
+    if NO_CANCEL_PAT.search(text):
+        return Intent.CANCEL
+
+    if NO_STRONG_PAT.search(text):
         return Intent.DENY
 
-    # -------------------------
-    # YES / CONFIRM
-    # -------------------------
-    if (
-        YES_STRONG_PAT.search(text)
-        or YES_ACTION_PAT.search(text)
-        or YES_SOFT_PAT.search(text)
-    ):
+    if NO_NEGATION_PAT.search(text):
+        return Intent.DENY
+
+    if YES_STRONG_PAT.search(text):
         return Intent.CONFIRM
 
     return None
+
+
 

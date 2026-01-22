@@ -72,6 +72,70 @@ def ask_for_size(context: ConversationContext, menu_repo: MenuRepository) -> str
 
     return "\n".join(lines)
 
+def required_side_cannot_skip(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+) -> str:
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.side_groups[context.current_side_group_index]
+
+    lines = [
+        f"You must choose {group.min_selector} option to continue.",
+        f"{group.name} is required for your {item.name}.",
+        "Please select one of the following options:",
+    ]
+
+    for i, choice in enumerate(group.choices, 1):
+        price = (
+            f" (+${choice.pricing.price_cents / 100:.2f})"
+            if choice.pricing.price_cents
+            else ""
+        )
+        lines.append(f"{i}. {choice.name}{price}")
+
+    return "\n".join(lines)
+
+def required_modifier_cannot_skip(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+) -> str:
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.modifier_groups[context.current_modifier_group_index]
+
+    lines = [
+        f"You must select an option to proceed.",
+        f"{group.name} is required for your {item.name}.",
+        "Please choose one of the following:",
+    ]
+
+    for i, choice in enumerate(group.choices, 1):
+        price = (
+            f" (+${choice.price_cents / 100:.2f})"
+            if choice.price_cents
+            else "(+$0.00)"
+        )
+        lines.append(f"{i}. {choice.name}{price}")
+
+    return "\n".join(lines)
+
+def required_size_cannot_skip(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+) -> str:
+    item = menu_repo.store.get_item(context.current_item_id)
+
+    lines = [
+        "You must choose a valid size option to continue.",
+        f"Please select one of the following sizes for your {item.name}:",
+    ]
+
+    for v in item.pricing.variants:
+        lines.append(
+            f"- {v.label} (${v.price_cents / 100:.2f})"
+        )
+
+    return "\n".join(lines)
+
 def item_added_successfully(
     payload: dict,
 ) -> str:

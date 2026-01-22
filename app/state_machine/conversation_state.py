@@ -33,3 +33,4 @@ class ConversationState(Enum):
 
     CANCELLATION_CONFIRMATION = auto()# Asking user to cancel current flow
     ERROR_RECOVERY = auto()            # Fallback / repair state
+
