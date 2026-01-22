@@ -59,3 +59,24 @@ def menu_ambiguity_response(payload: dict) -> str:
 
 def menu_not_found_response() -> str:
     return "Sorry, I couldn’t find that on the menu."
+
+
+def show_item_price_response(payload: dict) -> str:
+    name = payload["item_name"]
+    pricing = payload["pricing"]
+
+    if pricing.mode == "fixed":
+        return f"{name} costs ${pricing.price_cents / 100:.2f}."
+
+    if pricing.mode == "unit":
+        return f"{name} costs ${pricing.price_cents / 100:.2f} per unit."
+
+    if pricing.mode == "variant":
+        lines = [f"{name} is available in the following options:"]
+        for v in pricing.variants:
+            lines.append(
+                f"- {v.label}: ${v.price_cents / 100:.2f}"
+            )
+        return "\n".join(lines)
+
+    return "Price information is unavailable."

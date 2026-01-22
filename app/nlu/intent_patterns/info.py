@@ -113,5 +113,18 @@ WHICH_CATEGORY_PAT = re.compile(
 )
 
 
+ASK_PRICE_PAT = re.compile(
+    r"""
+    \b(
+        how\s+much\s+(?:is|are|does)\b
+        | what'?s\s+the\s+price\s+of\b
+        | price\s+of\b
+        | how\s+much\s+does\b
+        | cost\s+of\b
+    )
+    """,
+    re.I | re.X
+)
+
 
 

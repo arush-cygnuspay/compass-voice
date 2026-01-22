@@ -28,3 +28,9 @@ def match_ask_menu_info(text: str) -> set[Intent]:
         return {Intent.ASK_MENU_INFO}
 
     return set()
+
+
+def match_price_intent(text: str) -> set[Intent]:
+    if ASK_PRICE_PAT.search(text):
+        return {Intent.ASK_PRICE}
+    return set()

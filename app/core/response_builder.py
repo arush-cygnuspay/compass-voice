@@ -80,6 +80,12 @@ class ResponseBuilder:
         if response_key == "menu_not_found":
             return menu_not_found_response()
 
+        if response_key == "show_item_price":
+            return show_item_price_response(payload)
+
+        if response_key == "price_not_found":
+            return "Sorry, I couldn’t find pricing for that item."
+
         # -------------------------
         # Cart display utilities
         # -------------------------

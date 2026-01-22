@@ -129,6 +129,18 @@ class StateRouter:
             )
 
         # --------------------------------------------------
+        # ASK PRICE OF AN ITEM
+        # --------------------------------------------------
+        if intent == Intent.ASK_PRICE:
+            if state == ConversationState.WAITING_FOR_PAYMENT:
+                return RouteResult(allowed=False)
+
+            return RouteResult(
+                allowed=True,
+                handler_name="ask_price_handler",
+            )
+
+        # --------------------------------------------------
         # CLEAR CART (DESTRUCTIVE, STRICT)
         # --------------------------------------------------
         if intent == Intent.CLEAR_CART:

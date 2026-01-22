@@ -19,7 +19,7 @@ class QueryNormalizationPipeline:
     def normalize(self, text: str, intent: Intent, state: ConversationState) -> str:
 
         # 🔹 Menu info queries ALWAYS win
-        if intent == Intent.ASK_MENU_INFO:
+        if intent in {Intent.ASK_MENU_INFO, Intent.ASK_PRICE}:
             return self.menu_info_normalizer.normalize(text, intent)
 
         # 🔹 Item resolution

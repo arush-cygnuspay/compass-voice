@@ -12,6 +12,7 @@ from app.session.session import Session
 from app.state_machine.handlers.cart.cart_handlers import CartHandler, ShowingCartHandler, ShowingTotalHandler
 from app.state_machine.handlers.common.cancellation_confirmation_handler import CancellationConfirmationHandler
 from app.state_machine.handlers.info.ask_menu_info_handler import AskMenuInfoHandler
+from app.state_machine.handlers.info.ask_price_handler import AskPriceHandler
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
@@ -67,6 +68,7 @@ class TurnEngine:
 
             # Info Handlers
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
+            "ask_price_handler": AskPriceHandler(menu_repo),
         }
 
     def process_turn(

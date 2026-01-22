@@ -67,6 +67,10 @@ class IntentRefiner:
         }:
             return intent
 
+        # Price inquiries are final and read-only
+        if intent == Intent.ASK_PRICE:
+            return Intent.ASK_PRICE
+
         # -------------------------------------------------
         # Resolve menu dominance
         # -------------------------------------------------
