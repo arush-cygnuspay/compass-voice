@@ -126,5 +126,9 @@ ASK_PRICE_PAT = re.compile(
     re.I | re.X
 )
 
+CART_GUARD_PAT = re.compile(
+    r"\b(cart|order|total|bill|amount)\b",
+    re.I
+)
 
 

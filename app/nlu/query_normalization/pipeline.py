@@ -16,10 +16,24 @@ class QueryNormalizationPipeline:
         self.choice_normalizer = ChoiceQueryNormalizer()
         self.menu_info_normalizer = MenuInfoQueryNormalizer()
 
+    # app/nlu/query_normalization/query_normalizer_pipeline.py
+
     def normalize(self, text: str, intent: Intent, state: ConversationState) -> str:
 
-        # 🔹 Menu info queries ALWAYS win
-        if intent in {Intent.ASK_MENU_INFO, Intent.ASK_PRICE}:
+        # 🚫 Cart overlays must NEVER be menu-normalized
+        if intent in {
+            Intent.SHOW_CART,
+            Intent.SHOW_TOTAL,
+            Intent.CLEAR_CART,
+        }:
+            return text  # raw, untouched
+
+        # 🔹 Price inquiry (item-scoped)
+        if intent == Intent.ASK_PRICE:
+            return self.item_normalizer.normalize(text, intent)
+
+        # 🔹 Menu info queries
+        if intent == Intent.ASK_MENU_INFO:
             return self.menu_info_normalizer.normalize(text, intent)
 
         # 🔹 Item resolution
@@ -35,3 +49,4 @@ class QueryNormalizationPipeline:
             return self.choice_normalizer.normalize(text, intent)
 
         return text
+

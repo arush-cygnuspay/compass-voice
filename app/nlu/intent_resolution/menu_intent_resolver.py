@@ -6,8 +6,12 @@ from app.nlu.intent_patterns.info import *
 def match_ask_menu_info(text: str) -> set[Intent]:
     """
     Detects informational menu queries (item OR category).
-    Does NOT decide which one — only that this is ASK, not ADD.
+    MUST NOT trigger on cart/order queries.
     """
+
+    # 🚫 HARD GUARD: cart/order language
+    if CART_GUARD_PAT.search(text):
+        return set()
 
     if ASK_CATEGORY_LIST_PAT.search(text):
         return {Intent.ASK_MENU_INFO}
