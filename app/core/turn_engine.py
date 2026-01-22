@@ -7,6 +7,7 @@ from app.nlu.intent_refinement.intent_refiner import IntentRefiner
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.query_normalization.base import basic_cleanup
+from app.nlu.query_normalization.noise_cleaner import clean_stt_noise
 from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
 from app.session.session import Session
 from app.state_machine.handlers.cart.cart_handlers import CartHandler, ShowingCartHandler, ShowingTotalHandler
@@ -77,17 +78,21 @@ class TurnEngine:
             user_text: str,
     ) -> TurnOutput:
 
+        #  Basic cleanup (unicode, punctuation)
         preclean_text = basic_cleanup(user_text)
+
+        # STT noise cleanup (NEW)
+        stt_cleaned_text = clean_stt_noise(preclean_text)
 
         # 1️⃣ Pure NLU
         intent_result = resolve_intent(
-            preclean_text,
+            stt_cleaned_text,
             state=session.conversation_state
         )
 
         # 🔥 NORMALIZE ONCE, HERE
         normalized_text = self.normalizer.normalize(
-            text=preclean_text,
+            text=stt_cleaned_text,
             intent=intent_result.intent,
             state=session.conversation_state,
         )
