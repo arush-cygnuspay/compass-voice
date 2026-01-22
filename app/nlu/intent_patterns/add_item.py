@@ -111,6 +111,24 @@ CHOICE_FILLER_PAT = re.compile(
     re.I | re.X,
 )
 
+CHOICE_NOISE_PAT = re.compile(
+    r"""
+    \b(
+        yeah |
+        yep |
+        yup |
+        yupp |
+        yes |
+        no |
+        nah |
+        nope |
+        okay |
+        ok
+    )\b
+    """,
+    re.I | re.X,
+)
+
 # def strip_fillers(text: str) -> str:
 #     prev = None
 #     while prev != text:
