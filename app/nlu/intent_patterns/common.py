@@ -73,6 +73,7 @@ NO_STRONG_PAT = re.compile(
     re.I | re.X
 )
 
+
 NO_CANCEL_PAT = re.compile(
     r"""
     ^(
@@ -96,7 +97,7 @@ NO_NEGATION_PAT = re.compile(
         | do\s+not
         | no\s+need
         | no\s+thanks?
-        | i\s+don'?t\s+(?:want|need)\b
+        | i\s+don'?t\s+(?:want|need)
         | i'?d\s+rather\s+not
         | not\s+really
         | i\s+don'?t\s+think\s+so
@@ -104,6 +105,7 @@ NO_NEGATION_PAT = re.compile(
     """,
     re.I | re.X
 )
+
 
 NO_REVERSAL_PAT = re.compile(
     r"""

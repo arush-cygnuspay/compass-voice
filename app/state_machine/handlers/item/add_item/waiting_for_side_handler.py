@@ -26,7 +26,9 @@ class WaitingForSideHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
+        # -------------------------
         # Global cancel
+        # -------------------------
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
@@ -43,9 +45,9 @@ class WaitingForSideHandler(BaseHandler):
 
         idx = context.current_side_group_index
 
-        # -------------------------------------------------
-        # END OF SIDE GROUPS
-        # -------------------------------------------------
+        # -------------------------
+        # End of side groups
+        # -------------------------
         if idx >= len(item.side_groups):
             if item.modifier_groups:
                 return HandlerResult(
@@ -66,9 +68,28 @@ class WaitingForSideHandler(BaseHandler):
 
         group = item.side_groups[idx]
 
-        # -------------------------------------------------
-        # MATCH SIDE
-        # -------------------------------------------------
+        # -------------------------
+        # DENY on REQUIRED side
+        # -------------------------
+        if intent == Intent.DENY and group.is_required:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_SIDE,
+                response_key="required_side_cannot_skip",
+            )
+
+        # -------------------------
+        # Skip OPTIONAL side
+        # -------------------------
+        if intent == Intent.DENY and not group.is_required:
+            context.current_side_group_index += 1
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_SIDE,
+                response_key="ask_for_side",
+            )
+
+        # -------------------------
+        # Match side choice
+        # -------------------------
         matched_choice = match_choice(user_text, group.choices)
 
         if not matched_choice:
@@ -77,28 +98,25 @@ class WaitingForSideHandler(BaseHandler):
                 response_key="repeat_side_options",
             )
 
-        # -------------------------------------------------
-        # COMMIT
-        # -------------------------------------------------
+        # -------------------------
+        # Commit side
+        # -------------------------
         context.selected_side_groups.setdefault(group.group_id, []).append(
             matched_choice.item_id
         )
 
-        next_index = idx + 1
+        context.current_side_group_index += 1
 
-        # -------------------------------------------------
-        # ADVANCE OR TRANSITION
-        # -------------------------------------------------
-        if next_index < len(item.side_groups):
-            context.current_side_group_index = next_index
+        # ---------------------------------
+        # Decide next step AFTER side commit
+        # ---------------------------------
+        if context.current_side_group_index < len(item.side_groups):
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
                 response_key="ask_for_side",
             )
 
-        # side groups finished
-        context.current_side_group_index = next_index
-
+        # Side groups finished → move on
         if item.modifier_groups:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
@@ -115,4 +133,5 @@ class WaitingForSideHandler(BaseHandler):
             next_state=ConversationState.WAITING_FOR_QUANTITY,
             response_key="ask_for_quantity",
         )
+
 

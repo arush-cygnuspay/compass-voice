@@ -26,7 +26,9 @@ class WaitingForModifierHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
+        # -------------------------
         # Global cancel
+        # -------------------------
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
@@ -44,22 +46,30 @@ class WaitingForModifierHandler(BaseHandler):
         idx = context.current_modifier_group_index
         total = len(item.modifier_groups)
 
-        # -------------------------------------------------
-        # NO MODIFIER GROUPS LEFT → FINALIZE ITEM
-        # -------------------------------------------------
+        # -------------------------
+        # No modifier groups left
+        # -------------------------
         if idx >= total:
             return self._finalize_item(context, item)
 
         group = item.modifier_groups[idx]
 
-        # -------------------------------------------------
-        # USER SKIPS OPTIONAL MODIFIER
-        # -------------------------------------------------
-        if intent == Intent.DENY:
-            next_index = idx + 1
-            context.current_modifier_group_index = next_index
+        # -------------------------
+        # DENY on REQUIRED modifier
+        # -------------------------
+        if intent == Intent.DENY and group.is_required:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_MODIFIER,
+                response_key="required_modifier_cannot_skip",
+            )
 
-            if next_index >= total:
+        # -------------------------
+        # Skip OPTIONAL modifier
+        # -------------------------
+        if intent == Intent.DENY and not group.is_required:
+            context.current_modifier_group_index += 1
+
+            if context.current_modifier_group_index >= total:
                 return self._finalize_item(context, item)
 
             return HandlerResult(
@@ -67,9 +77,9 @@ class WaitingForModifierHandler(BaseHandler):
                 response_key="ask_for_modifier",
             )
 
-        # -------------------------------------------------
-        # MATCH MODIFIER
-        # -------------------------------------------------
+        # -------------------------
+        # Match modifier choice
+        # -------------------------
         matched_choice = match_choice(user_text, group.choices)
 
         if not matched_choice:
@@ -78,17 +88,16 @@ class WaitingForModifierHandler(BaseHandler):
                 response_key="repeat_modifier_options",
             )
 
-        # -------------------------------------------------
-        # COMMIT MODIFIER
-        # -------------------------------------------------
+        # -------------------------
+        # Commit modifier
+        # -------------------------
         context.selected_modifier_groups.setdefault(group.group_id, []).append(
             matched_choice.modifier_id
         )
 
-        next_index = idx + 1
-        context.current_modifier_group_index = next_index
+        context.current_modifier_group_index += 1
 
-        if next_index >= total:
+        if context.current_modifier_group_index >= total:
             return self._finalize_item(context, item)
 
         return HandlerResult(
@@ -96,14 +105,7 @@ class WaitingForModifierHandler(BaseHandler):
             response_key="ask_for_modifier",
         )
 
-    # -------------------------------------------------
-    # FINALIZATION (single authority)
-    # -------------------------------------------------
-    def _finalize_item(
-        self,
-        context: ConversationContext,
-        item,
-    ) -> HandlerResult:
+    def _finalize_item(self, context: ConversationContext, item) -> HandlerResult:
         return HandlerResult(
             next_state=ConversationState.IDLE,
             response_key="item_added_successfully",
