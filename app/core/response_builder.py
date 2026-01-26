@@ -63,10 +63,22 @@ class ResponseBuilder:
         # Repeat / clarification prompts
         # -------------------------
         if response_key == "repeat_side_options":
-            return ask_for_side(context, self.menu_repo)
+            return repeat_side_options(context, self.menu_repo, payload)
+
+        if response_key == "list_side_options":
+            return list_side_options(context, self.menu_repo, payload)
+
+        if response_key == "clarify_side_choice":
+            return clarify_side_choice(context, self.menu_repo, payload)
 
         if response_key == "repeat_modifier_options":
-            return ask_for_modifier(context, self.menu_repo)
+            return repeat_modifier_options(context, self.menu_repo, payload)
+
+        if response_key == "list_modifier_options":
+            return list_modifier_options(context, self.menu_repo, payload)
+
+        if response_key == "clarify_modifier_choice":
+            return clarify_modifier_choice(context, self.menu_repo, payload)
 
         if response_key == "ask_for_size":
             return ask_for_size(context, self.menu_repo)
@@ -213,4 +225,3 @@ class ResponseBuilder:
         # Fallback (last resort)
         # -------------------------
         return "Sorry, I didn’t understand that."
-
