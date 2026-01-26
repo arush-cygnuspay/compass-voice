@@ -19,6 +19,8 @@ from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler impor
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
 from app.state_machine.handlers.item.add_item.waiting_for_size_handler import WaitingForSizeHandler
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
+from app.state_machine.handlers.item.remove_item_handler import RemoveItemHandler
+from app.state_machine.handlers.item.removing_item_handler import RemovingItemHandler
 from app.state_machine.handlers.order.confirm_order_handler import ConfirmOrderHandler
 from app.state_machine.handlers.order.start_order_handler import StartOrderHandler
 from app.state_machine.handlers.payment.waiting_for_payment_handler import WaitingForPaymentHandler
@@ -56,6 +58,8 @@ class TurnEngine:
             "confirming_handler": ConfirmingHandler(menu_repo),
             "waiting_for_modifier_handler": WaitingForModifierHandler(menu_repo),
             "waiting_for_size_handler": WaitingForSizeHandler(menu_repo),
+            "remove_item_handler": RemoveItemHandler(menu_repo),
+            "removing_item_handler": RemovingItemHandler(),
             "start_order_handler": StartOrderHandler(self.cart_summary_builder),
             "confirming_order_handler": ConfirmOrderHandler(),
             "waiting_for_payment_handler": WaitingForPaymentHandler(),
@@ -172,6 +176,15 @@ class TurnEngine:
 
         elif command_type == "CLEAR_CART":
             session.cart.clear()
+
+        elif command_type == "REMOVE_ITEM_FROM_CART":
+            payload = command["payload"]
+            cart_item_id = payload["cart_item_id"]
+            removed = session.cart.remove_item(cart_item_id)
+            if not removed:
+                # This should rarely happen as validation happens in handler
+                # But log it for debugging
+                pass
 
         else:
             raise ValueError(f"Unknown command type: {command_type}")

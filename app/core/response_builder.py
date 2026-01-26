@@ -132,6 +132,46 @@ class ResponseBuilder:
             return "Your cart has been cleared."
 
         # -------------------------
+        # Remove item flow
+        # -------------------------
+        if response_key == "cart_is_empty":
+            return "Your cart is empty. There's nothing to remove."
+
+        if response_key == "item_not_found_in_cart":
+            return "I couldn't find that item in your cart."
+
+        if response_key == "confirm_remove_item":
+            item_name = payload.get("item_name", "that item")
+            quantity = payload.get("quantity", 1)
+            if quantity > 1:
+                return (
+                    f"I found {quantity} {item_name}s in your cart. "
+                    "Should I remove them? Please say yes or no."
+                )
+            return (
+                f"You have {item_name} in your cart. "
+                "Should I remove it? Please say yes or no."
+            )
+
+        if response_key == "repeat_remove_confirmation":
+            item_name = context.current_item_name or "that item"
+            return (
+                f"Should I remove {item_name} from your cart? "
+                "Please say yes or no."
+            )
+
+        if response_key == "item_removal_cancelled":
+            item_name = context.current_item_name or "that item"
+            return f"Okay, keeping {item_name} in your cart."
+
+        if response_key == "item_removed_successfully":
+            item_name = payload.get("item_name", "the item")
+            return (
+                f"I've removed {item_name} from your cart. "
+                "Would you like to remove anything else?"
+            )
+
+        # -------------------------
         # Flow resume / acknowledgements
         # -------------------------
         if response_key == "resume_previous_state":

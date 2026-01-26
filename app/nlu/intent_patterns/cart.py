@@ -85,4 +85,3 @@ CLEAR_CART_PAT = re.compile(
     """,
     re.I | re.X
 )
-

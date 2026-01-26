@@ -1,7 +1,7 @@
 # app/nlu/query_normalization/choice_query_normalizer.py
 import re
 
-from app.nlu.intent_patterns.add_item import CHOICE_FILLER_PAT
+from app.nlu.intent_patterns.add_item import CHOICE_FILLER_PAT, CHOICE_NOISE_PAT
 from app.nlu.intent_patterns.noise import DISCOURSE_NOISE_PAT
 from app.nlu.query_normalization.base import basic_cleanup
 from app.nlu.query_normalization.query_normalizer import QueryNormalizer

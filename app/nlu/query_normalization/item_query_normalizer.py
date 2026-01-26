@@ -5,13 +5,14 @@ from app.nlu.intent_patterns.add_item import (
     FILLER_PAT,
     ITEM_SEPARATOR_PAT,
 )
+from app.nlu.intent_patterns.remove_item import REMOVE_FILLER_PAT
 from app.nlu.query_normalization.query_normalizer import QueryNormalizer
 from app.nlu.intent_resolution.intent import Intent
 
 class ItemQueryNormalizer(QueryNormalizer):
     """
     Normalizes text when resolving a MENU ITEM.
-    Used in IDLE / ADD_ITEM phase.
+    Used in IDLE / ADD_ITEM / REMOVE_ITEM phase.
     """
 
     def normalize(self, text: str, intent: Intent) -> str:
@@ -19,6 +20,9 @@ class ItemQueryNormalizer(QueryNormalizer):
 
         # Remove add-intent fillers
         cleaned = FILLER_PAT.sub("", cleaned)
+
+        # Remove remove-intent fillers
+        cleaned = REMOVE_FILLER_PAT.sub("", cleaned)
 
         # Normalize multi-item separators
         cleaned = ITEM_SEPARATOR_PAT.sub(" ", cleaned)
