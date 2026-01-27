@@ -1,4 +1,6 @@
 # app/state_machine/handlers/item/add_item/waiting_for_modifier_handler.py
+from app.nlu.intent_resolution.choice_signal_resolver import resolve_choice_signal
+from app.nlu.intent_resolution.choice_signals import ChoiceSignal
 from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
@@ -7,6 +9,7 @@ from app.state_machine.context import ConversationContext
 from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
 from app.utils.choice_matching import match_choice
+from app.utils.text_utils import split_candidates
 from app.utils.top_k_choices import get_top_k_choices
 import re
 
@@ -22,16 +25,18 @@ class WaitingForModifierHandler(BaseHandler):
 
     def handle(
         self,
-        intent: Intent,
+        intent: Intent,  # ignored in locked state
         context: ConversationContext,
         user_text: str,
         session: Session = None,
     ) -> HandlerResult:
 
+        signal = resolve_choice_signal(user_text)
+
         # -------------------------
-        # Global cancel
+        # CANCEL (hard exit)
         # -------------------------
-        if intent == Intent.CANCEL:
+        if signal == ChoiceSignal.CANCEL:
             context.reset()
             return HandlerResult(
                 next_state=ConversationState.IDLE,
@@ -57,9 +62,9 @@ class WaitingForModifierHandler(BaseHandler):
         group = item.modifier_groups[idx]
 
         # -------------------------
-        # Options request
+        # ASK OPTIONS
         # -------------------------
-        if self._wants_options(user_text):
+        if signal == ChoiceSignal.ASK_OPTIONS:
             top_choices = [c.name for c in get_top_k_choices(group.choices, k=3)]
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
@@ -71,15 +76,9 @@ class WaitingForModifierHandler(BaseHandler):
             )
 
         # -------------------------
-        # Treat negative phrases as deny intent
+        # DENY / SKIP
         # -------------------------
-        if self._is_negative(user_text):
-            intent = Intent.DENY
-
-        # -------------------------
-        # Skip current modifier group on DENY (no/none/that's all) for optional
-        # -------------------------
-        if intent == Intent.DENY:
+        if signal == ChoiceSignal.DENY:
             if group.is_required:
                 top_choices = [c.name for c in get_top_k_choices(group.choices, k=3)]
                 return HandlerResult(
@@ -90,16 +89,18 @@ class WaitingForModifierHandler(BaseHandler):
                         "group_name": group.name,
                     },
                 )
+
+            # Skip remaining optional modifiers
             context.current_modifier_group_index = total
             return self._finalize_item(context, item)
 
         # -------------------------
-        # Open-capture modifier choices (can be multiple)
+        # OPEN CAPTURE (choices)
         # -------------------------
         matched_ids: list[str] = []
         invalid_terms: list[str] = []
 
-        for chunk in self._split_candidates(user_text):
+        for chunk in split_candidates(user_text):
             choice = match_choice(chunk, group.choices)
             if choice:
                 if choice.modifier_id not in matched_ids:
@@ -118,6 +119,7 @@ class WaitingForModifierHandler(BaseHandler):
                         "group_name": group.name,
                     },
                 )
+
             context.selected_modifier_groups.setdefault(group.group_id, []).extend(
                 matched_ids
             )
@@ -133,6 +135,7 @@ class WaitingForModifierHandler(BaseHandler):
                         "group_name": group.name,
                     },
                 )
+
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="repeat_modifier_options",
@@ -154,7 +157,9 @@ class WaitingForModifierHandler(BaseHandler):
                 },
             )
 
-        # Advance after processing current group
+        # -------------------------
+        # Advance to next modifier group
+        # -------------------------
         context.current_modifier_group_index += 1
 
         if context.current_modifier_group_index >= total:
@@ -186,19 +191,3 @@ class WaitingForModifierHandler(BaseHandler):
             },
             reset_context=True,
         )
-
-    def _split_candidates(self, text: str) -> list[str]:
-        if not text:
-            return []
-        parts = re.split(r",| and | & |\+", text, flags=re.IGNORECASE)
-        return [p.strip() for p in parts if p.strip()]
-
-    def _wants_options(self, text: str) -> bool:
-        if not text:
-            return False
-        return bool(re.search(r"\b(option|options|choices?)\b", text, flags=re.IGNORECASE))
-
-    def _is_negative(self, text: str) -> bool:
-        if not text:
-            return False
-        return bool(re.search(r"\b(no|nope|nopes|none|nothing|no modifications|no mods|skip|done|that's it|thats it|nothing else)\b", text, flags=re.IGNORECASE))
