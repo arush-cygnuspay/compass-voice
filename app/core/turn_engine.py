@@ -4,12 +4,15 @@ from typing import Optional
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.nlu.intent_refinement.intent_refiner import IntentRefiner
+from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.query_normalization.base import basic_cleanup
 from app.nlu.query_normalization.noise_cleaner import clean_stt_noise
 from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
 from app.session.session import Session
+from app.state_machine.conversation_state import ConversationState
+from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.cart.cart_handlers import CartHandler, ShowingCartHandler, ShowingTotalHandler
 from app.state_machine.handlers.common.cancellation_confirmation_handler import CancellationConfirmationHandler
 from app.state_machine.handlers.info.ask_menu_info_handler import AskMenuInfoHandler
@@ -49,6 +52,14 @@ class TurnEngine:
         self.normalizer = QueryNormalizationPipeline()
         self.intent_refiner = IntentRefiner(menu_repo)
 
+        self.LOCKED_STATES = {
+                ConversationState.WAITING_FOR_SIDE,
+                ConversationState.WAITING_FOR_MODIFIER,
+                ConversationState.WAITING_FOR_SIZE,
+                ConversationState.WAITING_FOR_QUANTITY,
+            }
+
+
         # Explicit handler registry
         self.handlers = {
             "add_item_handler": AddItemHandler(
@@ -87,6 +98,28 @@ class TurnEngine:
 
         # STT noise cleanup (NEW)
         stt_cleaned_text = clean_stt_noise(preclean_text)
+
+        if session.conversation_state in self.LOCKED_STATES:
+            handler = self.handlers.get(
+                f"{session.conversation_state.name.lower()}_handler"
+            )
+
+            result = handler.handle(
+                intent=Intent.UNKNOWN,  # ignore global intent
+                context=session.conversation_context,
+                user_text=self.normalizer.normalize(
+                    text=stt_cleaned_text,
+                    intent=Intent.UNKNOWN,
+                    state=session.conversation_state,
+                ),
+                session=session,
+            )
+
+            self._apply_result(session, result)
+            return TurnOutput(
+                response_key=result.response_key,
+                response_payload=result.response_payload,
+            )
 
         # 1️⃣ Pure NLU
         intent_result = resolve_intent(
@@ -188,4 +221,16 @@ class TurnEngine:
 
         else:
             raise ValueError(f"Unknown command type: {command_type}")
+
+    def _apply_result(self, session: Session, result: HandlerResult) -> None:
+        if result.command:
+            self._apply_command(session, result.command)
+
+        if result.reset_context:
+            session.conversation_context.reset()
+
+        session.conversation_state = result.next_state
+        session.last_response_key = result.response_key
+        session.turn_count += 1
+
 
