@@ -36,23 +36,11 @@ class WaitingForSizeHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
-        # -------------------------
-        # Global cancel
-        # -------------------------
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="action_cancelled",
-            )
-
-        # -------------------------
-        # Defensive guard
-        # -------------------------
-        if not context.size_target or context.size_target.get("type") != "item":
-            return HandlerResult(
-                next_state=ConversationState.ERROR_RECOVERY,
-                response_key="size_target_missing",
             )
 
         item = self.menu_repo.get_item(context.current_item_id)
@@ -62,43 +50,28 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        # -------------------------
-        # DENY is NOT allowed for size
-        # -------------------------
         if intent == Intent.DENY:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIZE,
                 response_key="required_size_cannot_skip",
             )
 
-        # -------------------------
-        # Build matchable choices
-        # -------------------------
         variant_choices = [
-            _VariantChoice(
-                variant_id=v.variant_id,
-                name=v.label,
-            )
+            _VariantChoice(v.variant_id, v.label)
             for v in item.pricing.variants
         ]
 
-        matched_variant = match_choice(user_text, variant_choices)
-
-        if not matched_variant:
+        matched = match_choice(user_text, variant_choices)
+        if not matched:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIZE,
                 response_key="repeat_size_options",
             )
 
-        # -------------------------
-        # Commit size
-        # -------------------------
-        context.selected_variant_id = matched_variant.variant_id
+        context.selected_variant_id = matched.variant_id
         context.size_target = None
 
-        # -------------------------
-        # Next step
-        # -------------------------
+        # ---------- Continue structure ----------
         if item.side_groups:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
@@ -112,24 +85,8 @@ class WaitingForSizeHandler(BaseHandler):
             )
 
         return HandlerResult(
-            next_state=ConversationState.IDLE,
-            response_key="item_added_successfully",
-            command={
-                "type": "ADD_ITEM_TO_CART",
-                "payload": {
-                    "item_id": context.current_item_id,
-                    "quantity": 1,
-                    "variant_id": context.selected_variant_id,
-                    "sides": {},
-                    "modifiers": {},
-                },
-            },
-            response_payload={
-                "item_id": context.current_item_id,
-                "item_name": item.name,
-                "quantity": 1,
-            },
-            reset_context=True,
+            next_state=ConversationState.WAITING_FOR_QUANTITY,
+            response_key="ask_for_quantity",
+            response_payload={"item_name": item.name},
         )
-
 

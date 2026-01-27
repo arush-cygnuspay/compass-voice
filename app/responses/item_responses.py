@@ -201,6 +201,15 @@ def item_added_successfully(
     )
 
 
+def ask_item_quantity(
+        payload: dict,
+) -> str:
+    item_name = payload.get("item_name")
+    if item_name:
+        return f"How many {item_name} would you like?"
+    return "How many would you like?"
+
+
 def normalize_group_name(group_name: str, verb: str) -> str:
     """
     Ensures we don't duplicate verbs like:

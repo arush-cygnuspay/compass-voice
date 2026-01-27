@@ -62,3 +62,9 @@ class MenuItem:
     side_groups: List[SideGroup]
     modifier_groups: List[ModifierGroup]
     available: bool
+
+
+@dataclass
+class ItemResolution:
+    item: MenuItem
+    score: float

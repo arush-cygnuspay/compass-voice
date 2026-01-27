@@ -129,33 +129,13 @@ CHOICE_NOISE_PAT = re.compile(
     re.I | re.X,
 )
 
-# def strip_fillers(text: str) -> str:
-#     prev = None
-#     while prev != text:
-#         prev = text
-#         text = FILLER_PAT.sub("", text).strip()
-#     return text
-
-
-# IF strong_add_verb:
-#     intent = ADD_PRIMARY_ITEM
-#
-# ELIF desire_phrase:
-#     IF state == ASKING_FOR_SIDE:
-#         intent = ADD_FOLLOWUP_ITEM
-#     ELSE:
-#         intent = ADD_PRIMARY_ITEM
-#
-# ELIF confirmation_phrase:
-#     IF state == ASKING_FOR_SIDE:
-#         intent = ADD_FOLLOWUP_ITEM
-#     ELSE:
-#         intent = CONFIRM_OR_CLARIFY
-#
-# ELIF quantity_item OR bare_item:
-#     IF state in (ASKING_FOR_SIDE, EXPECTING_ITEM):
-#         intent = ADD_FOLLOWUP_ITEM
-#     ELSE:
-#         intent = NEED_CONFIRMATION
-
-
+MENU_STOPWORDS = {
+    "a",
+    "an",
+    "the",
+    "of",
+    "la",
+    "with",
+    "and",
+    "or",
+}

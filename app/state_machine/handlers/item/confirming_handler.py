@@ -60,35 +60,36 @@ class ConfirmingHandler(BaseHandler):
                 )
 
             if intent == Intent.CONFIRM:
+                context.reset()
                 context.current_item_id = confirmation["value_id"]
-                context.candidate_item_id = None
-                context.awaiting_confirmation_for = None
+                context.current_item_name = confirmation["value_name"]
+                context.pending_action = "add"
 
                 # Fetch item to decide next step
                 item = self.menu_repo.store.get_item(context.current_item_id)
 
-                # Side flow first (if exists)
-                if item.side_groups:
-                    return HandlerResult(
-                        next_state=ConversationState.WAITING_FOR_SIDE,
-                        response_key="ask_for_side",
-                    )
-
-                # Then modifiers
-                if item.modifier_groups:
-                    return HandlerResult(
-                        next_state=ConversationState.WAITING_FOR_MODIFIER,
-                        response_key="ask_for_modifier",
-                    )
-
-                # Then size
+                # SIZE FIRST
                 if item.pricing.mode == "variant":
                     return HandlerResult(
                         next_state=ConversationState.WAITING_FOR_SIZE,
                         response_key="ask_for_size",
                     )
 
-                # Else quantity
+                # THEN SIDES
+                if item.side_groups:
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_SIDE,
+                        response_key="ask_for_side",
+                    )
+
+                # THEN MODIFIERS
+                if item.modifier_groups:
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_MODIFIER,
+                        response_key="ask_for_modifier",
+                    )
+
+                # FINALLY QUANTITY
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_QUANTITY,
                     response_key="ask_for_quantity",

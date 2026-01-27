@@ -1,10 +1,8 @@
 # app/menu/repository.py
 
-from typing import Optional, Dict, List
-
 from app.menu.query_result import MenuQueryResult, MenuQueryType
 from app.menu.store import MenuStore
-from app.menu.models import MenuItem
+from app.menu.models import *
 from app.utils.item_matching import score_item
 
 
@@ -43,7 +41,7 @@ class MenuRepository:
     # Item Resolution
     # =================================================
 
-    def resolve_item(self, text: str) -> Optional[MenuItem]:
+    def resolve_item(self, text: str) -> Optional[ItemResolution]:
         """
         Resolve a single menu item from free-form user text.
 
@@ -91,6 +89,7 @@ class MenuRepository:
 
         for item in candidates.values():
             score = score_item(text, item.name)
+
             if score > best_score:
                 best_score = score
                 best_item = item
@@ -98,7 +97,7 @@ class MenuRepository:
         # -------------------------------------------------
         # 5️⃣ Confidence threshold
         # -------------------------------------------------
-        return best_item if best_score >= 2.5 else None
+        return ItemResolution(best_item, best_score) if best_score >= 6.5 else None
 
     # =====================================================
     # MENU QUERY RESOLUTION (ITEM | CATEGORY | AMBIGUOUS)
@@ -216,7 +215,4 @@ class MenuRepository:
         This is a hard lookup and will raise if the item does not exist.
         """
         return self.store.get_item(item_id)
-
-
-
 

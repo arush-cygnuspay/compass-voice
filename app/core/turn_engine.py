@@ -37,7 +37,6 @@ class TurnOutput:
     response_key: str
     response_payload: Optional[dict] = None
 
-
 class TurnEngine:
     """
     Stateless turn processor.
@@ -93,48 +92,43 @@ class TurnEngine:
             user_text: str,
     ) -> TurnOutput:
 
-        #  Basic cleanup (unicode, punctuation)
         preclean_text = basic_cleanup(user_text)
-
-        # STT noise cleanup (NEW)
         stt_cleaned_text = clean_stt_noise(preclean_text)
 
+        # ---------------- LOCKED STATE ----------------
         if session.conversation_state in self.LOCKED_STATES:
-            handler = self.handlers.get(
-                f"{session.conversation_state.name.lower()}_handler"
+            handler_name = f"{session.conversation_state.name.lower()}_handler"
+            handler = self.handlers.get(handler_name)
+
+            normalized = self.normalizer.normalize(
+                text=stt_cleaned_text,
+                intent=Intent.UNKNOWN,
+                state=session.conversation_state,
             )
 
             result = handler.handle(
-                intent=Intent.UNKNOWN,  # ignore global intent
+                intent=Intent.UNKNOWN,
                 context=session.conversation_context,
-                user_text=self.normalizer.normalize(
-                    text=stt_cleaned_text,
-                    intent=Intent.UNKNOWN,
-                    state=session.conversation_state,
-                ),
+                user_text=normalized,
                 session=session,
             )
 
             self._apply_result(session, result)
+
             return TurnOutput(
                 response_key=result.response_key,
                 response_payload=result.response_payload,
             )
 
-        # 1️⃣ Pure NLU
-        intent_result = resolve_intent(
-            stt_cleaned_text,
-            state=session.conversation_state
-        )
+        # ---------------- NLU ----------------
+        intent_result = resolve_intent(stt_cleaned_text, state=session.conversation_state)
 
-        # 🔥 NORMALIZE ONCE, HERE
         normalized_text = self.normalizer.normalize(
             text=stt_cleaned_text,
             intent=intent_result.intent,
             state=session.conversation_state,
         )
 
-        # NEW STEP: refine intent using menu -> i want tacos vs i want beef tacos (item vs category)
         refined_intent = self.intent_refiner.refine(
             intent=intent_result.intent,
             normalized_text=normalized_text,
@@ -146,33 +140,24 @@ class TurnEngine:
             raw_text=intent_result.raw_text,
         )
 
-        # 2️⃣ Route based on STATE + intent
+        # ---------------- ROUTER ----------------
         route = self.router.route(
             state=session.conversation_state,
             intent_result=intent_result,
         )
 
         if not route.allowed:
-            return TurnOutput(
-                response_key="intent_not_allowed"
-            )
-
+            return TurnOutput(response_key="intent_not_allowed")
 
         handler = self.handlers.get(route.handler_name)
-        if not handler:
-            return TurnOutput(
-                response_key="handler_not_implemented"
-            )
 
-        # 3️⃣ Execute handler
         result = handler.handle(
-            intent=intent_result.intent,  # ← pass original intent
+            intent=intent_result.intent,
             context=session.conversation_context,
             user_text=normalized_text,
             session=session,
         )
 
-        # 🔑 Apply side-effects centrally
         if result.command:
             self._apply_command(session, result.command)
 
@@ -232,5 +217,4 @@ class TurnEngine:
         session.conversation_state = result.next_state
         session.last_response_key = result.response_key
         session.turn_count += 1
-
 

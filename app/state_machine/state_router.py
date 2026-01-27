@@ -35,6 +35,13 @@ class StateRouter:
                 Intent.START_ORDER,
             },
 
+            ConversationState.CONFIRMING_ITEM: {
+                Intent.CONFIRM,
+                Intent.DENY,
+                Intent.CANCEL,
+                Intent.UNKNOWN,
+            },
+
             ConversationState.WAITING_FOR_SIDE: {
                 Intent.CONFIRM,
                 Intent.DENY,
