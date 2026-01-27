@@ -93,6 +93,7 @@ class ResponseBuilder:
             return required_size_cannot_skip(context, self.menu_repo)
 
         if response_key == "ask_for_quantity":
+            return ask_item_quantity(payload)
 
         if response_key == "item_added_successfully":
             return item_added_successfully(payload)

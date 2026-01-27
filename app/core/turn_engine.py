@@ -19,6 +19,7 @@ from app.state_machine.handlers.info.ask_menu_info_handler import AskMenuInfoHan
 from app.state_machine.handlers.info.ask_price_handler import AskPriceHandler
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
+from app.state_machine.handlers.common.waiting_for_quantity_handler import WaitingForQuantityHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
 from app.state_machine.handlers.item.add_item.waiting_for_size_handler import WaitingForSizeHandler
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
@@ -84,13 +85,11 @@ class TurnEngine:
             # Info Handlers
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
+
+            "waiting_for_quantity_handler": WaitingForQuantityHandler(),
         }
 
-    def process_turn(
-            self,
-            session: Session,
-            user_text: str,
-    ) -> TurnOutput:
+    def process_turn(self, session: Session, user_text: str) -> TurnOutput:
 
         preclean_text = basic_cleanup(user_text)
         stt_cleaned_text = clean_stt_noise(preclean_text)
