@@ -32,9 +32,9 @@ INTENT_PRIORITY: list[Intent] = [
     Intent.END_ADDING,
 
     # ---- Cart Mutation ----
-    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,  # Higher priority than ADD_ITEM to prevent "remove X" from being interpreted as "add X"
     Intent.MODIFY_ITEM,
-    Intent.REMOVE_ITEM,
+    Intent.ADD_ITEM,
 
     # ---- Meta / Repair ----
     Intent.META_CLARIFY,

@@ -164,6 +164,18 @@ class StateRouter:
                 handler_name="add_item_handler",
             )
 
+        if state == ConversationState.IDLE and  intent_result.intent == Intent.REMOVE_ITEM:
+            return RouteResult(allowed=True, handler_name="remove_item_handler")
+
+        # --------------------------------------------------
+        # REMOVE ITEM (ENTRY POINT)
+        # --------------------------------------------------
+        if state == ConversationState.IDLE and intent == Intent.REMOVE_ITEM:
+            return RouteResult(
+                allowed=True,
+                handler_name="remove_item_handler",
+            )
+
         # --------------------------------------------------
         # END ADDING / START ORDER
         # --------------------------------------------------

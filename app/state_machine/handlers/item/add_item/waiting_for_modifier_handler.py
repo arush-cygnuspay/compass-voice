@@ -7,6 +7,8 @@ from app.state_machine.context import ConversationContext
 from app.nlu.intent_resolution.intent import Intent
 from app.menu.repository import MenuRepository
 from app.utils.choice_matching import match_choice
+from app.utils.top_k_choices import get_top_k_choices
+import re
 
 
 class WaitingForModifierHandler(BaseHandler):
@@ -55,46 +57,104 @@ class WaitingForModifierHandler(BaseHandler):
         group = item.modifier_groups[idx]
 
         # -------------------------
-        # DENY on REQUIRED modifier
+        # Options request
         # -------------------------
-        if intent == Intent.DENY and group.is_required:
+        if self._wants_options(user_text):
+            top_choices = [c.name for c in get_top_k_choices(group.choices, k=3)]
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
-                response_key="required_modifier_cannot_skip",
+                response_key="list_modifier_options",
+                response_payload={
+                    "top_choices": top_choices,
+                    "group_name": group.name,
+                },
             )
 
         # -------------------------
-        # Skip OPTIONAL modifier
+        # Treat negative phrases as deny intent
         # -------------------------
-        if intent == Intent.DENY and not group.is_required:
-            context.current_modifier_group_index += 1
+        if self._is_negative(user_text):
+            intent = Intent.DENY
 
-            if context.current_modifier_group_index >= total:
-                return self._finalize_item(context, item)
+        # -------------------------
+        # Skip current modifier group on DENY (no/none/that's all) for optional
+        # -------------------------
+        if intent == Intent.DENY:
+            if group.is_required:
+                top_choices = [c.name for c in get_top_k_choices(group.choices, k=3)]
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="required_modifier_cannot_skip",
+                    response_payload={
+                        "top_choices": top_choices,
+                        "group_name": group.name,
+                    },
+                )
+            context.current_modifier_group_index = total
+            return self._finalize_item(context, item)
 
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_MODIFIER,
-                response_key="ask_for_modifier",
+        # -------------------------
+        # Open-capture modifier choices (can be multiple)
+        # -------------------------
+        matched_ids: list[str] = []
+        invalid_terms: list[str] = []
+
+        for chunk in self._split_candidates(user_text):
+            choice = match_choice(chunk, group.choices)
+            if choice:
+                if choice.modifier_id not in matched_ids:
+                    matched_ids.append(choice.modifier_id)
+            else:
+                invalid_terms.append(chunk.strip())
+
+        if matched_ids:
+            if group.max_selector == 1 and len(matched_ids) > 1:
+                top_choices = [c.name for c in get_top_k_choices(group.choices, k=3)]
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="too_many_modifier_choices",
+                    response_payload={
+                        "top_choices": top_choices,
+                        "group_name": group.name,
+                    },
+                )
+            context.selected_modifier_groups.setdefault(group.group_id, []).extend(
+                matched_ids
             )
 
-        # -------------------------
-        # Match modifier choice
-        # -------------------------
-        matched_choice = match_choice(user_text, group.choices)
-
-        if not matched_choice:
+        if invalid_terms:
+            top_choices = [c.name for c in get_top_k_choices(group.choices, k=3)]
+            if len(user_text.split()) == 1 and len(user_text.strip()) <= 2:
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="clarify_modifier_choice",
+                    response_payload={
+                        "top_choices": top_choices,
+                        "group_name": group.name,
+                    },
+                )
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="repeat_modifier_options",
+                response_payload={
+                    "top_choices": top_choices,
+                    "invalid_terms": invalid_terms,
+                    "group_name": group.name,
+                },
             )
 
-        # -------------------------
-        # Commit modifier
-        # -------------------------
-        context.selected_modifier_groups.setdefault(group.group_id, []).append(
-            matched_choice.modifier_id
-        )
+        if group.is_required and not matched_ids:
+            top_choices = [c.name for c in get_top_k_choices(group.choices, k=3)]
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_MODIFIER,
+                response_key="required_modifier_cannot_skip",
+                response_payload={
+                    "top_choices": top_choices,
+                    "group_name": group.name,
+                },
+            )
 
+        # Advance after processing current group
         context.current_modifier_group_index += 1
 
         if context.current_modifier_group_index >= total:
@@ -127,3 +187,18 @@ class WaitingForModifierHandler(BaseHandler):
             reset_context=True,
         )
 
+    def _split_candidates(self, text: str) -> list[str]:
+        if not text:
+            return []
+        parts = re.split(r",| and | & |\+", text, flags=re.IGNORECASE)
+        return [p.strip() for p in parts if p.strip()]
+
+    def _wants_options(self, text: str) -> bool:
+        if not text:
+            return False
+        return bool(re.search(r"\b(option|options|choices?)\b", text, flags=re.IGNORECASE))
+
+    def _is_negative(self, text: str) -> bool:
+        if not text:
+            return False
+        return bool(re.search(r"\b(no|nope|nopes|none|nothing|no modifications|no mods|skip|done|that's it|thats it|nothing else)\b", text, flags=re.IGNORECASE))
