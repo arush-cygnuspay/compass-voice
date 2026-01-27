@@ -3,6 +3,20 @@
 from app.nlu.intent_patterns.noise import *
 
 
+def _strip_affirmation_wrapper(text: str) -> str:
+    # Remove leading affirmation tokens only when more content follows, keep pure yes/no replies intact.
+    current = text
+    while True:
+        match = AFFIRMATION_WRAPPER_PAT.match(current)
+        if not match:
+            break
+        remainder = match.group("rest").strip()
+        if not remainder:
+            break
+        current = remainder
+    return current
+
+
 def clean_stt_noise(text: str) -> str:
     """
     Removes STT conversational noise WITHOUT changing semantics.
@@ -29,6 +43,9 @@ def clean_stt_noise(text: str) -> str:
 
     # Remove prefix noise (carefully)
     cleaned = PREFIX_NOISE_PAT.sub("", cleaned)
+
+    # Strip leading affirmation fluff when additional content is present
+    cleaned = _strip_affirmation_wrapper(cleaned)
 
     # Remove trailing fluff
     cleaned = TRAILING_NOISE_PAT.sub("", cleaned)
