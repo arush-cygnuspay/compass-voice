@@ -4,18 +4,22 @@ from typing import Optional
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.nlu.intent_refinement.intent_refiner import IntentRefiner
+from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.query_normalization.base import basic_cleanup
 from app.nlu.query_normalization.noise_cleaner import clean_stt_noise
 from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
 from app.session.session import Session
+from app.state_machine.conversation_state import ConversationState
+from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.cart.cart_handlers import CartHandler, ShowingCartHandler, ShowingTotalHandler
 from app.state_machine.handlers.common.cancellation_confirmation_handler import CancellationConfirmationHandler
 from app.state_machine.handlers.info.ask_menu_info_handler import AskMenuInfoHandler
 from app.state_machine.handlers.info.ask_price_handler import AskPriceHandler
 from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
+from app.state_machine.handlers.common.waiting_for_quantity_handler import WaitingForQuantityHandler
 from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
 from app.state_machine.handlers.item.add_item.waiting_for_size_handler import WaitingForSizeHandler
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
@@ -34,7 +38,6 @@ class TurnOutput:
     response_key: str
     response_payload: Optional[dict] = None
 
-
 class TurnEngine:
     """
     Stateless turn processor.
@@ -48,6 +51,14 @@ class TurnEngine:
 
         self.normalizer = QueryNormalizationPipeline()
         self.intent_refiner = IntentRefiner(menu_repo)
+
+        self.LOCKED_STATES = {
+                ConversationState.WAITING_FOR_SIDE,
+                ConversationState.WAITING_FOR_MODIFIER,
+                ConversationState.WAITING_FOR_SIZE,
+                ConversationState.WAITING_FOR_QUANTITY,
+            }
+
 
         # Explicit handler registry
         self.handlers = {
@@ -74,34 +85,49 @@ class TurnEngine:
             # Info Handlers
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
+
+            "waiting_for_quantity_handler": WaitingForQuantityHandler(),
         }
 
-    def process_turn(
-            self,
-            session: Session,
-            user_text: str,
-    ) -> TurnOutput:
+    def process_turn(self, session: Session, user_text: str) -> TurnOutput:
 
-        #  Basic cleanup (unicode, punctuation)
         preclean_text = basic_cleanup(user_text)
-
-        # STT noise cleanup (NEW)
         stt_cleaned_text = clean_stt_noise(preclean_text)
 
-        # 1️⃣ Pure NLU
-        intent_result = resolve_intent(
-            stt_cleaned_text,
-            state=session.conversation_state
-        )
+        # ---------------- LOCKED STATE ----------------
+        if session.conversation_state in self.LOCKED_STATES:
+            handler_name = f"{session.conversation_state.name.lower()}_handler"
+            handler = self.handlers.get(handler_name)
 
-        # 🔥 NORMALIZE ONCE, HERE
+            normalized = self.normalizer.normalize(
+                text=stt_cleaned_text,
+                intent=Intent.UNKNOWN,
+                state=session.conversation_state,
+            )
+
+            result = handler.handle(
+                intent=Intent.UNKNOWN,
+                context=session.conversation_context,
+                user_text=normalized,
+                session=session,
+            )
+
+            self._apply_result(session, result)
+
+            return TurnOutput(
+                response_key=result.response_key,
+                response_payload=result.response_payload,
+            )
+
+        # ---------------- NLU ----------------
+        intent_result = resolve_intent(stt_cleaned_text, state=session.conversation_state)
+
         normalized_text = self.normalizer.normalize(
             text=stt_cleaned_text,
             intent=intent_result.intent,
             state=session.conversation_state,
         )
 
-        # NEW STEP: refine intent using menu -> i want tacos vs i want beef tacos (item vs category)
         refined_intent = self.intent_refiner.refine(
             intent=intent_result.intent,
             normalized_text=normalized_text,
@@ -113,33 +139,24 @@ class TurnEngine:
             raw_text=intent_result.raw_text,
         )
 
-        # 2️⃣ Route based on STATE + intent
+        # ---------------- ROUTER ----------------
         route = self.router.route(
             state=session.conversation_state,
             intent_result=intent_result,
         )
 
         if not route.allowed:
-            return TurnOutput(
-                response_key="intent_not_allowed"
-            )
-
+            return TurnOutput(response_key="intent_not_allowed")
 
         handler = self.handlers.get(route.handler_name)
-        if not handler:
-            return TurnOutput(
-                response_key="handler_not_implemented"
-            )
 
-        # 3️⃣ Execute handler
         result = handler.handle(
-            intent=intent_result.intent,  # ← pass original intent
+            intent=intent_result.intent,
             context=session.conversation_context,
             user_text=normalized_text,
             session=session,
         )
 
-        # 🔑 Apply side-effects centrally
         if result.command:
             self._apply_command(session, result.command)
 
@@ -188,4 +205,15 @@ class TurnEngine:
 
         else:
             raise ValueError(f"Unknown command type: {command_type}")
+
+    def _apply_result(self, session: Session, result: HandlerResult) -> None:
+        if result.command:
+            self._apply_command(session, result.command)
+
+        if result.reset_context:
+            session.conversation_context.reset()
+
+        session.conversation_state = result.next_state
+        session.last_response_key = result.response_key
+        session.turn_count += 1
 
