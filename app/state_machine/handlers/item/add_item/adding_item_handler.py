@@ -14,8 +14,13 @@ from app.utils.quantity_detection import normalize_quantity
 
 class AddItemHandler(BaseHandler):
     """
-    Handles initial item addition intent.
-    Resolves item using MenuRepository (entity-first).
+    Entry-point handler for adding a new item to the cart.
+
+    Responsibilities:
+    - Resolve item from user utterance
+    - Handle ambiguity (confirmation)
+    - Initialize item-building context
+    - Route user into the correct build flow (size / side / modifier / quantity)
     """
 
     def __init__(self, menu_repo: MenuRepository) -> None:
@@ -26,7 +31,7 @@ class AddItemHandler(BaseHandler):
         intent: Intent,
         context: ConversationContext,
         user_text: str,
-        session: Session = None,
+        session: Session | None = None,
     ) -> HandlerResult:
 
         if intent != Intent.ADD_ITEM:
@@ -36,17 +41,17 @@ class AddItemHandler(BaseHandler):
             )
 
         resolution = self.menu_repo.resolve_item(user_text)
-
         if not resolution:
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_not_found",
             )
 
-        item = resolution.item
-        score = resolution.score
+        item, score = resolution.item, resolution.score
 
-        # ---------- Ambiguity ----------
+        # -------------------------
+        # Ambiguous item → confirm
+        # -------------------------
         if score < 6.0:
             context.reset()
             context.awaiting_confirmation_for = {
@@ -62,7 +67,9 @@ class AddItemHandler(BaseHandler):
                 response_key="confirm_item",
             )
 
-        # ---------- Initialize context ----------
+        # -------------------------
+        # Initialize build context
+        # -------------------------
         context.reset()
         context.current_item_id = item.item_id
         context.current_item_name = item.name
@@ -72,7 +79,9 @@ class AddItemHandler(BaseHandler):
         if explicit_qty:
             context.quantity = explicit_qty
 
-        # ---------- STRUCTURE FIRST ----------
+        # -------------------------
+        # Structured build order
+        # -------------------------
         if item.pricing.mode == "variant":
             context.size_target = {"type": "item"}
             return HandlerResult(
@@ -92,7 +101,7 @@ class AddItemHandler(BaseHandler):
                 response_key="ask_for_modifier",
             )
 
-        # ---------- ALWAYS funnel to quantity ----------
+        # Fallback: quantity is always required
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_QUANTITY,
             response_key="ask_for_quantity",

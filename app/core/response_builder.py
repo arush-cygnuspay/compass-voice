@@ -1,21 +1,62 @@
 # app/core/response_builder.py
-from typing import Optional
 
-from app.responses.cart_responses import render_cart_summary
-from app.responses.intent_not_allowed import handle_intent_not_allowed
-from app.responses.item_responses import *
-from app.responses.menu_responses import *
-from app.state_machine.context import ConversationContext
+from typing import Callable, Optional, Dict
+
 from app.menu.repository import MenuRepository
+from app.state_machine.context import ConversationContext
+
+# ---- imports of response functions ----
+from app.responses.cart_responses import render_cart_summary
+from app.responses.flow_control_responses import (
+    flow_guard_finish_current_step,
+    flow_guard_confirm_cancel,
+    flow_guard_cancelled,
+)
+from app.responses.intent_not_allowed import handle_intent_not_allowed
+from app.responses.item_responses import (
+    ask_for_side,
+    ask_for_modifier,
+    ask_for_size,
+    ask_item_quantity,
+    required_side_cannot_skip,
+    required_modifier_cannot_skip,
+    required_size_cannot_skip,
+    repeat_side_options,
+    list_side_options,
+    clarify_side_choice,
+    repeat_modifier_options,
+    list_modifier_options,
+    clarify_modifier_choice,
+    item_added_successfully,
+)
+from app.responses.menu_responses import (
+    show_category_response,
+    show_item_info_response,
+    menu_ambiguity_response,
+    menu_not_found_response,
+    show_item_price_response,
+)
+
+
+ResponseFn = Callable[
+    [ConversationContext, MenuRepository, dict],
+    str,
+]
 
 
 class ResponseBuilder:
     """
-    Converts response keys + context into user-facing text.
+    Maps response keys to rendering functions.
+
+    Responsibilities:
+    - Dispatch response_key → response function
+    - Provide context + menu_repo + payload
+    - Never contain formatting or business logic
     """
 
     def __init__(self, menu_repo: MenuRepository):
         self.menu_repo = menu_repo
+        self._registry: Dict[str, ResponseFn] = self._build_registry()
 
     def build(
         self,
@@ -23,206 +64,128 @@ class ResponseBuilder:
         context: ConversationContext,
         payload: Optional[dict] = None,
     ) -> str:
-
         payload = payload or {}
 
-        # -------------------------
-        # Meta / Safety / Errors
-        # -------------------------
-        if response_key == "intent_not_allowed":
-            return handle_intent_not_allowed(payload)
+        renderer = self._registry.get(response_key)
+        if not renderer:
+            return "Sorry, I didn’t understand that."
 
-        if response_key == "handler_not_implemented":
-            return "That feature isn’t available yet."
+        return renderer(context, self.menu_repo, payload)
 
-        if response_key == "confirmation_state_error":
-            return "Something went wrong. Let’s start over."
+    # --------------------------------------------------
+    # Registry
+    # --------------------------------------------------
 
-        # -------------------------
-        # Item confirmation & build flow
-        # -------------------------
-        if response_key == "confirm_item":
-            item = self.menu_repo.store.get_item(context.candidate_item_id)
-            return f"You want a {item.name}, right? Please say yes or no."
+    def _build_registry(self) -> Dict[str, ResponseFn]:
+        """
+        Central response registry.
+        One response_key → one function.
+        """
 
-        if response_key == "ask_for_side":
-            return ask_for_side(context, self.menu_repo)
+        return {
+            # -------------------------
+            # Flow control / guards
+            # -------------------------
+            "flow_guard_finish_current_step": self._flow_finish_step,
+            "flow_guard_confirm_cancel": self._flow_confirm_cancel,
+            "flow_guard_cancelled": self._flow_cancelled,
 
-        if response_key == "ask_for_modifier":
-            return ask_for_modifier(context, self.menu_repo)
+            # -------------------------
+            # Errors / safety
+            # -------------------------
+            "intent_not_allowed": self._intent_not_allowed,
+            "handler_not_implemented": lambda *_: "That feature isn’t available yet.",
+            "confirmation_state_error": lambda *_: "Something went wrong. Let’s start over.",
 
-        # -------------------------
-        # Required group enforcement
-        # -------------------------
-        if response_key == "required_side_cannot_skip":
-            return required_side_cannot_skip(context, self.menu_repo)
+            # -------------------------
+            # Item build flow
+            # -------------------------
+            "confirm_item": self._confirm_item,
+            "ask_for_side": lambda c, m, p: ask_for_side(c, m),
+            "ask_for_modifier": lambda c, m, p: ask_for_modifier(c, m),
+            "ask_for_size": lambda c, m, p: ask_for_size(c, m),
+            "ask_for_quantity": lambda c, m, p: ask_item_quantity(p),
 
-        if response_key == "required_modifier_cannot_skip":
-            return required_modifier_cannot_skip(context, self.menu_repo)
+            # Required enforcement
+            "required_side_cannot_skip": lambda c, m, p: required_side_cannot_skip(c, m),
+            "required_modifier_cannot_skip": lambda c, m, p: required_modifier_cannot_skip(c, m),
+            "required_size_cannot_skip": lambda c, m, p: required_size_cannot_skip(c, m),
 
-        # -------------------------
-        # Repeat / clarification prompts
-        # -------------------------
-        if response_key == "repeat_side_options":
-            return repeat_side_options(context, self.menu_repo, payload)
+            # Repeats / clarifications
+            "repeat_side_options": repeat_side_options,
+            "list_side_options": list_side_options,
+            "clarify_side_choice": clarify_side_choice,
+            "repeat_modifier_options": repeat_modifier_options,
+            "list_modifier_options": list_modifier_options,
+            "clarify_modifier_choice": clarify_modifier_choice,
 
-        if response_key == "list_side_options":
-            return list_side_options(context, self.menu_repo, payload)
+            # Completion
+            "item_added_successfully": lambda c, m, p: item_added_successfully(p),
 
-        if response_key == "clarify_side_choice":
-            return clarify_side_choice(context, self.menu_repo, payload)
+            # -------------------------
+            # Menu info
+            # -------------------------
+            "show_category": lambda c, m, p: show_category_response(p),
+            "show_item_info": lambda c, m, p: show_item_info_response(p),
+            "menu_ambiguity": lambda c, m, p: menu_ambiguity_response(p),
+            "menu_not_found": lambda *_: menu_not_found_response(),
+            "show_item_price": lambda c, m, p: show_item_price_response(p),
 
-        if response_key == "repeat_modifier_options":
-            return repeat_modifier_options(context, self.menu_repo, payload)
+            # -------------------------
+            # Cart
+            # -------------------------
+            "show_cart": lambda c, m, p: render_cart_summary(p),
+            "show_total": lambda c, m, p: f"Your total so far is: {p['total']}",
+            "cart_empty": lambda *_: "Your cart is empty. Please add items before placing an order.",
+            "confirm_clear_cart": lambda *_: "Are you sure you want to clear your cart?",
+            "cart_cleared": lambda *_: "Your cart has been cleared.",
 
-        if response_key == "list_modifier_options":
-            return list_modifier_options(context, self.menu_repo, payload)
-
-        if response_key == "clarify_modifier_choice":
-            return clarify_modifier_choice(context, self.menu_repo, payload)
-
-        if response_key == "ask_for_size":
-            return ask_for_size(context, self.menu_repo)
-
-        if response_key == "required_size_cannot_skip":
-            return required_size_cannot_skip(context, self.menu_repo)
-
-        if response_key == "repeat_size_options":
-            return required_size_cannot_skip(context, self.menu_repo)
-
-        if response_key == "repeat_size_options":
-            return required_size_cannot_skip(context, self.menu_repo)
-
-        if response_key == "ask_for_quantity":
-            return ask_item_quantity(payload)
-
-        if response_key == "item_added_successfully":
-            return item_added_successfully(payload)
-
-        if response_key == "item_not_found":
-            return "Sorry, I couldn't find that item. Please try again."
-
-        if response_key == "finish_current_item_first":
-            return "Let’s finish adding the current item first."
-
-        # -------------------------
-        # Menu Info (NEW)
-        # -------------------------
-        if response_key == "show_category":
-            return show_category_response(payload)
-
-        if response_key == "show_item_info":
-            return show_item_info_response(payload)
-
-        if response_key == "menu_ambiguity":
-            return menu_ambiguity_response(payload)
-
-        if response_key == "menu_not_found":
-            return menu_not_found_response()
-
-        if response_key == "show_item_price":
-            return show_item_price_response(payload)
-
-        if response_key == "price_not_found":
-            return "Sorry, I couldn’t find pricing for that item."
-
-        # -------------------------
-        # Cart display utilities
-        # -------------------------
-        if response_key == "show_cart":
-            return render_cart_summary(payload)
-
-        if response_key == "show_total":
-            return f"Your total so far is: {payload['total']}"
-
-        if response_key == "cart_empty":
-            return "Your cart is empty. Please add items before placing an order."
-
-        if response_key == "confirm_clear_cart":
-            return "Are you sure you want to clear your cart?"
-
-        if response_key == "cart_cleared":
-            return "Your cart has been cleared."
-
-        # -------------------------
-        # Remove item flow
-        # -------------------------
-        if response_key == "cart_is_empty":
-            return "Your cart is empty. There's nothing to remove."
-
-        if response_key == "item_not_found_in_cart":
-            return "I couldn't find that item in your cart."
-
-        if response_key == "confirm_remove_item":
-            item_name = payload.get("item_name", "that item")
-            quantity = payload.get("quantity", 1)
-            if quantity > 1:
-                return (
-                    f"I found {quantity} {item_name}s in your cart. "
-                    "Should I remove them? Please say yes or no."
-                )
-            return (
-                f"You have {item_name} in your cart. "
-                "Should I remove it? Please say yes or no."
-            )
-
-        if response_key == "repeat_remove_confirmation":
-            item_name = context.current_item_name or "that item"
-            return (
-                f"Should I remove {item_name} from your cart? "
-                "Please say yes or no."
-            )
-
-        if response_key == "item_removal_cancelled":
-            item_name = context.current_item_name or "that item"
-            return f"Okay, keeping {item_name} in your cart."
-
-        if response_key == "item_removed_successfully":
-            item_name = payload.get("item_name", "the item")
-            return (
-                f"I've removed {item_name} from your cart. "
-                "Would you like to remove anything else?"
-            )
-
-        # -------------------------
-        # Flow resume / acknowledgements
-        # -------------------------
-        if response_key == "resume_previous_state":
-            return "Okay, continuing."
-
-        if response_key == "awaiting_ack":
-            return "Okay."
-
-        if response_key == "resume_order_confirmation":
-            return "Okay, let’s continue with your order."
-
-        if response_key == "order_cancelled":
-            return "No problem. You can continue adding items."
-
-        # -------------------------
-        # Order & payment flow
-        # -------------------------
-        if response_key == "confirm_order_summary":
-            summary = render_cart_summary(payload)
-            return f"{summary}\n\nWould you like to proceed?"
-
-        if response_key == "payment_link_sent":
-            return (
+            # -------------------------
+            # Order / payment
+            # -------------------------
+            "confirm_order_summary": self._confirm_order_summary,
+            "payment_link_sent": lambda *_: (
                 "I’ve sent you a payment link.\n"
                 "Please complete the payment and tell me once you’re done."
-            )
-
-        if response_key == "waiting_for_payment":
-            return "I’m waiting for your payment confirmation."
-
-        if response_key == "order_completed":
-            return (
+            ),
+            "waiting_for_payment": lambda *_: "I’m waiting for your payment confirmation.",
+            "order_completed": lambda *_: (
                 "Payment confirmed!\n"
                 "Your order will be ready in 25 minutes.\n"
-                "Thank you for calling the compass."
-            )
+                "Thank you for calling Compass."
+            ),
+        }
 
-        # -------------------------
-        # Fallback (last resort)
-        # -------------------------
-        return "Sorry, I didn’t understand that."
+    # --------------------------------------------------
+    # Private adapters (thin glue only)
+    # --------------------------------------------------
+
+    def _intent_not_allowed(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
+        return handle_intent_not_allowed(payload)
+
+    def _flow_finish_step(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
+        return flow_guard_finish_current_step(payload)
+
+    def _flow_confirm_cancel(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
+        return flow_guard_confirm_cancel(payload)
+
+    def _flow_cancelled(self, *_):
+        return flow_guard_cancelled()
+
+    def _confirm_item(
+        self,
+        context: ConversationContext,
+        menu_repo: MenuRepository,
+        _: dict,
+    ) -> str:
+        item = menu_repo.store.get_item(context.candidate_item_id)
+        return f"You want a {item.name}, right? Please say yes or no."
+
+    def _confirm_order_summary(
+        self,
+        _: ConversationContext,
+        __: MenuRepository,
+        payload: dict,
+    ) -> str:
+        summary = render_cart_summary(payload)
+        return f"{summary}\n\nWould you like to proceed?"

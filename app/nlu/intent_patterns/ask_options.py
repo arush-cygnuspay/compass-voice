@@ -1,6 +1,12 @@
 #
+
 import re
 
+
+BASIC_OPTIONS_PAT = re.compile(
+    r"\b(options?|choices?|available|else)\b",
+    re.I,
+)
 
 ASK_OPTIONS_CORE_PAT = re.compile(
     r"""

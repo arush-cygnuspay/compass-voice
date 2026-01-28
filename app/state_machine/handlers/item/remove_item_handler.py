@@ -26,6 +26,8 @@ class RemoveItemHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
+        session_id = session.session_id if session else "n/a"
+
         # Defensive: this should never happen post-refiner
         if intent != Intent.REMOVE_ITEM:
             return HandlerResult(
@@ -98,7 +100,7 @@ class RemoveItemHandler(BaseHandler):
             
             # Use the same scoring function as item matching
             score = score_item(user_text, menu_item.name)
-            
+
             if score > best_score:
                 best_score = score
                 best_cart_item = cart_item

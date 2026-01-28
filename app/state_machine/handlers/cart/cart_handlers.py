@@ -26,6 +26,8 @@ class CartHandler(BaseHandler):
         session: Session = None,
     ) -> HandlerResult:
 
+        session_id = session.session_id if session else "n/a"
+
         previous_state = context.return_state or session.conversation_state
         context.return_state = None
 
@@ -73,6 +75,7 @@ class CartHandler(BaseHandler):
             response_key="intent_not_allowed",
         )
 
+
 class ShowingCartHandler(BaseHandler):
     def handle(self, intent, context, user_text, session=None):
 
@@ -102,4 +105,3 @@ class ShowingTotalHandler(BaseHandler):
             next_state=context.return_state or ConversationState.IDLE,
             response_key="awaiting_ack",
         )
-

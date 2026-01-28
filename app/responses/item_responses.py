@@ -43,26 +43,37 @@ def repeat_side_options(
 ) -> str:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.side_groups[context.current_side_group_index]
-    group_label = (_clean_group_label(payload.get("group_name"), "side") if payload.get("group_name") else _clean_group_label(group.name, "side")).lower()
-    top_choices = payload.get("top_choices") or [c.name for c in get_top_k_choices(group.choices, k=3)]
 
-    if not top_choices:
+    group_label = (
+        _clean_group_label(payload.get("group_name"), "side")
+        if payload.get("group_name")
+        else _clean_group_label(group.name, "side")
+    ).lower()
+
+    top_choices = payload.get("top_choices") or [
+        c.name for c in get_top_k_choices(group.choices, k=3)
+    ]
+
+    reason = payload.get("repeat_reason", "invalid")
+
+    options = _format_options(top_choices)
+
+    # ----------------------------------
+    # ASK OPTIONS (no apology)
+    # ----------------------------------
+    if reason == "options":
         return (
-            f"Sorry, that’s not available. Which {group_label} would you like "
-            f"with your {item.name}?"
+            f"You can choose {options}. "
+            f"Which {group_label} would you like with your {item.name}?"
         )
 
-    if len(top_choices) == 1:
-        options = top_choices[0]
-    elif len(top_choices) == 2:
-        options = f"{top_choices[0]} or {top_choices[1]}"
-    else:
-        options = f"{top_choices[0]}, {top_choices[1]}, or {top_choices[2]}"
-
+    # ----------------------------------
+    # INVALID SELECTION (apology allowed)
+    # ----------------------------------
     return (
         f"Sorry, that’s not available. Popular {group_label}s include {options}. "
         f"Which {group_label} would you like with your {item.name}?"
-    )
+    )\
 
 
 def too_many_side_choices(
@@ -94,7 +105,7 @@ def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository) ->
 
 def ask_for_size(context: ConversationContext, menu_repo: MenuRepository) -> str:
     item = menu_repo.store.get_item(context.current_item_id)
-    lines = ["Which size would you like?"]
+    lines = [f"Which size {item.name} would you like?"]
 
     for v in item.pricing.variants:
         lines.append(f"- {v.label} (${v.price_cents / 100:.2f})")
@@ -232,29 +243,30 @@ def repeat_modifier_options(
 ) -> str:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.modifier_groups[context.current_modifier_group_index]
-    group_label = (_clean_group_label(payload.get("group_name"), "add-on") if payload.get("group_name") else _clean_group_label(group.name, "add-on")).lower()
-    invalid = payload.get("invalid_terms") or []
-    top_choices = payload.get("top_choices") or [c.name for c in get_top_k_choices(group.choices, k=3)]
 
-    invalid_text = "" if not invalid else f"I couldn’t find {', '.join(invalid)}. "
+    group_label = (
+        _clean_group_label(payload.get("group_name"), "add-on")
+        if payload.get("group_name")
+        else _clean_group_label(group.name, "add-on")
+    ).lower()
 
-    if not top_choices:
+    top_choices = payload.get("top_choices") or [
+        c.name for c in get_top_k_choices(group.choices, k=3)
+    ]
+
+    reason = payload.get("repeat_reason", "invalid")
+    options = _format_options(top_choices)
+
+    if reason == "options":
         return (
-            f"{invalid_text}Which {group_label} would you like "
-            f"for your {item.name}?"
-        ).strip()
-
-    if len(top_choices) == 1:
-        options = top_choices[0]
-    elif len(top_choices) == 2:
-        options = f"{top_choices[0]} or {top_choices[1]}"
-    else:
-        options = f"{top_choices[0]}, {top_choices[1]}, or {top_choices[2]}"
+            f"You can choose {options}. "
+            f"Which {group_label} would you like for your {item.name}?"
+        )
 
     return (
-        f"{invalid_text}Popular {group_label}s include {options}. "
+        f"Sorry, that’s not available. Popular {group_label}s include {options}. "
         f"Which would you like for your {item.name}?"
-    ).strip()
+    )
 
 
 def _format_options(options: list[str]) -> str:

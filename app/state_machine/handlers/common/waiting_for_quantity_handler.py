@@ -78,5 +78,3 @@ class WaitingForQuantityHandler(BaseHandler):
             },
             reset_context=True,
         )
-
-

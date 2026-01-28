@@ -1,5 +1,8 @@
 # app/state_machine/handlers/item/waiting_for_size_handler.py
 from dataclasses import dataclass
+
+from app.nlu.choice_signals.choice_signals import ChoiceSignal
+from app.nlu.choice_signals.resolver import resolve_choice_signal
 from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
@@ -19,21 +22,17 @@ class _VariantChoice:
 class WaitingForSizeHandler(BaseHandler):
     """
     Resolves size for the current size_target (item).
-
-    Size selection is REQUIRED:
-    - DENY is not allowed
-    - Unknown input re-prompts with options
     """
 
     def __init__(self, menu_repo: MenuRepository) -> None:
         self.menu_repo = menu_repo
 
     def handle(
-        self,
-        intent: Intent,
-        context: ConversationContext,
-        user_text: str,
-        session: Session = None,
+            self,
+            intent: Intent,
+            context: ConversationContext,
+            user_text: str,
+            session: Session | None = None,
     ) -> HandlerResult:
 
         if intent == Intent.CANCEL:
@@ -48,6 +47,12 @@ class WaitingForSizeHandler(BaseHandler):
             return HandlerResult(
                 next_state=ConversationState.ERROR_RECOVERY,
                 response_key="item_context_missing",
+            )
+
+        if resolve_choice_signal(user_text) == ChoiceSignal.ASK_OPTIONS:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_SIZE,
+                response_key="ask_for_size",
             )
 
         if intent == Intent.DENY:
@@ -71,7 +76,6 @@ class WaitingForSizeHandler(BaseHandler):
         context.selected_variant_id = matched.variant_id
         context.size_target = None
 
-        # ---------- Continue structure ----------
         if item.side_groups:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,

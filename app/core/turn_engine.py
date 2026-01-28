@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from typing import Optional
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
+from app.core.flow_control.flow_control_policy import FlowControlPolicy
+from app.core.flow_control.flow_decision import FlowAction
 from app.nlu.intent_refinement.intent_refiner import IntentRefiner
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_resolver import resolve_intent
@@ -38,6 +40,7 @@ class TurnOutput:
     response_key: str
     response_payload: Optional[dict] = None
 
+
 class TurnEngine:
     """
     Stateless turn processor.
@@ -51,6 +54,8 @@ class TurnEngine:
 
         self.normalizer = QueryNormalizationPipeline()
         self.intent_refiner = IntentRefiner(menu_repo)
+
+        self.flow_policy = FlowControlPolicy()
 
         # Explicit handler registry
         self.handlers = {
@@ -81,13 +86,37 @@ class TurnEngine:
             "waiting_for_quantity_handler": WaitingForQuantityHandler(),
         }
 
-    def process_turn(self, session: Session, user_text: str) -> TurnOutput:
+    # app/core/turn_engine.py
 
+    def process_turn(self, session: Session, user_text: str) -> TurnOutput:
+        """
+        Executes a single conversational turn.
+
+        Responsibilities:
+        - Normalize and resolve intent
+        - Apply flow control (mid-flow governance)
+        - Route to the correct handler
+        - Apply resulting state mutations
+        """
+
+        # ---------------------------
+        # Preserve raw input for flow-level reasoning
+        # ---------------------------
+        session.conversation_context.last_user_text = user_text
+
+        # ---------------------------
+        # Basic cleanup (ASR / text noise)
+        # ---------------------------
         preclean_text = basic_cleanup(user_text)
         stt_cleaned_text = clean_stt_noise(preclean_text)
 
-        # ---------------- NLU ----------------
-        intent_result = resolve_intent(stt_cleaned_text, state=session.conversation_state)
+        # ---------------------------
+        # NLU: Intent detection
+        # ---------------------------
+        intent_result = resolve_intent(
+            stt_cleaned_text,
+            state=session.conversation_state,
+        )
 
         normalized_text = self.normalizer.normalize(
             text=stt_cleaned_text,
@@ -101,28 +130,78 @@ class TurnEngine:
             state=session.conversation_state,
         )
 
-        intent_result = IntentResult(
+        # ---------------------------
+        # FLOW CONTROL (authoritative)
+        # ---------------------------
+        flow_decision = self.flow_policy.evaluate(
+            state=session.conversation_state,
             intent=refined_intent,
+            context=session.conversation_context,
+        )
+
+        # Slot interaction is contextual, not an intent
+        session.conversation_context.slot_interaction = flow_decision.slot_interaction
+
+        # ---------------------------
+        # BLOCKED turn (no handler execution)
+        # ---------------------------
+        if flow_decision.action == FlowAction.BLOCK:
+            session.turn_count += 1
+            return TurnOutput(
+                response_key=flow_decision.response_key,
+                response_payload=flow_decision.response_payload,
+            )
+
+        # ---------------------------
+        # CANCELLED flow (reset state)
+        # ---------------------------
+        if flow_decision.action == FlowAction.CANCEL:
+            session.conversation_context.reset()
+            session.conversation_state = ConversationState.IDLE
+            session.turn_count += 1
+
+            return TurnOutput(
+                response_key="flow_guard_cancelled",
+                response_payload=flow_decision.response_payload,
+            )
+
+        # ---------------------------
+        # Intent rewrite (rare but allowed)
+        # ---------------------------
+        effective_intent = (
+            flow_decision.effective_intent
+            if flow_decision.action == FlowAction.REWRITE
+            else refined_intent
+        )
+
+        intent_result = IntentResult(
+            intent=effective_intent,
             raw_text=intent_result.raw_text,
         )
 
-        # ---------------- ROUTER ----------------
+        # ---------------------------
+        # ROUTING
+        # ---------------------------
         route = self.router.route(
             state=session.conversation_state,
             intent_result=intent_result,
         )
 
         if not route.allowed:
+            session.turn_count += 1
             return TurnOutput(
                 response_key="intent_not_allowed",
                 response_payload={
-                    "state": session.conversation_state,
-                    "intent": intent_result.intent,
+                    "state": session.conversation_state.name,
+                    "intent": intent_result.intent.name,
                 },
             )
 
-        handler = self.handlers.get(route.handler_name)
+        handler = self.handlers[route.handler_name]
 
+        # ---------------------------
+        # HANDLER EXECUTION
+        # ---------------------------
         result = handler.handle(
             intent=intent_result.intent,
             context=session.conversation_context,
@@ -130,6 +209,9 @@ class TurnEngine:
             session=session,
         )
 
+        # ---------------------------
+        # APPLY SIDE EFFECTS
+        # ---------------------------
         if result.command:
             self._apply_command(session, result.command)
 

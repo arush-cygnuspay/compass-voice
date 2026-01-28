@@ -1,6 +1,6 @@
 # app/state_machine/handlers/item/add_item/waiting_for_modifier_handler.py
-from app.nlu.intent_resolution.choice_signal_resolver import resolve_choice_signal
-from app.nlu.intent_resolution.choice_signals import ChoiceSignal
+from app.nlu.choice_signals.resolver import resolve_choice_signal
+from app.nlu.choice_signals.choice_signals import ChoiceSignal
 from app.session.session import Session
 from app.state_machine.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
@@ -27,12 +27,12 @@ class WaitingForModifierHandler(BaseHandler):
         intent: Intent,
         context: ConversationContext,
         user_text: str,
-        session: Session = None,
+        session: Session | None = None,
     ) -> HandlerResult:
 
+        session_id = session.session_id if session else "n/a"
         signal = resolve_choice_signal(user_text)
 
-        # -------- CANCEL --------
         if signal == ChoiceSignal.CANCEL:
             context.reset()
             return HandlerResult(
@@ -48,43 +48,37 @@ class WaitingForModifierHandler(BaseHandler):
             )
 
         idx = context.current_modifier_group_index
-        total = len(item.modifier_groups)
-
-        # -------- End of modifier groups --------
-        if idx >= total:
+        if idx >= len(item.modifier_groups):
             return self._advance_after_modifiers(context, item)
 
         group = item.modifier_groups[idx]
 
-        # -------- ASK OPTIONS --------
         if signal == ChoiceSignal.ASK_OPTIONS:
             return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_MODIFIER,
-                response_key="list_modifier_options",
+                next_state=ConversationState.WAITING_FOR_SIDE,
+                response_key="repeat_modifier_options",
                 response_payload={
-                    "top_choices": [c.name for c in get_top_k_choices(group.choices, 3)],
                     "group_name": group.name,
+                    "top_choices": [c.name for c in get_top_k_choices(group.choices, 3)],
+                    "repeat_reason": "options",
                 },
             )
 
-        # -------- DENY --------
         if signal == ChoiceSignal.DENY:
             if group.is_required:
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_MODIFIER,
                     response_key="required_modifier_cannot_skip",
                     response_payload={
-                        "top_choices": [c.name for c in get_top_k_choices(group.choices, 3)],
                         "group_name": group.name,
+                        "top_choices": [c.name for c in get_top_k_choices(group.choices, 3)],
                     },
                 )
 
             context.current_modifier_group_index += 1
             return self._advance_after_modifiers(context, item)
 
-        # -------- MATCH MODIFIERS --------
-        matched_ids = []
-        invalid_terms = []
+        matched_ids, invalid_terms = [], []
 
         for chunk in split_candidates(user_text):
             choice = match_choice(chunk, group.choices)
@@ -98,25 +92,39 @@ class WaitingForModifierHandler(BaseHandler):
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="repeat_modifier_options",
                 response_payload={
-                    "top_choices": [c.name for c in get_top_k_choices(group.choices, 3)],
                     "group_name": group.name,
+                    "top_choices": [c.name for c in get_top_k_choices(group.choices, 4)],
+                    "invalid_terms": invalid_terms,
+                    "repeat_reason": "invalid",
                 },
             )
 
-        context.selected_modifier_groups.setdefault(group.group_id, []).extend(
-            matched_ids
-        )
-
+        context.selected_modifier_groups.setdefault(group.group_id, []).extend(matched_ids)
         context.current_modifier_group_index += 1
+
         return self._advance_after_modifiers(context, item)
 
-    def _advance_after_modifiers(self, context: ConversationContext, item):
+    def _advance_after_modifiers(
+            self,
+            context: ConversationContext,
+            item,
+    ) -> HandlerResult:
+        """
+        Advances the flow after completing modifier selection.
+
+        Order of operations:
+        1. More modifier groups → continue modifiers
+        2. Otherwise → quantity
+        """
+
+        # More modifier groups remaining
         if context.current_modifier_group_index < len(item.modifier_groups):
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="ask_for_modifier",
             )
 
+        # Proceed to quantity
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_QUANTITY,
             response_key="ask_for_quantity",
