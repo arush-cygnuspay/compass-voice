@@ -113,7 +113,13 @@ class TurnEngine:
         )
 
         if not route.allowed:
-            return TurnOutput(response_key="intent_not_allowed")
+            return TurnOutput(
+                response_key="intent_not_allowed",
+                response_payload={
+                    "state": session.conversation_state,
+                    "intent": intent_result.intent,
+                },
+            )
 
         handler = self.handlers.get(route.handler_name)
 

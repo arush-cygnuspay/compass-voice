@@ -2,6 +2,7 @@
 from typing import Optional
 
 from app.responses.cart_responses import render_cart_summary
+from app.responses.intent_not_allowed import handle_intent_not_allowed
 from app.responses.item_responses import *
 from app.responses.menu_responses import *
 from app.state_machine.context import ConversationContext
@@ -29,7 +30,7 @@ class ResponseBuilder:
         # Meta / Safety / Errors
         # -------------------------
         if response_key == "intent_not_allowed":
-            return "Sorry, I can’t do that right now."
+            return handle_intent_not_allowed(payload)
 
         if response_key == "handler_not_implemented":
             return "That feature isn’t available yet."

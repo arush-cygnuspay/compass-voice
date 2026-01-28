@@ -127,7 +127,7 @@ class StateRouter:
         # CART OVERLAYS (GLOBAL, NON-TASK)
         # --------------------------------------------------
         if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
-            if state == ConversationState.WAITING_FOR_PAYMENT:
+            if state != ConversationState.IDLE:
                 return RouteResult(allowed=False)
 
             return RouteResult(
