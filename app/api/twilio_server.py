@@ -1,8 +1,15 @@
 # app/api/twilio_server.py
+from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI, Request, Form
 from fastapi.responses import Response
 
 from twilio.twiml.voice_response import VoiceResponse, Gather
+
+# ✅ IMPORT ROUTERS
+from app.api.ui.ui import router as ui_router
+from app.api.test_chat import router as test_chat_router
 
 from app.core.turn_engine import TurnEngine
 from app.core.response_builder import ResponseBuilder
@@ -11,21 +18,15 @@ from app.menu.store import MenuStore
 from app.menu.exceptions import MenuLoadError
 from app.state_machine.state_router import StateRouter
 from app.session.repository import load_session, save_session
-from pathlib import Path
-
-app = FastAPI()
-engine: TurnEngine | None = None
-responder: ResponseBuilder | None = None
 
 
 # ----------------------------------------------------------
-# Startup
+# Lifespan
 # ----------------------------------------------------------
 
-@app.on_event("startup")
-async def startup_event():
-    global engine, responder
-
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ---------- INIT ----------
     restaurant_id = "demo"
 
     project_root = Path(__file__).resolve().parents[2]
@@ -45,7 +46,27 @@ async def startup_event():
     engine = TurnEngine(router, menu_repo)
     responder = ResponseBuilder(menu_repo)
 
+    # Attach to app state
+    app.state.engine = engine
+    app.state.responder = responder
+
+    # ✅ REGISTER ROUTERS
+    app.include_router(test_chat_router)  # /test/chat
+    app.include_router(ui_router)         # /ui
+
     print("Twilio server initialized with Compass Voice v2 pipeline")
+
+    yield
+
+    # ---------- SHUTDOWN ----------
+    print("Shutting down Compass Voice v2")
+
+
+# ----------------------------------------------------------
+# App
+# ----------------------------------------------------------
+
+app = FastAPI(lifespan=lifespan)
 
 
 # ----------------------------------------------------------
@@ -80,13 +101,11 @@ async def voice(request: Request):
 
     # 🔒 HARD GUARD
     if session.turn_count > 0:
-        # Do NOT restart gather
         return Response("", media_type="application/xml")
 
     print(f"[CALL START] SID={call_sid}")
 
     vr = VoiceResponse()
-
     vr.append(
         gather(
             action_url=str(request.url_for("process_speech")),
@@ -106,7 +125,8 @@ async def process_speech(
     request: Request,
     SpeechResult: str = Form(default=""),
 ):
-    global engine, responder
+    engine: TurnEngine = request.app.state.engine
+    responder: ResponseBuilder = request.app.state.responder
 
     form = await request.form()
     call_sid = form.get("CallSid")
@@ -152,6 +172,7 @@ async def process_speech(
 # ==========================================================
 # RUN SERVER (DEV)
 # ==========================================================
+
 if __name__ == "__main__":
     import uvicorn
 
