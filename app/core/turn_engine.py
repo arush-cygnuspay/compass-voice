@@ -52,14 +52,6 @@ class TurnEngine:
         self.normalizer = QueryNormalizationPipeline()
         self.intent_refiner = IntentRefiner(menu_repo)
 
-        self.LOCKED_STATES = {
-                ConversationState.WAITING_FOR_SIDE,
-                ConversationState.WAITING_FOR_MODIFIER,
-                ConversationState.WAITING_FOR_SIZE,
-                ConversationState.WAITING_FOR_QUANTITY,
-            }
-
-
         # Explicit handler registry
         self.handlers = {
             "add_item_handler": AddItemHandler(
@@ -93,31 +85,6 @@ class TurnEngine:
 
         preclean_text = basic_cleanup(user_text)
         stt_cleaned_text = clean_stt_noise(preclean_text)
-
-        # ---------------- LOCKED STATE ----------------
-        if session.conversation_state in self.LOCKED_STATES:
-            handler_name = f"{session.conversation_state.name.lower()}_handler"
-            handler = self.handlers.get(handler_name)
-
-            normalized = self.normalizer.normalize(
-                text=stt_cleaned_text,
-                intent=Intent.UNKNOWN,
-                state=session.conversation_state,
-            )
-
-            result = handler.handle(
-                intent=Intent.UNKNOWN,
-                context=session.conversation_context,
-                user_text=normalized,
-                session=session,
-            )
-
-            self._apply_result(session, result)
-
-            return TurnOutput(
-                response_key=result.response_key,
-                response_payload=result.response_payload,
-            )
 
         # ---------------- NLU ----------------
         intent_result = resolve_intent(stt_cleaned_text, state=session.conversation_state)
