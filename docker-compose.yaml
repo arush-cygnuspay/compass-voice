@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  compass-voice:
+    image: arushahmd/compass-voice:latest
+    build: .
+    container_name: compass-voice
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+    environment:
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    container_name: compass-redis
+    restart: unless-stopped
