@@ -55,7 +55,7 @@ class WaitingForModifierHandler(BaseHandler):
 
         if signal == ChoiceSignal.ASK_OPTIONS:
             return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_SIDE,
+                next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="repeat_modifier_options",
                 response_payload={
                     "group_name": group.name,
