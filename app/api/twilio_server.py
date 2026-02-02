@@ -7,7 +7,7 @@ from fastapi.responses import Response
 
 from twilio.twiml.voice_response import VoiceResponse, Gather
 
-# ✅ IMPORT ROUTERS
+#  IMPORT ROUTERS
 from app.api.ui.ui import router as ui_router
 from app.api.test_chat import router as test_chat_router
 
