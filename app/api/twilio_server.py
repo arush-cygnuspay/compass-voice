@@ -109,7 +109,7 @@ async def voice(request: Request):
     vr.append(
         gather(
             action_url=str(request.url_for("process_speech")),
-            say="Hello! Thank you for calling Compass. What would you like to order?",
+            say="Thank you for calling Compass. What would you like to order?",
         )
     )
 
