@@ -80,7 +80,11 @@ class FlowControlPolicy:
 
             if signal == ChoiceSignal.ASK_OPTIONS:
                 return FlowDecision(
-                    action=FlowAction.PASS,
+                    # Ensure we stay in the current slot-filling handler.
+                    # Otherwise, phrases like "what's available?" can be detected
+                    # as ASK_MENU_INFO and get routed away from the slot flow.
+                    action=FlowAction.REWRITE,
+                    effective_intent=Intent.UNKNOWN,
                     slot_interaction=SlotInteraction.ASK_OPTIONS,
                 )
 
