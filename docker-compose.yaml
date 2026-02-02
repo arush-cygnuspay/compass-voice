@@ -3,7 +3,6 @@ version: "3.8"
 services:
   compass-voice:
     image: arushahmd/compass-voice:latest
-    build: .
     container_name: compass-voice
     ports:
       - "8000:8000"

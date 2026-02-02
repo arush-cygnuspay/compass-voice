@@ -20,8 +20,10 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
+        working-directory: ${{ github.workspace }}
         run: |
-          docker build -t arushahmd/compass-voice:latest .
+          ls -la
+          docker build -f Dockerfile -t arushahmd/compass-voice:latest .
           docker push arushahmd/compass-voice:latest
 
       - name: Deploy to EC2
