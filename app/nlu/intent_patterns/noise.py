@@ -31,6 +31,25 @@ DISCOURSE_NOISE_PAT = re.compile(
     re.I | re.X
 )
 
+AFFIRMATION_WRAPPER_PAT = re.compile(
+    r"""
+    ^\s*(?:
+        yes |
+        yeah |
+        yup |
+        yep |
+        sure |
+        of\s+course |
+        course |
+        absolutely |
+        definitely |
+        for\s+sure |
+        why\s+not
+    )\s*[,:;]?\s*(?P<rest>.+)$
+    """,
+    re.I | re.X
+)
+
 POLITENESS_NOISE_PAT = re.compile(
     r"""
     \b(
