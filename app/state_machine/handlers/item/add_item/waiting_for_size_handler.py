@@ -1,14 +1,16 @@
 # app/state_machine/handlers/item/add_item/waiting_for_size_handler.py
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
-from app.state_machine.conversation_context import ConversationContext, InterruptProposal
+from app.state_machine.conversation_context import (
+    ConversationContext,
+    InterruptProposal,
+    PendingVariantChoice,
+)
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
@@ -36,13 +38,6 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.PAYMENT_REQUEST,
     Intent.CANCEL_ORDER,
 }
-
-
-@dataclass(frozen=True, slots=True)
-class _VariantChoice:
-    variant_id: str
-    name: str
-    normalized_name: str
 
 
 def _first_size_slot_normalized(slots: list[SlotValue] | tuple[SlotValue, ...]) -> str | None:
@@ -92,8 +87,9 @@ def _normalize_answer_text(normalized_user_text: str) -> str:
 
 def _match_variant_value_normalized(
     normalized_value: str,
-    choices: list[_VariantChoice],
-) -> _VariantChoice | None:
+    choices_by_normalized_name: dict[str, PendingVariantChoice],
+    choices: list[PendingVariantChoice],
+) -> PendingVariantChoice | None:
     if not normalized_value:
         return None
 
@@ -101,15 +97,16 @@ def _match_variant_value_normalized(
     if not compact_value:
         return None
 
-    for choice in choices:
-        if choice.normalized_name == compact_value:
-            return choice
+    exact = choices_by_normalized_name.get(compact_value)
+    if exact is not None:
+        return exact
+
+    if len(compact_value) < 3:
+        return None
 
     for choice in choices:
         choice_name = choice.normalized_name
-        if len(compact_value) >= 3 and (
-            compact_value in choice_name or choice_name in compact_value
-        ):
+        if compact_value in choice_name or choice_name in compact_value:
             return choice
 
     return None
@@ -117,7 +114,7 @@ def _match_variant_value_normalized(
 
 def _looks_like_pure_size_answer(
     normalized_user_text: str,
-    choices: list[_VariantChoice],
+    normalized_choice_names: tuple[str, ...],
 ) -> bool:
     """
     Conservative answer detector.
@@ -137,8 +134,10 @@ def _looks_like_pure_size_answer(
     if not compact:
         return False
 
-    for choice in choices:
-        if compact == choice.normalized_name:
+    for choice_name in normalized_choice_names:
+        if compact == choice_name:
+            return True
+        if len(compact) >= 3 and (compact in choice_name or choice_name in compact):
             return True
 
     return False
@@ -172,21 +171,15 @@ class WaitingForSizeHandler(BaseHandler):
             )
 
         normalized_user_text = user_text or ""
-
-        choices = [
-            _VariantChoice(
-                variant_id=variant.variant_id,
-                name=variant.name,
-                normalized_name=variant.normalized_name,
-            )
-            for variant in (pending.item_variants or [])
-            if variant.name
-        ]
+        choices = pending.item_variants
 
         if not choices:
             context.size_target = None
             step = determine_next_add_item_step(context)
             return self._step_to_result(context, step)
+
+        available_sizes = list(pending.item_variant_names)
+        normalized_choice_names = tuple(pending.item_variants_by_normalized_name.keys())
 
         if intent == Intent.DENY:
             return HandlerResult(
@@ -201,15 +194,19 @@ class WaitingForSizeHandler(BaseHandler):
                 response_key="repeat_size_options",
                 response_payload={
                     "item_name": pending.item_name,
-                    "available_sizes": [choice.name for choice in choices],
+                    "available_sizes": available_sizes,
                 },
             )
 
-        slots = getattr(context, "last_slots", ()) or ()
+        slots = context.last_slots or ()
         slot_value = _first_size_slot_normalized(slots)
 
         if slot_value:
-            matched = _match_variant_value_normalized(slot_value, choices)
+            matched = _match_variant_value_normalized(
+                slot_value,
+                pending.item_variants_by_normalized_name,
+                choices,
+            )
             if matched is not None:
                 context.selected_variant_id = matched.variant_id
                 context.size_target = None
@@ -232,8 +229,12 @@ class WaitingForSizeHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        if _looks_like_pure_size_answer(normalized_user_text, choices):
-            matched = _match_variant_value_normalized(normalized_user_text, choices)
+        if _looks_like_pure_size_answer(normalized_user_text, normalized_choice_names):
+            matched = _match_variant_value_normalized(
+                normalized_user_text,
+                pending.item_variants_by_normalized_name,
+                choices,
+            )
             if matched is not None:
                 context.selected_variant_id = matched.variant_id
                 context.size_target = None
@@ -246,7 +247,7 @@ class WaitingForSizeHandler(BaseHandler):
             response_key="invalid_size_option",
             response_payload={
                 "item_name": pending.item_name,
-                "available_sizes": [choice.name for choice in choices],
+                "available_sizes": available_sizes,
             },
         )
 
