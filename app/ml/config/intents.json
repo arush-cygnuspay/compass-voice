@@ -1,8 +1,3 @@
-{
-  "confirmation": ["affirm", "deny"],
-  "greeting": ["morning", "afternoon", "evening", "night", "greeting"],
-  "menu": ["ask_item_info", "ask_options", "ask_price", "availability_query", "browse_category", "browse_menu", "recommendation_query"],
-  "cart": ["add_item", "cart_item_query", "change_quantity", "clear_cart", "modify_item", "remove_item", "replace_item", "show_cart", "show_total", "undo_last"],
-  "order": ["cancel_order", "checkout", "confirm_order", "finish_order", "order_error_status", "order_placement_status", "order_processing_status", "order_status_general", "review_order"],
-  "payment": ["payment_done", "payment_methods_query", "payment_request", "payment_status"]
-}
+version https://git-lfs.github.com/spec/v1
+oid sha256:c487b887820a050b7b7294d427dbb20bd658a9f0d76a1d0bae5edcb605ee11c2
+size 700
