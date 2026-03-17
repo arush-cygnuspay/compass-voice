@@ -1,274 +1,641 @@
 # app/core/turn_engine.py
+from __future__ import annotations
+
+import os
+import time
 from dataclasses import dataclass
-from typing import Optional
+from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
-from app.core.flow_control.flow_control_policy import FlowControlPolicy
 from app.core.flow_control.flow_decision import FlowAction
-from app.nlu.intent_refinement.intent_refiner import IntentRefiner
+from app.core.flow_control.flow_control_policy import FlowControlPolicy
+from app.logging.nlu_csv_logger import NluCsvLogger
+from app.menu.repository import MenuRepository
+from app.ml.intent.inference_intent import IntentBundle
+from app.ml.slot.inference_slot import SlotBundle
 from app.nlu.intent_resolution.intent import Intent
-from app.nlu.intent_resolution.intent_resolver import resolve_intent
 from app.nlu.intent_resolution.intent_result import IntentResult
-from app.nlu.query_normalization.base import basic_cleanup
-from app.nlu.query_normalization.noise_cleaner import clean_stt_noise
-from app.nlu.query_normalization.pipeline import QueryNormalizationPipeline
+from app.nlu.nlu_resolver import resolve_nlu
+from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
 from app.session.session import Session
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
-from app.state_machine.handlers.cart.cart_handlers import CartHandler, ShowingCartHandler, ShowingTotalHandler
-from app.state_machine.handlers.common.cancellation_confirmation_handler import CancellationConfirmationHandler
+from app.state_machine.handlers.cart.cart_handlers import CartHandler
+from app.state_machine.handlers.common.cancellation_confirmation_handler import (
+    CancellationConfirmationHandler,
+)
+from app.state_machine.handlers.common.waiting_for_quantity_handler import (
+    WaitingForQuantityHandler,
+)
 from app.state_machine.handlers.info.ask_menu_info_handler import AskMenuInfoHandler
 from app.state_machine.handlers.info.ask_price_handler import AskPriceHandler
-from app.state_machine.handlers.item.add_item.adding_item_handler import AddItemHandler
-from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import WaitingForModifierHandler
-from app.state_machine.handlers.common.waiting_for_quantity_handler import WaitingForQuantityHandler
-from app.state_machine.handlers.item.add_item.waiting_for_side_handler import WaitingForSideHandler
-from app.state_machine.handlers.item.add_item.waiting_for_size_handler import WaitingForSizeHandler
+from app.state_machine.handlers.item.add_item.add_item_handler import AddItemHandler
+from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import (
+    WaitingForModifierHandler,
+)
+from app.state_machine.handlers.item.add_item.waiting_for_side_handler import (
+    WaitingForSideHandler,
+)
+from app.state_machine.handlers.item.add_item.waiting_for_side_size_handler import (
+    WaitingForSideSizeHandler,
+)
+from app.state_machine.handlers.item.add_item.waiting_for_size_handler import (
+    WaitingForSizeHandler,
+)
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
 from app.state_machine.handlers.item.remove_item_handler import RemoveItemHandler
 from app.state_machine.handlers.item.removing_item_handler import RemovingItemHandler
 from app.state_machine.handlers.order.confirm_order_handler import ConfirmOrderHandler
 from app.state_machine.handlers.order.start_order_handler import StartOrderHandler
-from app.state_machine.handlers.payment.waiting_for_payment_handler import WaitingForPaymentHandler
+from app.state_machine.handlers.payment.waiting_for_payment_handler import (
+    WaitingForPaymentHandler,
+)
+from app.state_machine.resume_prompt_builder import ResumePromptBuilder
 from app.state_machine.state_router import StateRouter
-from app.menu.repository import MenuRepository
 
 
-# Internal DTO for Turn Result
-@dataclass
+@dataclass(frozen=True, slots=True)
 class TurnOutput:
     response_key: str
-    response_payload: Optional[dict] = None
+    response_payload: dict[str, Any] | None = None
+
+
+INTENT_MIN_CONF = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
+TURN_TIMING_ENABLED = os.getenv("COMPASS_TURN_TIMING_ENABLED", "0") == "1"
+ROUTE_DEBUG_ENABLED = os.getenv("COMPASS_ROUTE_DEBUG_ENABLED", "0") == "1"
 
 
 class TurnEngine:
     """
     Stateless turn processor.
-    Session is the single source of truth.
+
+    Orchestration only:
+      input -> preprocess -> NLU -> flow guard -> route -> handler -> commands -> response
     """
 
-    def __init__(self, router: StateRouter, menu_repo: MenuRepository):
+    def __init__(
+        self,
+        router: StateRouter,
+        menu_repo: MenuRepository,
+        intent_bundle: IntentBundle,
+        slot_bundle: SlotBundle,
+        nlu_logger: NluCsvLogger | None = None,
+    ) -> None:
         self.router = router
         self.menu_repo = menu_repo
+        self.intent_bundle = intent_bundle
+        self.slot_bundle = slot_bundle
         self.cart_summary_builder = CartSummaryBuilder(menu_repo)
-
-        self.normalizer = QueryNormalizationPipeline()
-        self.intent_refiner = IntentRefiner(menu_repo)
-
         self.flow_policy = FlowControlPolicy()
+        self.nlu_logger = nlu_logger or NluCsvLogger()
+        self.resume_prompt_builder = ResumePromptBuilder()
 
-        # Explicit handler registry
-        self.handlers = {
-            "add_item_handler": AddItemHandler(
-                menu_repo=menu_repo,
-            ),
+        self.handlers: dict[str, Any] = {
+            "add_item_handler": AddItemHandler(menu_repo=menu_repo),
             "waiting_for_side_handler": WaitingForSideHandler(menu_repo),
-            "confirming_handler": ConfirmingHandler(menu_repo),
             "waiting_for_modifier_handler": WaitingForModifierHandler(menu_repo),
             "waiting_for_size_handler": WaitingForSizeHandler(menu_repo),
+            "waiting_for_side_size_handler": WaitingForSideSizeHandler(menu_repo),
+            "waiting_for_quantity_handler": WaitingForQuantityHandler(),
+            "confirming_handler": ConfirmingHandler(menu_repo),
             "remove_item_handler": RemoveItemHandler(menu_repo),
             "removing_item_handler": RemovingItemHandler(),
             "start_order_handler": StartOrderHandler(self.cart_summary_builder),
-            "confirming_order_handler": ConfirmOrderHandler(),
+            "confirming_order_handler": ConfirmOrderHandler(self.cart_summary_builder),
             "waiting_for_payment_handler": WaitingForPaymentHandler(),
-
-            # Cart utilities
             "cart_handler": CartHandler(self.cart_summary_builder),
-            "showing_cart_handler": ShowingCartHandler(),
-            "showing_total_handler": ShowingTotalHandler(),
-
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
-
-            # Info Handlers
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
-
-            "waiting_for_quantity_handler": WaitingForQuantityHandler(),
         }
 
-    # app/core/turn_engine.py
-
     def process_turn(self, session: Session, user_text: str) -> TurnOutput:
-        """
-        Executes a single conversational turn.
+        t_total_start = time.perf_counter()
 
-        Responsibilities:
-        - Normalize and resolve intent
-        - Apply flow control (mid-flow governance)
-        - Route to the correct handler
-        - Apply resulting state mutations
-        """
+        ctx = session.conversation_context
+        state_before = session.conversation_state
+        ctx.last_user_text = user_text
 
-        # ---------------------------
-        # Preserve raw input for flow-level reasoning
-        # ---------------------------
-        session.conversation_context.last_user_text = user_text
+        t0 = time.perf_counter()
+        preprocessed = preprocess_turn_text(user_text)
+        cleaned_text = preprocessed.cleaned_text
+        normalized_text = preprocessed.normalized_text
+        t_preprocess = time.perf_counter() - t0
 
-        # ---------------------------
-        # Basic cleanup (ASR / text noise)
-        # ---------------------------
-        preclean_text = basic_cleanup(user_text)
-        stt_cleaned_text = clean_stt_noise(preclean_text)
-
-        # ---------------------------
-        # NLU: Intent detection
-        # ---------------------------
-        intent_result = resolve_intent(
-            stt_cleaned_text,
-            state=session.conversation_state,
-        )
-
-        normalized_text = self.normalizer.normalize(
-            text=stt_cleaned_text,
-            intent=intent_result.intent,
-            state=session.conversation_state,
-        )
-
-        refined_intent = self.intent_refiner.refine(
-            intent=intent_result.intent,
+        t0 = time.perf_counter()
+        nlu = resolve_nlu(
+            raw_text=cleaned_text,
             normalized_text=normalized_text,
             state=session.conversation_state,
+            pending_action=ctx.pending_action,
+            intent_bundle=self.intent_bundle,
+            slot_bundle=self.slot_bundle,
         )
+        ctx.set_last_nlu(user_text=cleaned_text, nlu=nlu)
+        t_nlu = time.perf_counter() - t0
 
-        # ---------------------------
-        # FLOW CONTROL (authoritative)
-        # ---------------------------
-        flow_decision = self.flow_policy.evaluate(
-            state=session.conversation_state,
-            intent=refined_intent,
-            context=session.conversation_context,
+        detected_intent = (
+            nlu.effective_intent if nlu.intent_confidence >= INTENT_MIN_CONF else Intent.UNKNOWN
         )
-
-        # Slot interaction is contextual, not an intent
-        session.conversation_context.slot_interaction = flow_decision.slot_interaction
-
-        # ---------------------------
-        # BLOCKED turn (no handler execution)
-        # ---------------------------
-        if flow_decision.action == FlowAction.BLOCK:
-            session.turn_count += 1
-            return TurnOutput(
-                response_key=flow_decision.response_key,
-                response_payload=flow_decision.response_payload,
-            )
-
-        # ---------------------------
-        # CANCELLED flow (reset state)
-        # ---------------------------
-        if flow_decision.action == FlowAction.CANCEL:
-            session.conversation_context.reset()
-            session.conversation_state = ConversationState.IDLE
-            session.turn_count += 1
-
-            return TurnOutput(
-                response_key="flow_guard_cancelled",
-                response_payload=flow_decision.response_payload,
-            )
-
-        # ---------------------------
-        # Intent rewrite (rare but allowed)
-        # ---------------------------
-        effective_intent = (
-            flow_decision.effective_intent
-            if flow_decision.action == FlowAction.REWRITE
-            else refined_intent
-        )
-
         intent_result = IntentResult(
-            intent=effective_intent,
-            raw_text=intent_result.raw_text,
+            intent=detected_intent,
+            raw_text=nlu.normalized_text,
         )
 
-        # ---------------------------
-        # ROUTING
-        # ---------------------------
-        route = self.router.route(
-            state=session.conversation_state,
-            intent_result=intent_result,
-        )
+        intent_result, shortcut_output = self._apply_idle_shortcuts(session, intent_result)
+        if shortcut_output is not None:
+            context_snapshot = self._snapshot_context_for_logging(session) if self.nlu_logger.enabled else {}
 
-        if not route.allowed:
+            session.last_intent = intent_result.intent
+            session.last_response_key = shortcut_output.response_key
+            session.last_response_payload = shortcut_output.response_payload
             session.turn_count += 1
+
+            if self.nlu_logger.enabled:
+                self._log_nlu_and_turn(
+                    session=session,
+                    state_before=state_before,
+                    context_snapshot=context_snapshot,
+                    nlu=nlu,
+                    result=None,
+                    response_key=shortcut_output.response_key,
+                )
+
+            self._maybe_print_timing(
+                total_ms=(time.perf_counter() - t_total_start) * 1000.0,
+                preprocess_ms=t_preprocess * 1000.0,
+                nlu_ms=t_nlu * 1000.0,
+                flow_ms=0.0,
+                route_ms=0.0,
+                handler_ms=0.0,
+            )
+            return shortcut_output
+
+        t0 = time.perf_counter()
+        flow = self.flow_policy.evaluate(
+            state=session.conversation_state,
+            intent=intent_result.intent,
+            context=ctx,
+        )
+        t_flow = time.perf_counter() - t0
+
+        if flow.action == FlowAction.BLOCK:
+            payload = dict(flow.response_payload or {})
+            context_snapshot = self._snapshot_context_for_logging(session) if self.nlu_logger.enabled else {}
+
+            session.last_response_key = flow.response_key or "flow_blocked"
+            session.last_response_payload = payload
+            session.turn_count += 1
+
+            if self.nlu_logger.enabled:
+                self._log_nlu_and_turn(
+                    session=session,
+                    state_before=state_before,
+                    context_snapshot=context_snapshot,
+                    nlu=nlu,
+                    result=None,
+                    response_key=flow.response_key or "flow_blocked",
+                )
+
+            self._maybe_print_timing(
+                total_ms=(time.perf_counter() - t_total_start) * 1000.0,
+                preprocess_ms=t_preprocess * 1000.0,
+                nlu_ms=t_nlu * 1000.0,
+                flow_ms=t_flow * 1000.0,
+                route_ms=0.0,
+                handler_ms=0.0,
+            )
             return TurnOutput(
-                response_key="intent_not_allowed",
-                response_payload={
-                    "state": session.conversation_state.name,
-                    "intent": intent_result.intent.name,
+                response_key=flow.response_key or "flow_blocked",
+                response_payload=payload,
+            )
+
+        if flow.action == FlowAction.CANCEL:
+            context_snapshot = self._snapshot_context_for_logging(session) if self.nlu_logger.enabled else {}
+
+            ctx.awaiting_flow_confirmation = True
+            ctx.return_state = session.conversation_state
+            ctx.interrupt_proposal = None
+
+            session.conversation_state = ConversationState.CANCELLATION_CONFIRMATION
+            session.last_intent = intent_result.intent
+            session.last_response_key = flow.response_key or "flow_guard_confirm_cancel"
+            session.last_response_payload = dict(flow.response_payload or {})
+            session.turn_count += 1
+
+            if self.nlu_logger.enabled:
+                self._log_nlu_and_turn(
+                    session=session,
+                    state_before=state_before,
+                    context_snapshot=context_snapshot,
+                    nlu=nlu,
+                    result=None,
+                    response_key=flow.response_key or "flow_guard_confirm_cancel",
+                )
+
+            self._maybe_print_timing(
+                total_ms=(time.perf_counter() - t_total_start) * 1000.0,
+                preprocess_ms=t_preprocess * 1000.0,
+                nlu_ms=t_nlu * 1000.0,
+                flow_ms=t_flow * 1000.0,
+                route_ms=0.0,
+                handler_ms=0.0,
+            )
+            return TurnOutput(
+                response_key=flow.response_key or "flow_guard_confirm_cancel",
+                response_payload=dict(flow.response_payload or {}),
+            )
+
+        if flow.action == FlowAction.HANDLE_READONLY_INTERRUPT:
+            readonly_output = self._handle_readonly_interrupt(
+                session=session,
+                state_before=state_before,
+                intent_result=intent_result,
+                nlu=nlu,
+            )
+            if readonly_output is not None:
+                self._maybe_print_timing(
+                    total_ms=(time.perf_counter() - t_total_start) * 1000.0,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=t_flow * 1000.0,
+                    route_ms=0.0,
+                    handler_ms=0.0,
+                )
+                return readonly_output
+
+        if flow.action == FlowAction.REWRITE and flow.effective_intent is not None:
+            intent_result = IntentResult(
+                intent=flow.effective_intent,
+                raw_text=intent_result.raw_text,
+            )
+
+        t0 = time.perf_counter()
+        route = self.router.route(session.conversation_state, intent_result)
+        t_route = time.perf_counter() - t0
+
+        if ROUTE_DEBUG_ENABLED:
+            print(
+                "[ROUTE]",
+                {
+                    "state": session.conversation_state.value,
+                    "intent": intent_result.intent.value,
+                    "handler": route.handler_name,
+                    "allowed": route.allowed,
                 },
             )
 
-        handler = self.handlers[route.handler_name]
+        if not route.allowed or not route.handler_name:
+            payload = {
+                "state": session.conversation_state.value,
+                "intent": intent_result.intent.value,
+            }
+            context_snapshot = self._snapshot_context_for_logging(session) if self.nlu_logger.enabled else {}
 
-        # ---------------------------
-        # HANDLER EXECUTION
-        # ---------------------------
-        result = handler.handle(
+            session.last_response_key = "intent_not_allowed"
+            session.last_response_payload = payload
+            session.turn_count += 1
+
+            if self.nlu_logger.enabled:
+                self._log_nlu_and_turn(
+                    session=session,
+                    state_before=state_before,
+                    context_snapshot=context_snapshot,
+                    nlu=nlu,
+                    result=None,
+                    response_key="intent_not_allowed",
+                )
+
+            self._maybe_print_timing(
+                total_ms=(time.perf_counter() - t_total_start) * 1000.0,
+                preprocess_ms=t_preprocess * 1000.0,
+                nlu_ms=t_nlu * 1000.0,
+                flow_ms=t_flow * 1000.0,
+                route_ms=t_route * 1000.0,
+                handler_ms=0.0,
+            )
+            return TurnOutput(
+                response_key="intent_not_allowed",
+                response_payload=payload,
+            )
+
+        handler = self.handlers.get(route.handler_name)
+        if handler is None:
+            raise KeyError(f"Handler not registered: {route.handler_name}")
+
+        context_snapshot = self._snapshot_context_for_logging(session) if self.nlu_logger.enabled else {}
+
+        t0 = time.perf_counter()
+        result: HandlerResult = handler.handle(
             intent=intent_result.intent,
-            context=session.conversation_context,
-            user_text=normalized_text,
+            context=ctx,
+            user_text=nlu.normalized_text,
             session=session,
         )
+        t_handler = time.perf_counter() - t0
 
-        # ---------------------------
-        # APPLY SIDE EFFECTS
-        # ---------------------------
         if result.command:
             self._apply_command(session, result.command)
 
         if result.reset_context:
-            session.conversation_context.reset()
+            ctx.reset()
 
         session.conversation_state = result.next_state
         session.last_intent = intent_result.intent
         session.last_response_key = result.response_key
+        session.last_response_payload = result.response_payload
         session.turn_count += 1
+
+        if self.nlu_logger.enabled:
+            self._log_nlu_and_turn(
+                session=session,
+                state_before=state_before,
+                context_snapshot=context_snapshot,
+                nlu=nlu,
+                result=result,
+                response_key=result.response_key,
+            )
+
+        self._maybe_print_timing(
+            total_ms=(time.perf_counter() - t_total_start) * 1000.0,
+            preprocess_ms=t_preprocess * 1000.0,
+            nlu_ms=t_nlu * 1000.0,
+            flow_ms=t_flow * 1000.0,
+            route_ms=t_route * 1000.0,
+            handler_ms=t_handler * 1000.0,
+        )
 
         return TurnOutput(
             response_key=result.response_key,
             response_payload=result.response_payload,
         )
 
-    def _apply_command(self, session: Session, command: dict) -> None:
-        command_type = command["type"]
+    def _maybe_print_timing(
+        self,
+        *,
+        total_ms: float,
+        preprocess_ms: float,
+        nlu_ms: float,
+        flow_ms: float,
+        route_ms: float,
+        handler_ms: float,
+    ) -> None:
+        if not TURN_TIMING_ENABLED:
+            return
 
-        if command_type == "ADD_ITEM_TO_CART":
+        print(
+            "[TURN_TIMING]",
+            {
+                "total_ms": round(total_ms, 3),
+                "preprocess_ms": round(preprocess_ms, 3),
+                "nlu_ms": round(nlu_ms, 3),
+                "flow_ms": round(flow_ms, 3),
+                "route_ms": round(route_ms, 3),
+                "handler_ms": round(handler_ms, 3),
+            },
+        )
+
+    def _handle_readonly_interrupt(
+        self,
+        *,
+        session: Session,
+        state_before: ConversationState,
+        intent_result: IntentResult,
+        nlu,
+    ) -> TurnOutput | None:
+        handler_name = self._readonly_interrupt_handler_name(intent_result.intent)
+        if handler_name is None:
+            return None
+
+        handler = self.handlers.get(handler_name)
+        if handler is None:
+            raise KeyError(f"Handler not registered: {handler_name}")
+
+        preserved_state = session.conversation_state
+        context_snapshot = self._snapshot_context_for_logging(session) if self.nlu_logger.enabled else {}
+
+        result: HandlerResult = handler.handle(
+            intent=intent_result.intent,
+            context=session.conversation_context,
+            user_text=nlu.normalized_text,
+            session=session,
+        )
+
+        if result.command is not None:
+            raise ValueError(
+                f"Read-only interrupt handler {handler_name} returned command={result.command}. "
+                "Read-only interrupt handlers must not mutate session state."
+            )
+
+        if result.reset_context:
+            raise ValueError(
+                f"Read-only interrupt handler {handler_name} attempted reset_context=True."
+            )
+
+        resume = self.resume_prompt_builder.build(session)
+
+        session.conversation_state = preserved_state
+        session.last_intent = intent_result.intent
+
+        if resume is None:
+            session.last_response_key = result.response_key
+            session.last_response_payload = result.response_payload
+            session.turn_count += 1
+
+            if self.nlu_logger.enabled:
+                self._log_nlu_and_turn(
+                    session=session,
+                    state_before=state_before,
+                    context_snapshot=context_snapshot,
+                    nlu=nlu,
+                    result=result,
+                    response_key=result.response_key,
+                )
+
+            return TurnOutput(
+                response_key=result.response_key,
+                response_payload=result.response_payload,
+            )
+
+        resume_key, resume_payload = resume
+        combined_payload = {
+            "interrupt_response_key": result.response_key,
+            "interrupt_response_payload": result.response_payload,
+            "resume_response_key": resume_key,
+            "resume_response_payload": resume_payload,
+        }
+
+        session.last_response_key = "readonly_interrupt_with_resume"
+        session.last_response_payload = combined_payload
+        session.turn_count += 1
+
+        if self.nlu_logger.enabled:
+            self._log_nlu_and_turn(
+                session=session,
+                state_before=state_before,
+                context_snapshot=context_snapshot,
+                nlu=nlu,
+                result=result,
+                response_key="readonly_interrupt_with_resume",
+            )
+
+        return TurnOutput(
+            response_key="readonly_interrupt_with_resume",
+            response_payload=combined_payload,
+        )
+
+    def _readonly_interrupt_handler_name(self, intent: Intent) -> str | None:
+        if intent == Intent.ASK_PRICE:
+            return "ask_price_handler"
+        if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
+            return "cart_handler"
+        return None
+
+    def _apply_command(self, session: Session, command: dict[str, Any]) -> None:
+        cmd_type = command.get("type")
+        payload = command.get("payload") or {}
+
+        if cmd_type == "ADD_ITEM_TO_CART":
             from app.cart.cart_item import CartItem
-
-            payload = command["payload"]
 
             cart_item = CartItem.create(
                 item_id=payload["item_id"],
                 quantity=payload["quantity"],
                 variant_id=payload.get("variant_id"),
                 sides=payload.get("sides", {}),
+                side_variants=payload.get("side_variants", {}),
                 modifiers=payload.get("modifiers", {}),
             )
-
             session.cart.add_item(cart_item)
+            return
 
-        elif command_type == "CLEAR_CART":
+        if cmd_type == "CLEAR_CART":
             session.cart.clear()
+            return
 
-        elif command_type == "REMOVE_ITEM_FROM_CART":
-            payload = command["payload"]
-            cart_item_id = payload["cart_item_id"]
-            removed = session.cart.remove_item(cart_item_id)
-            if not removed:
-                # This should rarely happen as validation happens in handler
-                # But log it for debugging
-                pass
+        if cmd_type == "REMOVE_ITEM_FROM_CART":
+            session.cart.remove_item(payload["cart_item_id"])
+            return
 
-        else:
-            raise ValueError(f"Unknown command type: {command_type}")
+        raise ValueError(f"Unknown command type: {cmd_type}")
 
-    def _apply_result(self, session: Session, result: HandlerResult) -> None:
-        if result.command:
-            self._apply_command(session, result.command)
+    def _safe_session_id(self, session: Session) -> str:
+        value = getattr(session, "session_id", None)
+        if value is not None:
+            return str(value)
 
-        if result.reset_context:
-            session.conversation_context.reset()
+        value = getattr(session, "id", None)
+        if value is not None:
+            return str(value)
 
-        session.conversation_state = result.next_state
-        session.last_response_key = result.response_key
-        session.turn_count += 1
+        return "unknown_session"
 
+    def _safe_pending_action_from_context(self, context) -> str:
+        action = getattr(context, "pending_action", None)
+        return action.value if action is not None else ""
+
+    def _safe_current_prompt_field_from_context(self, context) -> str:
+        return getattr(context, "current_prompt_field", None) or ""
+
+    def _safe_current_item_id_from_context(self, context) -> str:
+        return getattr(context, "current_item_id", None) or ""
+
+    def _safe_current_item_name_from_context(self, context) -> str:
+        return getattr(context, "current_item_name", None) or ""
+
+    def _snapshot_context_for_logging(self, session: Session) -> dict[str, str]:
+        ctx = session.conversation_context
+        return {
+            "pending_action": self._safe_pending_action_from_context(ctx),
+            "current_prompt_field": self._safe_current_prompt_field_from_context(ctx),
+            "current_item_id": self._safe_current_item_id_from_context(ctx),
+            "current_item_name": self._safe_current_item_name_from_context(ctx),
+        }
+
+    def _log_nlu_and_turn(
+        self,
+        *,
+        session: Session,
+        state_before: ConversationState,
+        context_snapshot: dict[str, str],
+        nlu,
+        result: HandlerResult | None,
+        response_key: str,
+    ) -> None:
+        try:
+            slot_values = getattr(nlu, "slots", ()) or ()
+
+            self.nlu_logger.log_slots(
+                session_id=self._safe_session_id(session),
+                turn_index=session.turn_count,
+                state_before=state_before.value,
+                pending_action=context_snapshot["pending_action"],
+                user_text=session.conversation_context.last_user_text or "",
+                normalized_text=getattr(nlu, "normalized_text", "") or "",
+                pred_main_intent=getattr(nlu, "model_main_intent", "") or "",
+                pred_sub_intent=getattr(nlu, "model_sub_intent", "") or "",
+                pred_intent=getattr(getattr(nlu, "effective_intent", None), "value", "") or "",
+                slots=slot_values,
+            )
+
+            self.nlu_logger.log_turn(
+                session_id=self._safe_session_id(session),
+                turn_index=session.turn_count,
+                state_before=state_before.value,
+                state_after=session.conversation_state.value,
+                pending_action=context_snapshot["pending_action"],
+                current_prompt_field=context_snapshot["current_prompt_field"],
+                current_item_id=context_snapshot["current_item_id"],
+                current_item_name=context_snapshot["current_item_name"],
+                user_text=session.conversation_context.last_user_text or "",
+                normalized_text=getattr(nlu, "normalized_text", "") or "",
+                pred_main_intent=getattr(nlu, "model_main_intent", "") or "",
+                pred_sub_intent=getattr(nlu, "model_sub_intent", "") or "",
+                pred_intent=getattr(getattr(nlu, "effective_intent", None), "value", "") or "",
+                pred_intent_confidence=getattr(nlu, "intent_confidence", None),
+                slot_model_ran=bool(getattr(nlu, "slot_model_ran", False)),
+                response_key=response_key,
+                command=result.command if result else None,
+                slots_count=len(slot_values),
+            )
+        except Exception as exc:
+            print(f"[NLU_CSV_LOGGER_ERROR] {type(exc).__name__}: {exc}")
+
+    def _apply_idle_shortcuts(
+        self,
+        session: Session,
+        intent_result: IntentResult,
+    ) -> tuple[IntentResult, TurnOutput | None]:
+        if session.conversation_state != ConversationState.IDLE:
+            return intent_result, None
+
+        checkout_like_intents = {
+            Intent.DENY,
+            Intent.END_ADDING,
+            Intent.START_ORDER,
+            Intent.CHECKOUT,
+            Intent.CONFIRM_ORDER,
+            Intent.FINISH_ORDER,
+            Intent.PAYMENT_REQUEST,
+            Intent.REVIEW_ORDER,
+        }
+
+        if intent_result.intent not in checkout_like_intents:
+            return intent_result, None
+
+        if not session.cart.is_empty():
+            return (
+                IntentResult(
+                    intent=Intent.START_ORDER,
+                    raw_text=intent_result.raw_text,
+                ),
+                None,
+            )
+
+        return (
+            intent_result,
+            TurnOutput(
+                response_key="idle_nothing_to_checkout",
+                response_payload=None,
+            ),
+        )

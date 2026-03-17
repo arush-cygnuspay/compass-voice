@@ -1,135 +1,115 @@
 # app/menu/store.py
-
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Dict, List, Optional, Set
 
 from app.menu.exceptions import MenuLoadError
 from app.menu.models import (
     MenuItem,
+    ModifierChoice,
+    ModifierGroup,
     Pricing,
     PricingVariant,
-    SideGroup,
     SideChoice,
-    ModifierGroup,
-    ModifierChoice,
+    SideGroup,
 )
+from app.nlu.query_normalization.text_preprocessor import normalize_text
 
-# =========================================================
-# Internal Helpers (LOW-LEVEL, DETERMINISTIC)
-# =========================================================
-
-def _norm(text: str) -> str:
-    """
-    Canonical normalization for menu indexing.
-    NOTE:
-    - Lowercase only
-    - No punctuation removal
-    - No stemming
-    This function MUST remain cheap and deterministic.
-    """
-    return text.lower().strip()
-
-
-def _token_score(query_tokens: set[str], item_tokens: set[str]) -> float:
-    """
-    Simple overlap ratio used ONLY for cheap fallback heuristics.
-
-    IMPORTANT:
-    - This is NOT a semantic score.
-    - This MUST NOT be used for final decision-making.
-    - Business-level resolution happens in MenuRepository.
-    """
-    if not item_tokens:
-        return 0.0
-    return len(query_tokens & item_tokens) / len(item_tokens)
-
-
-# =========================================================
-# MenuStore
-# =========================================================
 
 class MenuStore:
     """
     Immutable, in-memory menu store.
 
     Responsibilities:
-    -----------------
     - Load menu.json and entity_index.json
     - Parse raw JSON into domain models
     - Build cheap runtime indexes
-    - Provide deterministic, low-level lookup helpers
+    - Provide deterministic low-level lookup helpers
 
-    NON-Responsibilities:
-    ---------------------
+    Non-responsibilities:
     - Intent interpretation
-    - Scoring strategies
     - Ambiguity resolution
-    - Conversational logic
-
-    All "which item should win?" decisions belong to MenuRepository.
+    - Conversational routing
+    - Winner selection logic
     """
 
     def __init__(self, menu_path: Path, entity_index_path: Path):
         self.menu_path = menu_path
         self.entity_index_path = entity_index_path
 
-        # Canonical parsed data
-        self.items: Dict[str, MenuItem] = {}
-        self.categories: Dict[str, dict] = {}
-        self.entity_index: Dict[str, List[dict]] = {}
+        self.items: dict[str, MenuItem] = {}
+        self.categories: dict[str, dict] = {}
+        self.entity_index: dict[str, list[dict]] = {}
 
-        # Runtime indexes (cheap, deterministic)
-        self._item_by_name: Dict[str, MenuItem] = {}
-        self._item_tokens: Dict[str, Set[str]] = {}
+        self._item_by_name: dict[str, MenuItem] = {}
+        self._item_ids_by_alias: dict[str, list[str]] = {}
+        self._category_name_index: dict[str, dict] = {}
 
         self._load()
 
-    # =================================================
-    # Load & Parse
-    # =================================================
-
     def _load(self) -> None:
         """
-        Loads menu.json and entity_index.json and builds indexes.
+        Load menu and entity index, then build runtime indexes.
 
-        This method MUST:
-        - Fail fast on malformed input
-        - Leave MenuStore in a fully consistent state
+        This method must fail fast on malformed input and leave the store
+        in a fully consistent state.
         """
         try:
             with open(self.menu_path, "r", encoding="utf-8") as f:
                 raw_menu = json.load(f)
 
             raw_items = raw_menu.get("items", {})
-            self.categories = raw_menu.get("categories", {})
+            raw_categories = raw_menu.get("categories", {})
 
             if not raw_items:
                 raise MenuLoadError("menu.json contains no items")
 
             with open(self.entity_index_path, "r", encoding="utf-8") as f:
-                self.entity_index = json.load(f)
+                raw_entity_index = json.load(f)
 
-            self.items.clear()
-            for item_id, raw_item in raw_items.items():
-                self.items[item_id] = self._parse_menu_item(raw_item)
+            self.items = {
+                item_id: self._parse_menu_item(raw_item)
+                for item_id, raw_item in raw_items.items()
+            }
+            self.categories = dict(raw_categories)
+            self.entity_index = self._normalize_entity_index(raw_entity_index)
 
             self._build_indexes()
 
         except Exception as e:
             raise MenuLoadError(str(e)) from e
 
-    # =================================================
-    # Parsing Helpers
-    # =================================================
+    def _normalize_entity_index(self, raw_entity_index: dict) -> dict[str, list[dict]]:
+        normalized: dict[str, list[dict]] = {}
+
+        for raw_key, raw_value in raw_entity_index.items():
+            norm_key = normalize_text(str(raw_key))
+            if not norm_key:
+                continue
+
+            entries = raw_value if isinstance(raw_value, list) else [raw_value]
+            bucket = normalized.setdefault(norm_key, [])
+            for entry in entries:
+                if isinstance(entry, dict):
+                    bucket.append(entry)
+
+        return normalized
 
     def _parse_menu_item(self, raw: dict) -> MenuItem:
+        aliases = tuple(str(alias) for alias in raw.get("aliases", []))
+        normalized_aliases = tuple(
+            norm_alias
+            for alias in aliases
+            if (norm_alias := normalize_text(alias))
+        )
+
         return MenuItem(
             item_id=raw["item_id"],
             name=raw["name"],
-            aliases=raw.get("aliases", []),
+            normalized_name=normalize_text(raw["name"]),
+            aliases=aliases,
+            normalized_aliases=normalized_aliases,
             pricing=self._parse_pricing(raw["pricing"]),
             side_groups=self._parse_side_groups(raw.get("side_groups", [])),
             modifier_groups=self._parse_modifier_groups(raw.get("modifier_groups", [])),
@@ -149,11 +129,12 @@ class MenuStore:
         if mode == "variant":
             variants = [
                 PricingVariant(
-                    variant_id=v["variant_id"],
-                    label=v["label"],
-                    price_cents=v["price_cents"],
+                    variant_id=variant["variant_id"],
+                    label=variant["label"],
+                    normalized_label=normalize_text(variant["label"]),
+                    price_cents=variant["price_cents"],
                 )
-                for v in raw.get("variants", [])
+                for variant in raw.get("variants", [])
             ]
             return Pricing(
                 mode="variant",
@@ -170,110 +151,97 @@ class MenuStore:
 
         raise MenuLoadError(f"Unknown pricing mode: {mode}")
 
-    def _parse_side_groups(self, groups: List[dict]) -> List[SideGroup]:
-        parsed: List[SideGroup] = []
+    def _parse_side_groups(self, groups: list[dict]) -> list[SideGroup]:
+        parsed: list[SideGroup] = []
 
-        for g in groups:
+        for group in groups:
             choices = [
                 SideChoice(
-                    item_id=c["item_id"],
-                    name=c["name"],
-                    pricing=self._parse_pricing(c["pricing"]),
+                    item_id=choice["item_id"],
+                    name=choice["name"],
+                    normalized_name=normalize_text(choice["name"]),
+                    pricing=self._parse_pricing(choice["pricing"]),
                 )
-                for c in g.get("choices", [])
+                for choice in group.get("choices", [])
             ]
 
             parsed.append(
                 SideGroup(
-                    group_id=g["group_id"],
-                    name=g["name"],
-                    is_required=g["is_required"],
-                    min_selector=g["min_selector"],
-                    max_selector=g["max_selector"],
+                    group_id=group["group_id"],
+                    name=group["name"],
+                    normalized_name=normalize_text(group["name"]),
+                    is_required=group["is_required"],
+                    min_selector=group["min_selector"],
+                    max_selector=group["max_selector"],
                     choices=choices,
                 )
             )
 
         return parsed
 
-    def _parse_modifier_groups(self, groups: List[dict]) -> List[ModifierGroup]:
-        parsed: List[ModifierGroup] = []
+    def _parse_modifier_groups(self, groups: list[dict]) -> list[ModifierGroup]:
+        parsed: list[ModifierGroup] = []
 
-        for g in groups:
+        for group in groups:
             choices = [
                 ModifierChoice(
-                    modifier_id=c["modifier_id"],
-                    name=c["name"],
-                    price_cents=c["price_cents"],
+                    modifier_id=choice["modifier_id"],
+                    name=choice["name"],
+                    normalized_name=normalize_text(choice["name"]),
+                    price_cents=choice["price_cents"],
                 )
-                for c in g.get("choices", [])
+                for choice in group.get("choices", [])
             ]
 
             parsed.append(
                 ModifierGroup(
-                    group_id=g["group_id"],
-                    name=g["name"],
-                    is_required=g["is_required"],
-                    min_selector=g["min_selector"],
-                    max_selector=g["max_selector"],
+                    group_id=group["group_id"],
+                    name=group["name"],
+                    normalized_name=normalize_text(group["name"]),
+                    is_required=group["is_required"],
+                    min_selector=group["min_selector"],
+                    max_selector=group["max_selector"],
                     choices=choices,
                 )
             )
 
         return parsed
 
-    # =================================================
-    # Indexes
-    # =================================================
-
     def _build_indexes(self) -> None:
         """
-        Builds cheap runtime indexes for deterministic lookup.
+        Build deterministic runtime indexes once at startup.
 
-        Category normalization rules:
-        - Singular / plural equivalence
-        - Lowercase only
-        - No stemming libraries (deterministic)
+        Category index also supports singular/plural tolerance.
         """
         self._item_by_name.clear()
-        self._item_tokens.clear()
+        self._item_ids_by_alias.clear()
+        self._category_name_index.clear()
 
-        # -----------------------------
-        # Item indexes (unchanged)
-        # -----------------------------
         for item in self.items.values():
-            key = _norm(item.name)
-            self._item_by_name[key] = item
-            self._item_tokens[key] = set(key.split())
+            if item.normalized_name:
+                self._item_by_name[item.normalized_name] = item
 
-        # -----------------------------
-        # Category name index (NEW)
-        # -----------------------------
-        self._category_name_index: Dict[str, dict] = {}
+            for alias in item.normalized_aliases:
+                self._item_ids_by_alias.setdefault(alias, []).append(item.item_id)
 
-        for cat in self.categories.values():
-            name = cat["name"].lower().strip()
+        for category in self.categories.values():
+            category_name = str(category.get("name", ""))
+            norm_name = normalize_text(category_name)
+            if not norm_name:
+                continue
 
-            # canonical
-            self._category_name_index[name] = cat
+            self._category_name_index[norm_name] = category
 
-            # plural ↔ singular normalization
-            if name.endswith("s"):
-                self._category_name_index[name[:-1]] = cat
+            if norm_name.endswith("s"):
+                singular = norm_name[:-1]
+                if singular:
+                    self._category_name_index[singular] = category
             else:
-                self._category_name_index[f"{name}s"] = cat
-
-    # =================================================
-    # Queries (LOW-LEVEL ONLY)
-    # =================================================
+                self._category_name_index[f"{norm_name}s"] = category
 
     def get_item(self, item_id: str) -> MenuItem:
-        """
-        Fetch item by ID.
-        This is a hard lookup and MUST raise if missing.
-        """
         item = self.items.get(item_id)
-        if not item:
+        if item is None:
             raise KeyError(f"Item not found: {item_id}")
         return item
 
@@ -283,75 +251,37 @@ class MenuStore:
         *,
         allowed_types: set[str] | None = None,
         parent_item_id: str | None = None,
-    ) -> List[dict]:
-        """
-        Entity index lookup.
-
-        Returns RAW entity index entries.
-        DOES NOT rank, score, or select winners.
-        """
-        key = _norm(key)
-        raw = self.entity_index.get(key)
-        if not raw:
+        group_id: str | None = None,
+    ) -> list[dict]:
+        raw_entries = self.entity_index.get(key)
+        if not raw_entries:
             return []
 
-        entries = raw if isinstance(raw, list) else [raw]
-        results: List[dict] = []
+        results: list[dict] = []
 
-        for e in entries:
-            etype = e.get("type")
-            if not etype:
+        for entry in raw_entries:
+            entity_type = entry.get("type")
+            if not entity_type:
                 continue
 
-            if allowed_types and etype not in allowed_types:
+            if allowed_types and entity_type not in allowed_types:
                 continue
 
-            if parent_item_id:
-                if (
-                    e.get("item_id") != parent_item_id
-                    and e.get("parent_item_id") != parent_item_id
-                ):
-                    continue
+            if parent_item_id is not None and entry.get("parent_item_id") != parent_item_id:
+                continue
 
-            results.append(e)
+            if group_id is not None and entry.get("group_id") != group_id:
+                continue
+
+            results.append(entry)
 
         return results
 
-    def find_item_exact(self, name: str) -> Optional[MenuItem]:
-        """
-        Exact name match (after normalization).
-        """
-        return self._item_by_name.get(_norm(name))
+    def find_item_exact(self, normalized_name: str) -> MenuItem | None:
+        return self._item_by_name.get(normalized_name)
 
-    def find_item_by_tokens(self, text: str) -> Optional[MenuItem]:
-        """
-        Token-overlap fallback heuristic.
+    def find_item_ids_by_alias(self, normalized_alias: str) -> list[str]:
+        return self._item_ids_by_alias.get(normalized_alias, [])
 
-        WARNING:
-        - This is intentionally weak.
-        - Only used as a LAST RESORT.
-        - Threshold prevents garbage matches.
-        """
-        query_tokens = set(_norm(text).split())
-
-        best_item: Optional[MenuItem] = None
-        best_score = 0.0
-
-        for name, item_tokens in self._item_tokens.items():
-            score = _token_score(query_tokens, item_tokens)
-            if score > best_score:
-                best_score = score
-                best_item = self._item_by_name[name]
-
-        return best_item if best_score >= 0.6 else None
-
-    def find_category_by_name(self, text: str) -> Optional[dict]:
-        """
-        Resolve category by normalized name with plural tolerance.
-
-        Deterministic:
-        - No fuzzy guessing
-        - No scoring
-        """
-        key = _norm(text)
-        return self._category_name_index.get(key)
+    def find_category_by_name(self, normalized_text: str) -> dict | None:
+        return self._category_name_index.get(normalized_text)

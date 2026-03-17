@@ -1,4 +1,5 @@
 # app/utils/top_k_choices.py
+
 import random
 from typing import Iterable, List, TypeVar
 
@@ -14,6 +15,7 @@ def get_top_k_choices(choices: Iterable[T], k: int = 4) -> List[T]:
 
     Used for recovery prompts only; keep selection small and conversational.
     """
+
     if k <= 0:
         return []
 
@@ -21,9 +23,4 @@ def get_top_k_choices(choices: Iterable[T], k: int = 4) -> List[T]:
     if not choices_list:
         return []
 
-    k = min(k, len(choices_list))
-
-    if len(choices_list) > k:
-        return random.sample(choices_list, k)
-
-    return choices_list
+    return choices_list[:k]

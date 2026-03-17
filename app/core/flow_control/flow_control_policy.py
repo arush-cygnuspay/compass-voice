@@ -1,129 +1,84 @@
-# app/core/flow_control/flow_control_policy.py
+from __future__ import annotations
 
-from app.core.flow_control.flow_decision import FlowDecision, FlowAction
-from app.core.flow_control.slot_interaction import SlotInteraction
-from app.nlu.choice_signals.choice_signals import ChoiceSignal
-from app.nlu.choice_signals.resolver import resolve_choice_signal
+from dataclasses import dataclass
+from typing import Any, Mapping
+
+from app.core.flow_control.flow_decision import FlowAction, FlowDecision
 from app.nlu.intent_resolution.intent import Intent
-from app.state_machine.context import ConversationContext
+from app.state_machine.conversation_context import ConversationContext
 from app.state_machine.conversation_state import ConversationState
 
-WAITING_STATES = {
+
+ACTIVE_TASK_STATES: set[ConversationState] = {
+    ConversationState.CONFIRMING_ITEM,
     ConversationState.WAITING_FOR_SIDE,
+    ConversationState.WAITING_FOR_SIDE_SIZE,
     ConversationState.WAITING_FOR_MODIFIER,
     ConversationState.WAITING_FOR_SIZE,
     ConversationState.WAITING_FOR_QUANTITY,
+    ConversationState.REMOVING_ITEM,
+    ConversationState.MODIFYING_ITEM,
+    ConversationState.CONFIRMING_ORDER,
+    ConversationState.WAITING_FOR_PAYMENT,
 }
 
-
-FORBIDDEN_GLOBAL_INTENTS = {
+READ_ONLY_INTERRUPT_INTENTS: set[Intent] = {
+    Intent.ASK_PRICE,
     Intent.SHOW_CART,
     Intent.SHOW_TOTAL,
-    Intent.ADD_ITEM,
-    Intent.REMOVE_ITEM,
-    Intent.START_ORDER,
-    Intent.CLEAR_CART,
-    Intent.PAYMENT_REQUEST,
 }
 
 
-CLARIFICATION_INTENTS = {
-    Intent.ASK_MENU_INFO,
-    Intent.SHOW_MENU,
-    Intent.ASK_PRICE,
-    Intent.UNKNOWN,
-}
+@dataclass(frozen=True, slots=True)
+class _GuardPayload:
+    state: ConversationState
+    context: ConversationContext
+
+    def cancel_payload(self) -> Mapping[str, Any]:
+        return {
+            "state": self.state.value,
+            "item_name": self.context.current_item_name,
+        }
 
 
 class FlowControlPolicy:
     """
-    Governs mid-flow behavior.
-    Decides whether an intent should pass, be rewritten, blocked, or cancelled.
+    Mid-flow orchestration guardrails.
+
+    Policy:
+    - Explicit cancel inside an active task does not immediately destroy the flow.
+    - Instead, it transitions into cancellation confirmation.
+    - Read-only informational interrupts are allowed mid-flow and should be
+      handled outside the waiting-state handlers.
     """
 
-    # app/core/flow_control/flow_control_policy.py
-
     def evaluate(
-            self,
-            *,
-            state: ConversationState,
-            intent: Intent,
-            context: ConversationContext,
+        self,
+        *,
+        state: ConversationState,
+        intent: Intent,
+        context: ConversationContext,
     ) -> FlowDecision:
-        """
-        Central authority for mid-flow governance.
+        payload = _GuardPayload(state=state, context=context)
 
-        This layer:
-        - Prevents illegal transitions
-        - Normalizes slot-level interactions
-        - Keeps handlers simple and deterministic
-        """
-
-        # --------------------------------------------------
-        # 1. Explicit intent-level CANCEL (highest priority)
-        # --------------------------------------------------
-        if intent == Intent.CANCEL and state != ConversationState.IDLE:
+        if (
+                intent in {Intent.CANCEL, Intent.CANCEL_ORDER}
+                and state in ACTIVE_TASK_STATES
+                and state != ConversationState.CANCELLATION_CONFIRMATION
+        ):
             return FlowDecision(
                 action=FlowAction.CANCEL,
                 response_key="flow_guard_confirm_cancel",
-                response_payload={
-                    "item_name": context.current_item_name,
-                },
+                response_payload=payload.cancel_payload(),
             )
 
-        # --------------------------------------------------
-        # 2. Slot-level interactions (OPTIONS / SKIP)
-        #    These are NOT intents — they are control signals
-        # --------------------------------------------------
-        if state in WAITING_STATES:
-            signal = resolve_choice_signal(context.last_user_text)
-
-            if signal == ChoiceSignal.ASK_OPTIONS:
-                return FlowDecision(
-                    # Ensure we stay in the current slot-filling handler.
-                    # Otherwise, phrases like "what's available?" can be detected
-                    # as ASK_MENU_INFO and get routed away from the slot flow.
-                    action=FlowAction.REWRITE,
-                    effective_intent=Intent.UNKNOWN,
-                    slot_interaction=SlotInteraction.ASK_OPTIONS,
-                )
-
-            if signal == ChoiceSignal.DENY:
-                return FlowDecision(
-                    action=FlowAction.PASS,
-                    slot_interaction=SlotInteraction.SKIP,
-                )
-
-        # --------------------------------------------------
-        # 3. Confirm / deny must always reach handlers
-        # --------------------------------------------------
-        if intent in {Intent.CONFIRM, Intent.DENY}:
-            return FlowDecision(action=FlowAction.PASS)
-
-        # --------------------------------------------------
-        # 4. Clarification / help during slot filling
-        # --------------------------------------------------
-        if state in WAITING_STATES and intent in CLARIFICATION_INTENTS:
+        if (
+            intent in READ_ONLY_INTERRUPT_INTENTS
+            and state in ACTIVE_TASK_STATES
+            and state != ConversationState.CANCELLATION_CONFIRMATION
+        ):
             return FlowDecision(
-                action=FlowAction.REWRITE,
-                effective_intent=Intent.UNKNOWN,
+                action=FlowAction.HANDLE_READONLY_INTERRUPT,
             )
 
-        # --------------------------------------------------
-        # 5. Forbidden global actions mid-flow
-        # --------------------------------------------------
-        if state in WAITING_STATES and intent in FORBIDDEN_GLOBAL_INTENTS:
-            return FlowDecision(
-                action=FlowAction.BLOCK,
-                response_key="flow_guard_finish_current_step",
-                response_payload={
-                    "state": state.name,
-                    "current_step": state.name.lower().replace("waiting_for_", ""),
-                    "item_name": context.current_item_name,
-                },
-            )
-
-        # --------------------------------------------------
-        # 6. Default: allow routing
-        # --------------------------------------------------
         return FlowDecision(action=FlowAction.PASS)

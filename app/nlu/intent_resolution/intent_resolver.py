@@ -1,102 +1,54 @@
 # app/nlu/intent_resolution/intent_resolver.py
+from __future__ import annotations
 
-from typing import Set
+import os
 
-from app.nlu.intent_resolution.cart_intent_resolver import match_cart_intent
-from app.nlu.intent_resolution.common_intent_resolver import match_yes_no
+from app.ml.intent.inference_intent import IntentBundle, predict_intent
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.intent_resolution.intent_mapping import SUB_INTENT_TO_INTENT
 from app.nlu.intent_resolution.intent_result import IntentResult
-from app.nlu.intent_resolution.item_intent_resolver import match_add_item
-from app.nlu.intent_resolution.menu_intent_resolver import match_ask_menu_info, match_price_intent
-from app.nlu.intent_resolution.order_intent_resolver import match_order_intent
-from app.nlu.intent_resolution.payment_intent_resolver import match_payment_intent
-from app.nlu.intent_resolution.priority import INTENT_PRIORITY
 from app.state_machine.conversation_state import ConversationState
-from app.utils.text_utils import normalize_text
 
 
-def resolve_intent(text: str, state: ConversationState) -> IntentResult:
-    """
-    Resolve linguistic intent from raw user text.
+CONFIDENCE_THRESHOLD = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
 
-    GUARANTEES:
-    - Pure
-    - Deterministic
-    - Regex-based only
-    """
 
+def predict_intent_labels(
+    text: str,
+    bundle: IntentBundle,
+) -> tuple[str | None, str | None, float, float]:
+    results = predict_intent(
+        texts=text,
+        bundle=bundle,
+        max_length=64,
+    )
+    if not results:
+        return None, None, 0.0, 0.0
+
+    result = results[0]
+    main = result.get("pred_main_intent")
+    sub = result.get("pred_sub_intent")
+
+    confidence_main = float(result.get("confidence_main", 0.0) or 0.0)
+    confidence_sub = float(result.get("confidence_sub", 0.0) or 0.0)
+
+    main = main.strip() if isinstance(main, str) else None
+    sub = sub.strip() if isinstance(sub, str) else None
+
+    return main, sub, confidence_main, confidence_sub
+
+
+def resolve_intent(
+    text: str,
+    state: ConversationState,
+    bundle: IntentBundle,
+) -> IntentResult:
     if not text:
         return IntentResult(Intent.UNKNOWN, "")
 
-    normalized = normalize_text(text)
-    matches: set[Intent] = set()
+    _main, sub, _confidence_main, confidence_sub = predict_intent_labels(text, bundle)
 
-    # ----------------------------------
-    # 🔒 PAYMENT STATE OVERRIDE
-    # ----------------------------------
-    if state == ConversationState.WAITING_FOR_PAYMENT:
-        payment_matches = match_payment_intent(normalized)
+    if not sub or confidence_sub < CONFIDENCE_THRESHOLD:
+        return IntentResult(Intent.UNKNOWN, text)
 
-        if payment_matches:
-            # Respect priority inside payment intents
-            for intent in INTENT_PRIORITY:
-                if intent in payment_matches:
-                    return IntentResult(intent=intent, raw_text=normalized)
-
-        # Allow explicit cancel / deny
-        yn = match_yes_no(normalized)
-        if yn:
-            return IntentResult(intent=yn, raw_text=normalized)
-
-        return IntentResult(Intent.UNKNOWN, normalized)
-
-    # ----------------------------------
-    # YES / NO (general)
-    # ----------------------------------
-    yn = match_yes_no(normalized)
-    if yn:
-        matches.add(yn)
-
-    # -------- Price of an Item -----------
-    matches |= match_price_intent(normalized)
-
-    # ----------------------------------
-    # ORDER + PAYMENT intents (general)
-    # ----------------------------------
-    matches |= match_order_intent(normalized)
-    matches |= match_payment_intent(normalized)
-
-    # CART intents (pure, global)
-    matches |= match_cart_intent(normalized)
-
-    # ----------------------------------
-    # ASK MENU INFO (NEW, global, read-only)
-    # ----------------------------------
-    matches |= match_ask_menu_info(normalized)
-
-    # ----------------------------------
-    # ADD ITEM (ONLY when IDLE)
-    # ----------------------------------
-    if state == ConversationState.IDLE:
-        allow_bare = not bool(
-            matches & {
-                Intent.SHOW_CART,
-                Intent.SHOW_TOTAL,
-                Intent.ORDER_STATUS,
-                Intent.CLEAR_CART,
-                Intent.ASK_MENU_INFO,
-            }
-        )
-
-        if match_add_item(normalized, allow_bare=allow_bare):
-            matches.add(Intent.ADD_ITEM)
-
-    # ----------------------------------
-    # PRIORITY RESOLUTION
-    # ----------------------------------
-    for intent in INTENT_PRIORITY:
-        if intent in matches:
-            return IntentResult(intent=intent, raw_text=normalized)
-
-    return IntentResult(Intent.UNKNOWN, normalized)
-
+    return IntentResult(SUB_INTENT_TO_INTENT.get(sub, Intent.UNKNOWN), text)

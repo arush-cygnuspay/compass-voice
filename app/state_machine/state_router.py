@@ -1,6 +1,6 @@
 # app/state_machine/state_router.py
 
-from typing import Dict, Set
+from __future__ import annotations
 
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
@@ -8,217 +8,154 @@ from app.state_machine.conversation_state import ConversationState
 from app.state_machine.route_result import RouteResult
 
 
+WAITING_STATE_HANDLERS: dict[ConversationState, str] = {
+    ConversationState.WAITING_FOR_SIDE: "waiting_for_side_handler",
+    ConversationState.WAITING_FOR_SIDE_SIZE: "waiting_for_side_size_handler",
+    ConversationState.WAITING_FOR_MODIFIER: "waiting_for_modifier_handler",
+    ConversationState.WAITING_FOR_SIZE: "waiting_for_size_handler",
+    ConversationState.WAITING_FOR_QUANTITY: "waiting_for_quantity_handler",
+}
+
+DIRECT_STATE_HANDLERS: dict[ConversationState, str] = {
+    ConversationState.CONFIRMING_ITEM: "confirming_handler",
+    ConversationState.REMOVING_ITEM: "removing_item_handler",
+    ConversationState.CONFIRMING_ORDER: "confirming_order_handler",
+    ConversationState.WAITING_FOR_PAYMENT: "waiting_for_payment_handler",
+    ConversationState.CANCELLATION_CONFIRMATION: "cancellation_confirmation_handler",
+}
+
+IDLE_CHECKOUT_INTENTS: set[Intent] = {
+    Intent.START_ORDER,
+    Intent.END_ADDING,
+    Intent.CHECKOUT,
+    Intent.CONFIRM_ORDER,
+    Intent.FINISH_ORDER,
+    Intent.PAYMENT_REQUEST,
+    Intent.REVIEW_ORDER,
+}
+
+IDLE_CART_INTENTS: set[Intent] = {
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+    Intent.CLEAR_CART,
+}
+
+IDLE_MENU_INFO_INTENTS: set[Intent] = {
+    Intent.BROWSE_MENU,
+    Intent.BROWSE_CATEGORY,
+    Intent.ASK_ITEM_INFO,
+    Intent.ASK_OPTIONS,
+    Intent.AVAILABILITY_QUERY,
+    Intent.RECOMMENDATION_QUERY,
+    Intent.SHOW_MENU,
+    Intent.ASK_MENU_INFO,
+}
+
+GREETING_INTENTS: set[Intent] = {
+    Intent.CONFIRM,
+    Intent.UNKNOWN,
+    Intent.GREETING,
+    Intent.MORNING,
+    Intent.AFTERNOON,
+    Intent.EVENING,
+    Intent.NIGHT,
+}
+
+
+IDLE_ORDER_SUPPORT_INTENTS: set[Intent] = {
+    Intent.CANCEL_ORDER,
+    Intent.PAYMENT_STATUS,
+    Intent.ORDER_STATUS_GENERAL,
+    Intent.ORDER_PLACEMENT_STATUS,
+    Intent.ORDER_PROCESSING_STATUS,
+    Intent.ORDER_ERROR_STATUS,
+}
+
+
 class StateRouter:
     """
-    Authoritative router that decides whether a detected intent
-    is allowed to execute in the current conversation state.
+    Deterministic router.
 
-    IMPORTANT:
-    - Cart utilities are overlays, NOT states
-    - SHOWING_* states do not exist
+    Rules:
+    - waiting states own the turn by default
+    - direct task states map to a single dedicated handler
+    - IDLE routes only valid entry intents
+    - exceptional mid-flow interrupts are handled before routing by FlowControlPolicy / TurnEngine
+    - everything else is rejected
     """
-
-    def __init__(self) -> None:
-        # Only TASK states belong here
-        self._allowed_intents: Dict[ConversationState, Set[Intent]] = {
-            ConversationState.GREETING: {
-                Intent.CONFIRM,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.IDLE: {
-                Intent.ADD_ITEM,
-                Intent.MODIFY_ITEM,
-                Intent.REMOVE_ITEM,
-                Intent.SHOW_MENU,
-                Intent.END_ADDING,
-                Intent.START_ORDER,
-            },
-
-            ConversationState.CONFIRMING_ITEM: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.WAITING_FOR_SIDE: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.WAITING_FOR_MODIFIER: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.WAITING_FOR_SIZE: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.WAITING_FOR_QUANTITY: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.MODIFYING_ITEM: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.REMOVING_ITEM: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-            },
-
-            ConversationState.CONFIRMING_ORDER: {
-                Intent.CONFIRM,
-                Intent.DENY,
-                Intent.CANCEL,
-            },
-
-            ConversationState.CANCELLATION_CONFIRMATION: {
-                Intent.CONFIRM,
-                Intent.DENY,
-            },
-
-            ConversationState.WAITING_FOR_PAYMENT: {
-                Intent.PAYMENT_DONE,
-                Intent.DENY,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-
-            ConversationState.ERROR_RECOVERY: {
-                Intent.CONFIRM,
-                Intent.CANCEL,
-                Intent.UNKNOWN,
-            },
-        }
 
     def route(self, state: ConversationState, intent_result: IntentResult) -> RouteResult:
         intent = intent_result.intent
 
-        # --------------------------------------------------
-        # ASK MENU INFO (GLOBAL, READ-ONLY)
-        # --------------------------------------------------
-        if intent == Intent.ASK_MENU_INFO:
-            if state == ConversationState.WAITING_FOR_PAYMENT:
-                return RouteResult(allowed=False)
-
+        # 1) Waiting states own the turn by default.
+        # Mid-flow exceptions like ASK_PRICE / SHOW_CART / SHOW_TOTAL
+        # must be intercepted earlier by FlowControlPolicy + TurnEngine.
+        if state in WAITING_STATE_HANDLERS:
             return RouteResult(
                 allowed=True,
-                handler_name="ask_menu_info_handler",
+                handler_name=WAITING_STATE_HANDLERS[state],
             )
 
-        # --------------------------------------------------
-        # CART OVERLAYS (GLOBAL, NON-TASK)
-        # --------------------------------------------------
-        if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
-            if state != ConversationState.IDLE:
-                return RouteResult(allowed=False)
-
+        # 2) Direct task states
+        if state in DIRECT_STATE_HANDLERS:
             return RouteResult(
                 allowed=True,
-                handler_name="cart_handler",
+                handler_name=DIRECT_STATE_HANDLERS[state],
             )
 
-        # --------------------------------------------------
-        # ASK PRICE OF AN ITEM
-        # --------------------------------------------------
-        if intent == Intent.ASK_PRICE:
-            if state == ConversationState.WAITING_FOR_PAYMENT:
-                return RouteResult(allowed=False)
+        # 3) IDLE entry routing
+        if state == ConversationState.IDLE:
+            if intent == Intent.ADD_ITEM:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="add_item_handler",
+                )
 
-            return RouteResult(
-                allowed=True,
-                handler_name="ask_price_handler",
-            )
+            if intent == Intent.REMOVE_ITEM:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="remove_item_handler",
+                )
 
-        # --------------------------------------------------
-        # CLEAR CART (DESTRUCTIVE, STRICT)
-        # --------------------------------------------------
-        if intent == Intent.CLEAR_CART:
-            if state in {
-                ConversationState.IDLE,
-                ConversationState.CONFIRMING_ORDER,
-            }:
+            if intent in IDLE_CHECKOUT_INTENTS:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="start_order_handler",
+                )
+
+            if intent in IDLE_ORDER_SUPPORT_INTENTS:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="start_order_handler",
+                )
+
+            if intent in IDLE_CART_INTENTS:
                 return RouteResult(
                     allowed=True,
                     handler_name="cart_handler",
                 )
 
-            return RouteResult(allowed=False)
+        # 4) Greeting
+        if state == ConversationState.GREETING:
+            if intent in GREETING_INTENTS:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="confirming_handler",
+                )
 
-        # --------------------------------------------------
-        # ADD ITEM (ENTRY POINT)
-        # --------------------------------------------------
-        if state == ConversationState.IDLE and intent == Intent.ADD_ITEM:
             return RouteResult(
-                allowed=True,
-                handler_name="add_item_handler",
+                allowed=False,
+                reason=f"intent {intent.value} is not allowed in greeting",
             )
 
-        # --------------------------------------------------
-        # REMOVE ITEM (ENTRY POINT)
-        # --------------------------------------------------
-        if state == ConversationState.IDLE and intent == Intent.REMOVE_ITEM:
+        # 5) Error recovery
+        if state == ConversationState.ERROR_RECOVERY:
             return RouteResult(
-                allowed=True,
-                handler_name="remove_item_handler",
+                allowed=False,
+                reason=f"no routing available from state {state.value}",
             )
 
-        # --------------------------------------------------
-        # END ADDING / START ORDER
-        # --------------------------------------------------
-        if state == ConversationState.IDLE and intent in {
-            Intent.END_ADDING,
-            Intent.START_ORDER,
-        }:
-            return RouteResult(
-                allowed=True,
-                handler_name="start_order_handler",
-            )
-
-        # --------------------------------------------------
-        # PAYMENT FLOW
-        # --------------------------------------------------
-        if state == ConversationState.WAITING_FOR_PAYMENT:
-            return RouteResult(
-                allowed=True,
-                handler_name="waiting_for_payment_handler",
-            )
-
-        # --------------------------------------------------
-        # DEFAULT TASK-STATE ROUTING
-        # --------------------------------------------------
-        allowed_intents = self._allowed_intents.get(state, set())
-        if intent in allowed_intents:
-            return RouteResult(
-                allowed=True,
-                handler_name=f"{state.name.lower()}_handler",
-            )
-
-        # --------------------------------------------------
-        # GLOBAL CANCEL (TASKS ONLY)
-        # --------------------------------------------------
-        if intent == Intent.CANCEL and state != ConversationState.IDLE:
-            return RouteResult(
-                allowed=True,
-                handler_name="cancel_handler",
-            )
-
-        return RouteResult(allowed=False)
-
+        return RouteResult(
+            allowed=False,
+            reason=f"no route for state={state.value}, intent={intent.value}",
+        )

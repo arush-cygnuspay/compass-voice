@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from app.nlu.intent_resolution.intent import Intent
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class IntentResult:
     """
     Result of pure linguistic intent resolution.
