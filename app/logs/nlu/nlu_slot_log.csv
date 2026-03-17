@@ -123,3 +123,6 @@ timestamp_utc,date_utc,session_id,turn_index,state_before,pending_action,user_te
 2026-03-17T15:26:52.972879+00:00,2026-03-17,CA9fc12a0e3e33813ab17defbd6c236822,3,waiting_for_side,add_item,", I will take Coke.",i will take coke,cart,add_item,unknown,ITEM,coke,coke,12,16,,unknown,predicted,,,
 2026-03-17T15:27:21.674922+00:00,2026-03-17,CA9fc12a0e3e33813ab17defbd6c236822,5,waiting_for_modifier,add_item,Chicken.,chicken,cart,add_item,unknown,ITEM,chicken,chicken,0,7,,unknown,predicted,,,
 2026-03-17T15:27:36.316783+00:00,2026-03-17,CA9fc12a0e3e33813ab17defbd6c236822,6,waiting_for_modifier,add_item,", I will take jelly.",i will take jelly,cart,add_item,unknown,ITEM,jelly,jelly,12,17,,unknown,predicted,,,
+2026-03-17T16:31:37.937387+00:00,2026-03-17,ui-1773765091548,1,idle,,i want a chicken taco,i want a chicken taco,cart,add_item,add_item,ITEM,chicken taco,chicken taco,9,21,,unknown,predicted,,,
+2026-03-17T16:31:40.256680+00:00,2026-03-17,ui-1773765091548,2,waiting_for_side,add_item,coke,coke,cart,add_item,unknown,ITEM,coke,coke,0,4,,unknown,predicted,,,
+2026-03-17T16:33:21.430389+00:00,2026-03-17,ui-1773765091548,4,waiting_for_modifier,add_item,i don't want any,i dont want any,cart,remove_item,unknown,ITEM,any,any,12,15,,unknown,predicted,,,
