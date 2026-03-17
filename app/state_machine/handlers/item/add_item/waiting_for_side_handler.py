@@ -5,7 +5,12 @@ from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
-from app.state_machine.conversation_context import ConversationContext, InterruptProposal
+from app.state_machine.conversation_context import (
+    ConversationContext,
+    InterruptProposal,
+    PendingSideChoice,
+    PendingSideGroup,
+)
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
@@ -14,7 +19,6 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     determine_next_add_item_step,
 )
 from app.utils.candidate_texts import build_candidate_texts_normalized
-from app.utils.top_k_choices import get_top_k_choices
 
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
@@ -159,8 +163,7 @@ class WaitingForSideHandler(BaseHandler):
             )
 
         normalized_user_text = user_text or ""
-
-        groups = pending.side_groups or []
+        groups = pending.side_groups
         idx = context.current_side_group_index
 
         if idx >= len(groups):
@@ -168,22 +171,14 @@ class WaitingForSideHandler(BaseHandler):
             return self._step_to_result(context, step)
 
         group = groups[idx]
-        choices = group.choices or []
-
-        choice_by_item_id: dict[str, object] = {}
-        normalized_choice_name_by_item_id: dict[str, str] = {}
-
-        for choice in choices:
-            choice_by_item_id[choice.item_id] = choice
-            normalized_choice_name_by_item_id[choice.item_id] = choice.normalized_name
-
-        normalized_choice_names = tuple(normalized_choice_name_by_item_id.values())
+        choices = group.choices
+        normalized_choice_names = group.normalized_choice_names
 
         if intent == Intent.ASK_OPTIONS:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
                 response_key="list_side_options",
-                response_payload=self._choice_payload(group.name, choices),
+                response_payload=self._choice_payload(group),
             )
 
         if intent == Intent.DENY:
@@ -191,7 +186,7 @@ class WaitingForSideHandler(BaseHandler):
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_SIDE,
                     response_key="required_side_cannot_skip",
-                    response_payload=self._choice_payload(group.name, choices),
+                    response_payload=self._choice_payload(group),
                 )
 
             context.skipped_side_groups.add(group.group_id)
@@ -204,15 +199,14 @@ class WaitingForSideHandler(BaseHandler):
         if normalized_slot_values:
             matched_ids = self._match_side_choices_from_values(
                 normalized_values=normalized_slot_values,
-                normalized_choice_name_by_item_id=normalized_choice_name_by_item_id,
+                group=group,
             )
             if matched_ids:
                 return self._apply_side_selection(
                     context=context,
-                    pending=pending,
+                    pending_item_name=pending.item_name,
                     group=group,
                     choices=choices,
-                    choice_by_item_id=choice_by_item_id,
                     matched_ids=matched_ids,
                 )
 
@@ -234,15 +228,14 @@ class WaitingForSideHandler(BaseHandler):
         if _looks_like_pure_side_answer(normalized_user_text, normalized_choice_names):
             matched_ids = self._match_side_choices_from_values(
                 normalized_values=[normalized_user_text],
-                normalized_choice_name_by_item_id=normalized_choice_name_by_item_id,
+                group=group,
             )
             if matched_ids:
                 return self._apply_side_selection(
                     context=context,
-                    pending=pending,
+                    pending_item_name=pending.item_name,
                     group=group,
                     choices=choices,
-                    choice_by_item_id=choice_by_item_id,
                     matched_ids=matched_ids,
                 )
 
@@ -250,7 +243,7 @@ class WaitingForSideHandler(BaseHandler):
             next_state=ConversationState.WAITING_FOR_SIDE,
             response_key="repeat_side_options",
             response_payload={
-                **self._choice_payload(group.name, choices),
+                **self._choice_payload(group),
                 "repeat_reason": "invalid",
             },
         )
@@ -259,10 +252,9 @@ class WaitingForSideHandler(BaseHandler):
         self,
         *,
         context: ConversationContext,
-        pending,
-        group,
-        choices,
-        choice_by_item_id: dict[str, object],
+        pending_item_name: str,
+        group: PendingSideGroup,
+        choices: list[PendingSideChoice],
         matched_ids: list[str],
     ) -> HandlerResult:
         existing_ids = list(context.selected_side_groups.get(group.group_id, []))
@@ -279,7 +271,7 @@ class WaitingForSideHandler(BaseHandler):
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
                 response_key="too_many_side_choices",
-                response_payload=self._choice_payload(group.name, choices),
+                response_payload=self._choice_payload(group),
             )
 
         context.selected_side_groups[group.group_id] = proposed_ids
@@ -287,25 +279,23 @@ class WaitingForSideHandler(BaseHandler):
 
         newly_added_ids = [item_id for item_id in proposed_ids if item_id not in existing_ids]
         for selected_item_id in newly_added_ids:
-            choice = choice_by_item_id.get(selected_item_id)
+            choice = group.choices_by_item_id.get(selected_item_id)
             if choice and choice.pricing_mode == "variant":
                 context.pending_side_item_id = choice.item_id
                 context.pending_side_item_name = choice.name
                 context.pending_side_group_id = group.group_id
                 context.current_prompt_field = "side_size"
                 context.available_choices_kind = "side_size"
-                context.available_choices_values = tuple(
-                    variant.name for variant in (choice.variants or ()) if variant.name
-                )
+                context.available_choices_values = choice.variant_names
 
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
                     response_key="ask_for_side_size",
                     response_payload={
-                        "item_name": pending.item_name,
+                        "item_name": pending_item_name,
                         "side_item_name": choice.name,
                         "group_name": group.name,
-                        "available_sizes": list(context.available_choices_values),
+                        "available_sizes": list(choice.variant_names),
                     },
                 )
 
@@ -314,7 +304,7 @@ class WaitingForSideHandler(BaseHandler):
                 next_state=ConversationState.WAITING_FOR_SIDE,
                 response_key="repeat_side_options",
                 response_payload={
-                    **self._choice_payload(group.name, choices),
+                    **self._choice_payload(group),
                     "repeat_reason": "options",
                 },
             )
@@ -322,17 +312,17 @@ class WaitingForSideHandler(BaseHandler):
         step = determine_next_add_item_step(context)
         return self._step_to_result(context, step)
 
-    def _choice_payload(self, group_name: str, choices) -> dict:
+    def _choice_payload(self, group: PendingSideGroup) -> dict:
         return {
-            "group_name": group_name,
-            "top_choices": [choice.name for choice in get_top_k_choices(choices, 3)],
+            "group_name": group.name,
+            "top_choices": list(group.top_choice_names),
         }
 
     def _match_side_choices_from_values(
         self,
         *,
         normalized_values: list[str],
-        normalized_choice_name_by_item_id: dict[str, str],
+        group: PendingSideGroup,
     ) -> list[str]:
         matched_ids: list[str] = []
         seen_ids: set[str] = set()
@@ -344,21 +334,23 @@ class WaitingForSideHandler(BaseHandler):
         )
 
         for candidate in candidate_texts:
-            for item_id, choice_name in normalized_choice_name_by_item_id.items():
-                if choice_name == candidate and item_id not in seen_ids:
-                    matched_ids.append(item_id)
-                    seen_ids.add(item_id)
+            exact_choices = group.choices_by_normalized_name.get(candidate, ())
+            for choice in exact_choices:
+                if choice.item_id not in seen_ids:
+                    matched_ids.append(choice.item_id)
+                    seen_ids.add(choice.item_id)
 
             if len(candidate) < 3:
                 continue
 
-            for item_id, choice_name in normalized_choice_name_by_item_id.items():
-                if item_id in seen_ids:
+            for choice in group.choices:
+                if choice.item_id in seen_ids:
                     continue
 
+                choice_name = choice.normalized_name
                 if candidate in choice_name or choice_name in candidate:
-                    matched_ids.append(item_id)
-                    seen_ids.add(item_id)
+                    matched_ids.append(choice.item_id)
+                    seen_ids.add(choice.item_id)
 
         return matched_ids
 

@@ -5,7 +5,12 @@ from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
-from app.state_machine.conversation_context import ConversationContext, InterruptProposal
+from app.state_machine.conversation_context import (
+    ConversationContext,
+    InterruptProposal,
+    PendingModifierChoice,
+    PendingModifierGroup,
+)
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
@@ -14,7 +19,6 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     determine_next_add_item_step,
 )
 from app.utils.candidate_texts import build_candidate_texts_normalized
-from app.utils.top_k_choices import get_top_k_choices
 
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
@@ -61,7 +65,10 @@ def _extract_modifier_slot_values_normalized(context: ConversationContext) -> li
     return values
 
 
-def _looks_like_pure_modifier_answer(normalized_user_text: str, choices) -> bool:
+def _looks_like_pure_modifier_answer(
+    normalized_user_text: str,
+    normalized_choice_names: tuple[str, ...],
+) -> bool:
     if not normalized_user_text:
         return False
 
@@ -108,8 +115,7 @@ def _looks_like_pure_modifier_answer(normalized_user_text: str, choices) -> bool
     if not compact:
         return False
 
-    for choice in choices:
-        choice_name = choice.normalized_name
+    for choice_name in normalized_choice_names:
         if compact == choice_name:
             return True
         if len(compact) >= 3 and (compact in choice_name or choice_name in compact):
@@ -137,8 +143,7 @@ class WaitingForModifierHandler(BaseHandler):
             )
 
         normalized_user_text = user_text or ""
-
-        groups = pending.modifier_groups or []
+        groups = pending.modifier_groups
         idx = context.current_modifier_group_index
 
         if idx >= len(groups):
@@ -146,17 +151,15 @@ class WaitingForModifierHandler(BaseHandler):
             return self._step_to_result(context, step)
 
         group = groups[idx]
-        choices = group.choices or []
+        choices = group.choices
+        normalized_choice_names = group.normalized_choice_names
 
         if intent == Intent.DENY:
             if group.is_required:
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_MODIFIER,
                     response_key="required_modifier_cannot_skip",
-                    response_payload={
-                        "group_name": group.name,
-                        "top_choices": [choice.name for choice in get_top_k_choices(choices, 4)],
-                    },
+                    response_payload=self._choice_payload(group),
                 )
 
             context.skipped_modifier_groups.add(group.group_id)
@@ -168,10 +171,7 @@ class WaitingForModifierHandler(BaseHandler):
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="list_modifier_options",
-                response_payload={
-                    "group_name": group.name,
-                    "top_choices": [choice.name for choice in get_top_k_choices(choices, 4)],
-                },
+                response_payload=self._choice_payload(group),
             )
 
         normalized_slot_values = _extract_modifier_slot_values_normalized(context)
@@ -184,7 +184,6 @@ class WaitingForModifierHandler(BaseHandler):
                 return self._apply_modifier_selection(
                     context=context,
                     group=group,
-                    choices=choices,
                     matched_ids=matched_ids,
                 )
 
@@ -202,7 +201,7 @@ class WaitingForModifierHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        if _looks_like_pure_modifier_answer(normalized_user_text, choices):
+        if _looks_like_pure_modifier_answer(normalized_user_text, normalized_choice_names):
             matched_ids = self._match_modifier_choices_from_values(
                 group=group,
                 normalized_values=[normalized_user_text],
@@ -211,7 +210,6 @@ class WaitingForModifierHandler(BaseHandler):
                 return self._apply_modifier_selection(
                     context=context,
                     group=group,
-                    choices=choices,
                     matched_ids=matched_ids,
                 )
 
@@ -219,8 +217,7 @@ class WaitingForModifierHandler(BaseHandler):
             next_state=ConversationState.WAITING_FOR_MODIFIER,
             response_key="repeat_modifier_options",
             response_payload={
-                "group_name": group.name,
-                "top_choices": [choice.name for choice in get_top_k_choices(choices, 4)],
+                **self._choice_payload(group),
                 "repeat_reason": "invalid",
             },
         )
@@ -229,8 +226,7 @@ class WaitingForModifierHandler(BaseHandler):
         self,
         *,
         context: ConversationContext,
-        group,
-        choices,
+        group: PendingModifierGroup,
         matched_ids: list[str],
     ) -> HandlerResult:
         existing_ids = list(context.selected_modifier_groups.get(group.group_id, []))
@@ -247,10 +243,7 @@ class WaitingForModifierHandler(BaseHandler):
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="too_many_modifier_choices",
-                response_payload={
-                    "group_name": group.name,
-                    "top_choices": [choice.name for choice in get_top_k_choices(choices, 4)],
-                },
+                response_payload=self._choice_payload(group),
             )
 
         context.selected_modifier_groups[group.group_id] = proposed_ids
@@ -261,8 +254,7 @@ class WaitingForModifierHandler(BaseHandler):
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="repeat_modifier_options",
                 response_payload={
-                    "group_name": group.name,
-                    "top_choices": [choice.name for choice in get_top_k_choices(choices, 4)],
+                    **self._choice_payload(group),
                     "repeat_reason": "options",
                 },
             )
@@ -271,10 +263,16 @@ class WaitingForModifierHandler(BaseHandler):
         step = determine_next_add_item_step(context)
         return self._step_to_result(context, step)
 
+    def _choice_payload(self, group: PendingModifierGroup) -> dict:
+        return {
+            "group_name": group.name,
+            "top_choices": list(group.top_choice_names),
+        }
+
     def _match_modifier_choices_from_values(
         self,
         *,
-        group,
+        group: PendingModifierGroup,
         normalized_values: list[str],
     ) -> list[str]:
         matched_ids: list[str] = []
@@ -287,8 +285,9 @@ class WaitingForModifierHandler(BaseHandler):
         )
 
         for candidate in candidate_texts:
-            for choice in group.choices:
-                if choice.normalized_name == candidate and choice.modifier_id not in seen_ids:
+            exact_choices = group.choices_by_normalized_name.get(candidate, ())
+            for choice in exact_choices:
+                if choice.modifier_id not in seen_ids:
                     matched_ids.append(choice.modifier_id)
                     seen_ids.add(choice.modifier_id)
 

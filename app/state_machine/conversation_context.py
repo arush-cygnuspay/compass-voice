@@ -45,7 +45,7 @@ class InterruptProposal:
 class PendingVariantChoice:
     variant_id: str
     name: str
-    normalized_name: str = ""
+    normalized_name: str
 
 
 @dataclass(slots=True)
@@ -53,16 +53,14 @@ class PendingSideChoice:
     item_id: str
     name: str
     pricing_mode: str
-    normalized_name: str = ""
+    normalized_name: str
     variants: list[PendingVariantChoice] = field(default_factory=list)
 
-
-@dataclass(slots=True)
-class PendingModifierChoice:
-    modifier_id: str
-    name: str
-    group_id: str
-    normalized_name: str = ""
+    # Precomputed indexes
+    variants_by_id: dict[str, PendingVariantChoice] = field(default_factory=dict)
+    variants_by_normalized_name: dict[str, PendingVariantChoice] = field(default_factory=dict)
+    variant_names: tuple[str, ...] = ()
+    top_variant_names: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -74,6 +72,21 @@ class PendingSideGroup:
     max_selector: int
     choices: list[PendingSideChoice] = field(default_factory=list)
 
+    # Precomputed indexes
+    choices_by_item_id: dict[str, PendingSideChoice] = field(default_factory=dict)
+    choices_by_normalized_name: dict[str, list[PendingSideChoice]] = field(default_factory=dict)
+    choice_names: tuple[str, ...] = ()
+    normalized_choice_names: tuple[str, ...] = ()
+    top_choice_names: tuple[str, ...] = ()
+
+
+@dataclass(slots=True)
+class PendingModifierChoice:
+    modifier_id: str
+    name: str
+    group_id: str
+    normalized_name: str
+
 
 @dataclass(slots=True)
 class PendingModifierGroup:
@@ -84,6 +97,13 @@ class PendingModifierGroup:
     max_selector: int
     choices: list[PendingModifierChoice] = field(default_factory=list)
 
+    # Precomputed indexes
+    choices_by_modifier_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
+    choices_by_normalized_name: dict[str, list[PendingModifierChoice]] = field(default_factory=dict)
+    choice_names: tuple[str, ...] = ()
+    normalized_choice_names: tuple[str, ...] = ()
+    top_choice_names: tuple[str, ...] = ()
+
 
 @dataclass(slots=True)
 class PendingAddItem:
@@ -92,6 +112,18 @@ class PendingAddItem:
     item_variants: list[PendingVariantChoice] = field(default_factory=list)
     side_groups: list[PendingSideGroup] = field(default_factory=list)
     modifier_groups: list[PendingModifierGroup] = field(default_factory=list)
+
+    # Precomputed item-level indexes
+    item_variants_by_id: dict[str, PendingVariantChoice] = field(default_factory=dict)
+    item_variants_by_normalized_name: dict[str, PendingVariantChoice] = field(default_factory=dict)
+    item_variant_names: tuple[str, ...] = ()
+    top_item_variant_names: tuple[str, ...] = ()
+
+    side_groups_by_id: dict[str, PendingSideGroup] = field(default_factory=dict)
+    side_choice_by_item_id: dict[str, PendingSideChoice] = field(default_factory=dict)
+
+    modifier_groups_by_id: dict[str, PendingModifierGroup] = field(default_factory=dict)
+    modifier_choice_by_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
 
 
 def _pending_variant_to_dict(value: PendingVariantChoice) -> dict:

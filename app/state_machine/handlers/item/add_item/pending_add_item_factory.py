@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.menu.models import MenuItem
+from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.conversation_context import (
     PendingAddItem,
     PendingModifierChoice,
@@ -10,72 +11,177 @@ from app.state_machine.conversation_context import (
     PendingSideGroup,
     PendingVariantChoice,
 )
-from app.nlu.query_normalization.text_preprocessor import normalize_text
+
+
+def _build_variant_choices(raw_variants) -> list[PendingVariantChoice]:
+    return [
+        PendingVariantChoice(
+            variant_id=variant.variant_id,
+            name=variant.label,
+            normalized_name=normalize_text(variant.label),
+        )
+        for variant in (raw_variants or [])
+        if variant.label
+    ]
+
+
+def _index_variants(
+    variants: list[PendingVariantChoice],
+) -> tuple[
+    dict[str, PendingVariantChoice],
+    dict[str, PendingVariantChoice],
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    by_id: dict[str, PendingVariantChoice] = {}
+    by_normalized_name: dict[str, PendingVariantChoice] = {}
+    names: list[str] = []
+
+    for variant in variants:
+        by_id[variant.variant_id] = variant
+        if variant.normalized_name and variant.normalized_name not in by_normalized_name:
+            by_normalized_name[variant.normalized_name] = variant
+        if variant.name:
+            names.append(variant.name)
+
+    name_tuple = tuple(names)
+    return by_id, by_normalized_name, name_tuple, name_tuple[:4]
+
+
+def _append_bucket_value[T](mapping: dict[str, list[T]], key: str, value: T) -> None:
+    bucket = mapping.get(key)
+    if bucket is None:
+        mapping[key] = [value]
+        return
+    bucket.append(value)
 
 
 def build_pending_add_item(item: MenuItem) -> PendingAddItem:
     item_variants: list[PendingVariantChoice] = []
     if item.pricing and item.pricing.mode == "variant":
-        item_variants = [
-            PendingVariantChoice(
-                variant_id=v.variant_id,
-                name=v.label,
-                normalized_name=normalize_text(v.label),
-            )
-            for v in (item.pricing.variants or [])
-            if v.label
-        ]
+        item_variants = _build_variant_choices(item.pricing.variants)
+
+    (
+        item_variants_by_id,
+        item_variants_by_normalized_name,
+        item_variant_names,
+        top_item_variant_names,
+    ) = _index_variants(item_variants)
 
     side_groups: list[PendingSideGroup] = []
+    side_groups_by_id: dict[str, PendingSideGroup] = {}
+    side_choice_by_item_id: dict[str, PendingSideChoice] = {}
+
     for group in item.side_groups or []:
-        side_groups.append(
-            PendingSideGroup(
-                group_id=group.group_id,
-                name=group.name,
-                is_required=bool(group.is_required),
-                min_selector=int(group.min_selector or 1),
-                max_selector=int(group.max_selector or 1),
-                choices=[
-                    PendingSideChoice(
-                        item_id=choice.item_id,
-                        name=choice.name,
-                        pricing_mode=choice.pricing.mode,
-                        normalized_name=normalize_text(choice.name),
-                        variants=[
-                            PendingVariantChoice(
-                                variant_id=v.variant_id,
-                                name=v.label,
-                                normalized_name=normalize_text(v.label),
-                            )
-                            for v in (choice.pricing.variants or [])
-                            if v.label
-                        ],
-                    )
-                    for choice in (group.choices or [])
-                ],
+        pending_choices: list[PendingSideChoice] = []
+        choices_by_item_id: dict[str, PendingSideChoice] = {}
+        choices_by_normalized_name: dict[str, list[PendingSideChoice]] = {}
+        choice_names: list[str] = []
+        normalized_choice_names: list[str] = []
+
+        for choice in group.choices or []:
+            variants = _build_variant_choices(choice.pricing.variants)
+            (
+                variants_by_id,
+                variants_by_normalized_name,
+                variant_names,
+                top_variant_names,
+            ) = _index_variants(variants)
+
+            pending_choice = PendingSideChoice(
+                item_id=choice.item_id,
+                name=choice.name,
+                pricing_mode=choice.pricing.mode,
+                normalized_name=normalize_text(choice.name),
+                variants=variants,
+                variants_by_id=variants_by_id,
+                variants_by_normalized_name=variants_by_normalized_name,
+                variant_names=variant_names,
+                top_variant_names=top_variant_names,
             )
+
+            pending_choices.append(pending_choice)
+            choices_by_item_id[pending_choice.item_id] = pending_choice
+            side_choice_by_item_id[pending_choice.item_id] = pending_choice
+
+            if pending_choice.normalized_name:
+                _append_bucket_value(
+                    choices_by_normalized_name,
+                    pending_choice.normalized_name,
+                    pending_choice,
+                )
+                normalized_choice_names.append(pending_choice.normalized_name)
+
+            if pending_choice.name:
+                choice_names.append(pending_choice.name)
+
+        pending_group = PendingSideGroup(
+            group_id=group.group_id,
+            name=group.name,
+            is_required=bool(group.is_required),
+            min_selector=int(group.min_selector or 1),
+            max_selector=int(group.max_selector or 1),
+            choices=pending_choices,
+            choices_by_item_id=choices_by_item_id,
+            choices_by_normalized_name=choices_by_normalized_name,
+            choice_names=tuple(choice_names),
+            normalized_choice_names=tuple(normalized_choice_names),
+            top_choice_names=tuple(choice_names[:3]),
         )
 
+        side_groups.append(pending_group)
+        side_groups_by_id[pending_group.group_id] = pending_group
+
     modifier_groups: list[PendingModifierGroup] = []
+    modifier_groups_by_id: dict[str, PendingModifierGroup] = {}
+    modifier_choice_by_id: dict[str, PendingModifierChoice] = {}
+
     for group in item.modifier_groups or []:
-        modifier_groups.append(
-            PendingModifierGroup(
+        pending_choices: list[PendingModifierChoice] = []
+        choices_by_modifier_id: dict[str, PendingModifierChoice] = {}
+        choices_by_normalized_name: dict[str, list[PendingModifierChoice]] = {}
+        choice_names: list[str] = []
+        normalized_choice_names: list[str] = []
+
+        for choice in group.choices or []:
+            pending_choice = PendingModifierChoice(
+                modifier_id=choice.modifier_id,
+                name=choice.name,
                 group_id=group.group_id,
-                name=group.name,
-                is_required=bool(group.is_required),
-                min_selector=int(group.min_selector or 1),
-                max_selector=int(group.max_selector or 1),
-                choices=[
-                    PendingModifierChoice(
-                        modifier_id=choice.modifier_id,
-                        name=choice.name,
-                        group_id=group.group_id,
-                        normalized_name=normalize_text(choice.name),
-                    )
-                    for choice in (group.choices or [])
-                ],
+                normalized_name=normalize_text(choice.name),
             )
+
+            pending_choices.append(pending_choice)
+            choices_by_modifier_id[pending_choice.modifier_id] = pending_choice
+            modifier_choice_by_id[pending_choice.modifier_id] = pending_choice
+
+            if pending_choice.normalized_name:
+                _append_bucket_value(
+                    choices_by_normalized_name,
+                    pending_choice.normalized_name,
+                    pending_choice,
+                )
+                normalized_choice_names.append(pending_choice.normalized_name)
+
+            if pending_choice.name:
+                choice_names.append(pending_choice.name)
+
+        pending_group = PendingModifierGroup(
+            group_id=group.group_id,
+            name=group.name,
+            is_required=bool(group.is_required),
+            min_selector=int(group.min_selector or 1),
+            max_selector=int(group.max_selector or 1),
+            choices=pending_choices,
+            choices_by_modifier_id=choices_by_modifier_id,
+            choices_by_normalized_name=choices_by_normalized_name,
+            choice_names=tuple(choice_names),
+            normalized_choice_names=tuple(normalized_choice_names),
+            top_choice_names=tuple(choice_names[:4]),
         )
+
+        modifier_groups.append(pending_group)
+        modifier_groups_by_id[pending_group.group_id] = pending_group
 
     return PendingAddItem(
         item_id=item.item_id,
@@ -83,4 +189,12 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
         item_variants=item_variants,
         side_groups=side_groups,
         modifier_groups=modifier_groups,
+        item_variants_by_id=item_variants_by_id,
+        item_variants_by_normalized_name=item_variants_by_normalized_name,
+        item_variant_names=item_variant_names,
+        top_item_variant_names=top_item_variant_names,
+        side_groups_by_id=side_groups_by_id,
+        side_choice_by_item_id=side_choice_by_item_id,
+        modifier_groups_by_id=modifier_groups_by_id,
+        modifier_choice_by_id=modifier_choice_by_id,
     )
