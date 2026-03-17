@@ -1,0 +1,245 @@
+{
+  "generated_at_epoch_seconds": 1773684198.026,
+  "report_units": {
+    "latency": "milliseconds",
+    "total_time": "seconds",
+    "throughput": "texts/second"
+  },
+  "system": {
+    "torch_version": "2.10.0+cu128",
+    "torch_cuda_available": true,
+    "torch_cuda_version": "12.8",
+    "gpu_name": "NVIDIA GeForce RTX 3090",
+    "gpu_count": 1,
+    "spacy_model_dir": "models/spacy_slot_trf_out/model-best",
+    "intent_model_dir": "models/distilbert-multihead-intent"
+  },
+  "results": {
+    "intent_pytorch": {
+      "batch_1": {
+        "cpu": {
+          "component": "intent_pytorch",
+          "device": "cpu",
+          "batch_size": 1,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 8.762,
+          "p50_latency_ms": 8.576,
+          "p95_latency_ms": 10.194,
+          "min_latency_ms": 7.799,
+          "max_latency_ms": 11.683,
+          "total_measured_seconds": 0.876,
+          "throughput_texts_per_sec": 114.128,
+          "amp_enabled": false,
+          "notes": "intent model path=models/distilbert-multihead-intent"
+        },
+        "gpu": {
+          "component": "intent_pytorch",
+          "device": "cuda",
+          "batch_size": 1,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 4.785,
+          "p50_latency_ms": 4.439,
+          "p95_latency_ms": 6.846,
+          "min_latency_ms": 3.975,
+          "max_latency_ms": 9.125,
+          "total_measured_seconds": 0.478,
+          "throughput_texts_per_sec": 208.999,
+          "amp_enabled": true,
+          "notes": "intent model path=models/distilbert-multihead-intent"
+        },
+        "speedup_avg_latency_x": 1.831,
+        "speedup_p50_x": 1.932,
+        "throughput_gain_x": 1.831
+      },
+      "batch_8": {
+        "cpu": {
+          "component": "intent_pytorch",
+          "device": "cpu",
+          "batch_size": 8,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 27.041,
+          "p50_latency_ms": 26.965,
+          "p95_latency_ms": 30.651,
+          "min_latency_ms": 21.847,
+          "max_latency_ms": 33.233,
+          "total_measured_seconds": 2.704,
+          "throughput_texts_per_sec": 295.844,
+          "amp_enabled": false,
+          "notes": "intent model path=models/distilbert-multihead-intent"
+        },
+        "gpu": {
+          "component": "intent_pytorch",
+          "device": "cuda",
+          "batch_size": 8,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 6.192,
+          "p50_latency_ms": 5.485,
+          "p95_latency_ms": 10.317,
+          "min_latency_ms": 4.883,
+          "max_latency_ms": 11.018,
+          "total_measured_seconds": 0.619,
+          "throughput_texts_per_sec": 1292.077,
+          "amp_enabled": true,
+          "notes": "intent model path=models/distilbert-multihead-intent"
+        },
+        "speedup_avg_latency_x": 4.367,
+        "speedup_p50_x": 4.916,
+        "throughput_gain_x": 4.367
+      },
+      "batch_32": {
+        "cpu": {
+          "component": "intent_pytorch",
+          "device": "cpu",
+          "batch_size": 32,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 81.547,
+          "p50_latency_ms": 81.397,
+          "p95_latency_ms": 91.692,
+          "min_latency_ms": 70.428,
+          "max_latency_ms": 97.134,
+          "total_measured_seconds": 8.155,
+          "throughput_texts_per_sec": 392.412,
+          "amp_enabled": false,
+          "notes": "intent model path=models/distilbert-multihead-intent"
+        },
+        "gpu": {
+          "component": "intent_pytorch",
+          "device": "cuda",
+          "batch_size": 32,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 6.335,
+          "p50_latency_ms": 5.635,
+          "p95_latency_ms": 10.203,
+          "min_latency_ms": 5.014,
+          "max_latency_ms": 10.894,
+          "total_measured_seconds": 0.633,
+          "throughput_texts_per_sec": 5051.206,
+          "amp_enabled": true,
+          "notes": "intent model path=models/distilbert-multihead-intent"
+        },
+        "speedup_avg_latency_x": 12.872,
+        "speedup_p50_x": 14.445,
+        "throughput_gain_x": 12.872
+      }
+    },
+    "slot_spacy": {
+      "batch_1": {
+        "cpu": {
+          "component": "slot_spacy",
+          "device": "cpu",
+          "batch_size": 1,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 18.277,
+          "p50_latency_ms": 17.965,
+          "p95_latency_ms": 20.371,
+          "min_latency_ms": 16.501,
+          "max_latency_ms": 22.512,
+          "total_measured_seconds": 1.828,
+          "throughput_texts_per_sec": 54.713,
+          "amp_enabled": null,
+          "notes": "spaCy pipeline path=models/spacy_slot_trf_out/model-best"
+        },
+        "gpu": {
+          "component": "slot_spacy",
+          "device": "cuda",
+          "batch_size": 1,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 12.46,
+          "p50_latency_ms": 11.76,
+          "p95_latency_ms": 15.149,
+          "min_latency_ms": 10.486,
+          "max_latency_ms": 44.201,
+          "total_measured_seconds": 1.246,
+          "throughput_texts_per_sec": 80.254,
+          "amp_enabled": null,
+          "notes": "spaCy pipeline path=models/spacy_slot_trf_out/model-best"
+        },
+        "speedup_avg_latency_x": 1.467,
+        "speedup_p50_x": 1.528,
+        "throughput_gain_x": 1.467
+      },
+      "batch_8": {
+        "cpu": {
+          "component": "slot_spacy",
+          "device": "cpu",
+          "batch_size": 8,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 47.345,
+          "p50_latency_ms": 46.714,
+          "p95_latency_ms": 53.789,
+          "min_latency_ms": 41.204,
+          "max_latency_ms": 61.977,
+          "total_measured_seconds": 4.734,
+          "throughput_texts_per_sec": 168.974,
+          "amp_enabled": null,
+          "notes": "spaCy pipeline path=models/spacy_slot_trf_out/model-best"
+        },
+        "gpu": {
+          "component": "slot_spacy",
+          "device": "cuda",
+          "batch_size": 8,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 17.703,
+          "p50_latency_ms": 16.658,
+          "p95_latency_ms": 22.904,
+          "min_latency_ms": 15.375,
+          "max_latency_ms": 35.058,
+          "total_measured_seconds": 1.77,
+          "throughput_texts_per_sec": 451.909,
+          "amp_enabled": null,
+          "notes": "spaCy pipeline path=models/spacy_slot_trf_out/model-best"
+        },
+        "speedup_avg_latency_x": 2.674,
+        "speedup_p50_x": 2.804,
+        "throughput_gain_x": 2.674
+      },
+      "batch_32": {
+        "cpu": {
+          "component": "slot_spacy",
+          "device": "cpu",
+          "batch_size": 32,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 165.555,
+          "p50_latency_ms": 165.402,
+          "p95_latency_ms": 174.67,
+          "min_latency_ms": 152.452,
+          "max_latency_ms": 191.943,
+          "total_measured_seconds": 16.555,
+          "throughput_texts_per_sec": 193.289,
+          "amp_enabled": null,
+          "notes": "spaCy pipeline path=models/spacy_slot_trf_out/model-best"
+        },
+        "gpu": {
+          "component": "slot_spacy",
+          "device": "cuda",
+          "batch_size": 32,
+          "warmup_runs": 20,
+          "measured_runs": 100,
+          "avg_latency_ms": 22.489,
+          "p50_latency_ms": 21.689,
+          "p95_latency_ms": 26.942,
+          "min_latency_ms": 20.061,
+          "max_latency_ms": 30.94,
+          "total_measured_seconds": 2.249,
+          "throughput_texts_per_sec": 1422.911,
+          "amp_enabled": null,
+          "notes": "spaCy pipeline path=models/spacy_slot_trf_out/model-best"
+        },
+        "speedup_avg_latency_x": 7.362,
+        "speedup_p50_x": 7.626,
+        "throughput_gain_x": 7.362
+      }
+    }
+  }
+}

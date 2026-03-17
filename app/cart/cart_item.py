@@ -22,6 +22,9 @@ class CartItem:
     # group_id -> list[item_id]
     sides: Dict[str, List[str]] = field(default_factory=dict)
 
+    # side item_id -> variant_id
+    side_variants: Dict[str, str] = field(default_factory=dict)
+
     # group_id -> list[modifier_id]
     modifiers: Dict[str, List[str]] = field(default_factory=dict)
 
@@ -31,6 +34,7 @@ class CartItem:
         quantity: int,
         variant_id: Optional[str],
         sides: Dict[str, List[str]],
+        side_variants: Dict[str, str],
         modifiers: Dict[str, List[str]],
     ) -> "CartItem":
         return CartItem(
@@ -38,13 +42,10 @@ class CartItem:
             item_id=item_id,
             quantity=quantity,
             variant_id=variant_id,
-            sides=sides.copy(),
-            modifiers=modifiers.copy(),
+            sides={group_id: list(item_ids) for group_id, item_ids in sides.items()},
+            side_variants=dict(side_variants),
+            modifiers={group_id: list(modifier_ids) for group_id, modifier_ids in modifiers.items()},
         )
-
-    # ---------------------------
-    # Serialization
-    # ---------------------------
 
     def to_dict(self) -> dict:
         return {
@@ -53,6 +54,7 @@ class CartItem:
             "quantity": self.quantity,
             "variant_id": self.variant_id,
             "sides": self.sides,
+            "side_variants": self.side_variants,
             "modifiers": self.modifiers,
         }
 
@@ -64,5 +66,6 @@ class CartItem:
             quantity=data["quantity"],
             variant_id=data.get("variant_id"),
             sides=data.get("sides", {}),
+            side_variants=data.get("side_variants", {}),
             modifiers=data.get("modifiers", {}),
         )

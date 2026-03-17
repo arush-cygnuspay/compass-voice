@@ -1,60 +1,240 @@
 # app/state_machine/handlers/item/add_item/add_item_flow.py
-from app.menu.models import MenuItem
-from app.state_machine.context import ConversationContext
+from __future__ import annotations
+
+from dataclasses import dataclass
+
+from app.state_machine.conversation_context import ConversationContext
 from app.state_machine.conversation_state import ConversationState
 
 
-def determine_next_add_item_state(
-    item: MenuItem,
-    context: ConversationContext,
-) -> ConversationState:
-    """
-    Decides the next step in add-item flow based on menu + context.
-    """
+@dataclass(frozen=True, slots=True)
+class AddItemNextStep:
+    next_state: ConversationState
+    response_key: str
+    response_payload: dict | None = None
 
-    # 1️⃣ Size / variant
-    if item.pricing.mode == "variant" and not context.selected_variant_id:
-        return ConversationState.WAITING_FOR_SIZE
 
-    # 2️⃣ Required side groups
-    for group in item.side_groups:
-        if group.is_required and group.group_id not in context.selected_side_groups:
-            return ConversationState.WAITING_FOR_SIDE
+def determine_next_add_item_step(context: ConversationContext) -> AddItemNextStep:
+    pending = context.pending_add_item
+    if pending is None:
+        return AddItemNextStep(
+            next_state=ConversationState.ERROR_RECOVERY,
+            response_key="item_context_missing",
+        )
 
-    # 3️⃣ Modifiers (optional but still a step)
-    if item.modifier_groups and not context.selected_modifier_groups:
-        return ConversationState.WAITING_FOR_MODIFIER
+    side_variant_step = _find_pending_side_variant_step(context, pending)
+    if side_variant_step is not None:
+        return side_variant_step
 
-    # 4️⃣ Quantity
-    if context.quantity is None:
-        return ConversationState.WAITING_FOR_QUANTITY
+    next_side_index = _find_next_unresolved_side_group_index(context, pending)
+    if next_side_index is not None:
+        context.current_side_group_index = next_side_index
+        group = pending.side_groups[next_side_index]
 
-    # 5️⃣ Ready to finalize
-    return ConversationState.ADDING_ITEM
+        choice_names = tuple(choice.name for choice in group.choices)
+        top_choices = [choice.name for choice in group.choices[:3]]
 
-def _response_key_for_state(state: ConversationState) -> str:
-    return {
-        ConversationState.WAITING_FOR_SIDE: "ask_for_side",
-        ConversationState.WAITING_FOR_SIZE: "ask_for_size",
-        ConversationState.WAITING_FOR_MODIFIER: "ask_for_modifier",
-        ConversationState.WAITING_FOR_QUANTITY: "ask_for_quantity",
-        ConversationState.ADDING_ITEM: "ready_to_add_item",
-    }.get(state, "unhandled_state")
+        context.current_prompt_field = "side"
+        context.available_choices_kind = "side"
+        context.available_choices_values = choice_names
 
-def determine_next_add_item_state(item: MenuItem, context: ConversationContext) -> ConversationState:
-    # 1️⃣ Item size FIRST
-    if item.pricing.mode == "variant":
+        return AddItemNextStep(
+            next_state=ConversationState.WAITING_FOR_SIDE,
+            response_key="ask_for_side",
+            response_payload={
+                "item_name": pending.item_name,
+                "group_name": group.name,
+                "top_choices": top_choices,
+            },
+        )
+
+    next_modifier_index = _find_next_unresolved_modifier_group_index(context, pending)
+    if next_modifier_index is not None:
+        context.current_modifier_group_index = next_modifier_index
+        group = pending.modifier_groups[next_modifier_index]
+
+        choice_names = tuple(choice.name for choice in group.choices)
+        top_choices = [choice.name for choice in group.choices[:4]]
+
+        context.current_prompt_field = "modifier"
+        context.available_choices_kind = "modifier"
+        context.available_choices_values = choice_names
+
+        return AddItemNextStep(
+            next_state=ConversationState.WAITING_FOR_MODIFIER,
+            response_key="ask_for_modifier",
+            response_payload={
+                "item_name": pending.item_name,
+                "group_name": group.name,
+                "top_choices": top_choices,
+            },
+        )
+
+    if pending.item_variants and not _has_valid_variant_selected(context, pending):
+        available_sizes = tuple(v.name for v in pending.item_variants if v.name)
+
         context.size_target = {"type": "item"}
-        return ConversationState.WAITING_FOR_SIZE
+        context.current_prompt_field = "size"
+        context.available_choices_kind = "size"
+        context.available_choices_values = available_sizes
 
-    # 2️⃣ Then sides
-    if item.side_groups:
-        return ConversationState.WAITING_FOR_SIDE
+        return AddItemNextStep(
+            next_state=ConversationState.WAITING_FOR_SIZE,
+            response_key="ask_for_size",
+            response_payload={
+                "item_name": pending.item_name,
+                "available_sizes": list(available_sizes),
+            },
+        )
 
-    # 3️⃣ Then modifiers
-    if item.modifier_groups:
-        return ConversationState.WAITING_FOR_MODIFIER
+    if not _has_valid_quantity(context):
+        context.current_prompt_field = "quantity"
+        context.available_choices_kind = None
+        context.available_choices_values = ()
 
-    # 4️⃣ Finally quantity
-    return ConversationState.WAITING_FOR_QUANTITY
+        return AddItemNextStep(
+            next_state=ConversationState.WAITING_FOR_QUANTITY,
+            response_key="ask_for_quantity",
+            response_payload={"item_name": pending.item_name},
+        )
 
+    return AddItemNextStep(
+        next_state=ConversationState.FINALIZING_ADD_ITEM,
+        response_key="finalize_add_item",
+        response_payload={"item_name": pending.item_name},
+    )
+
+
+def build_add_item_command(context: ConversationContext) -> dict:
+    pending = context.pending_add_item
+    if pending is None:
+        raise ValueError("pending_add_item is missing")
+
+    return {
+        "type": "ADD_ITEM_TO_CART",
+        "payload": {
+            "item_id": pending.item_id,
+            "quantity": context.quantity or 1,
+            "variant_id": context.selected_variant_id,
+            "sides": dict(context.selected_side_groups),
+            "side_variants": dict(context.selected_side_variants),
+            "modifiers": dict(context.selected_modifier_groups),
+        },
+    }
+
+
+def _has_valid_variant_selected(context: ConversationContext, pending) -> bool:
+    variant_id = context.selected_variant_id
+    if not variant_id:
+        return False
+
+    for variant in pending.item_variants:
+        if variant.variant_id == variant_id:
+            return True
+    return False
+
+
+def _find_pending_side_variant_step(
+    context: ConversationContext,
+    pending,
+) -> AddItemNextStep | None:
+    selected_side_groups = context.selected_side_groups
+    selected_side_variants = context.selected_side_variants
+
+    for group in pending.side_groups:
+        selected_ids = selected_side_groups.get(group.group_id, [])
+        if not selected_ids:
+            continue
+
+        choice_by_item_id = {choice.item_id: choice for choice in group.choices}
+
+        for selected_item_id in selected_ids:
+            if selected_item_id in selected_side_variants:
+                continue
+
+            choice = choice_by_item_id.get(selected_item_id)
+            if choice is None:
+                continue
+
+            if choice.pricing_mode != "variant":
+                continue
+
+            available_sizes = tuple(v.name for v in choice.variants if v.name)
+
+            context.pending_side_item_id = choice.item_id
+            context.pending_side_item_name = choice.name
+            context.pending_side_group_id = group.group_id
+            context.current_prompt_field = "side_size"
+            context.available_choices_kind = "side_size"
+            context.available_choices_values = available_sizes
+
+            return AddItemNextStep(
+                next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
+                response_key="ask_for_side_size",
+                response_payload={
+                    "item_name": pending.item_name,
+                    "side_item_name": choice.name,
+                    "group_name": group.name,
+                    "available_sizes": list(available_sizes),
+                },
+            )
+
+    return None
+
+
+def _find_next_unresolved_side_group_index(
+    context: ConversationContext,
+    pending,
+) -> int | None:
+    selected_side_groups = context.selected_side_groups
+    skipped_side_groups = context.skipped_side_groups
+
+    for idx, group in enumerate(pending.side_groups):
+        group_id = group.group_id
+        selected = selected_side_groups.get(group_id, [])
+        skipped = group_id in skipped_side_groups
+
+        if _side_group_satisfied(group, selected, skipped):
+            continue
+
+        return idx
+
+    return None
+
+
+def _side_group_satisfied(group, selected_item_ids: list[str], skipped: bool) -> bool:
+    selected_count = len(selected_item_ids or [])
+    if bool(group.is_required):
+        return selected_count >= int(group.min_selector or 1)
+    return selected_count > 0 or skipped
+
+
+def _find_next_unresolved_modifier_group_index(
+    context: ConversationContext,
+    pending,
+) -> int | None:
+    selected_modifier_groups = context.selected_modifier_groups
+    skipped_modifier_groups = context.skipped_modifier_groups
+
+    for idx, group in enumerate(pending.modifier_groups):
+        group_id = group.group_id
+        selected = selected_modifier_groups.get(group_id, [])
+        skipped = group_id in skipped_modifier_groups
+
+        if _modifier_group_satisfied(group, selected, skipped):
+            continue
+
+        return idx
+
+    return None
+
+
+def _modifier_group_satisfied(group, selected_modifier_ids: list[str], skipped: bool) -> bool:
+    selected_count = len(selected_modifier_ids or [])
+    if bool(group.is_required):
+        return selected_count >= int(group.min_selector or 1)
+    return selected_count > 0 or skipped
+
+
+def _has_valid_quantity(context: ConversationContext) -> bool:
+    return isinstance(context.quantity, int) and context.quantity > 0

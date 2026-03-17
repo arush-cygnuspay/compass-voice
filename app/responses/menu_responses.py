@@ -65,18 +65,42 @@ def show_item_price_response(payload: dict) -> str:
     name = payload["item_name"]
     pricing = payload["pricing"]
 
-    if pricing.mode == "fixed":
-        return f"{name} costs ${pricing.price_cents / 100:.2f}."
+    variant_label = payload.get("variant_label")
+    variant_price_cents = payload.get("variant_price_cents")
 
-    if pricing.mode == "unit":
-        return f"{name} costs ${pricing.price_cents / 100:.2f} per unit."
+    if variant_label and variant_price_cents is not None:
+        return f"{variant_label.title()} {name} costs ${variant_price_cents / 100:.2f}."
 
-    if pricing.mode == "variant":
+    mode = pricing.get("mode")
+    price_cents = pricing.get("price_cents")
+    variants = pricing.get("variants") or []
+
+    if mode == "fixed" and price_cents is not None:
+        return f"{name} costs ${price_cents / 100:.2f}."
+
+    if mode == "unit" and price_cents is not None:
+        return f"{name} costs ${price_cents / 100:.2f} per unit."
+
+    if mode == "variant":
         lines = [f"{name} is available in the following options:"]
-        for v in pricing.variants:
-            lines.append(
-                f"- {v.label}: ${v.price_cents / 100:.2f}"
-            )
+        for v in variants:
+            label = v.get("label", "Option")
+            cents = v.get("price_cents")
+            if cents is None:
+                continue
+            lines.append(f"- {label}: ${cents / 100:.2f}")
         return "\n".join(lines)
 
     return "Price information is unavailable."
+
+
+def show_menu_categories_response(payload: dict) -> str:
+    categories = [str(x).strip() for x in (payload.get("categories") or []) if str(x).strip()]
+
+    if not categories:
+        return "We have several categories on the menu. What would you like to see?"
+
+    lines = ["You can browse these menu categories:"]
+    lines.extend(numbered_list(categories, max_items=6))
+    lines.append("Which category would you like?")
+    return "\n".join(lines)
