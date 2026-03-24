@@ -6,6 +6,7 @@ from app.responses.utils import numbered_list
 DEFAULT_LIST_LIMIT = 5
 
 
+
 def show_category_response(payload: dict) -> str:
     category_name = payload.get("category_name", "this category")
     items = payload.get("items", [])
@@ -104,3 +105,57 @@ def show_menu_categories_response(payload: dict) -> str:
     lines.extend(numbered_list(categories, max_items=6))
     lines.append("Which category would you like?")
     return "\n".join(lines)
+
+
+def show_item_availability_response(payload: dict) -> str:
+    item_name = payload.get("item_name", "That item")
+    description = str(payload.get("description", "")).strip()
+    pricing = payload.get("pricing") or {}
+    mode = pricing.get("mode")
+    variants = pricing.get("variants") or []
+
+    if mode == "variant" and variants:
+        labels = [
+            str(v.get("label", "")).strip()
+            for v in variants
+            if str(v.get("label", "")).strip()
+        ]
+        if labels:
+            joined = ", ".join(labels[:5])
+            if description:
+                return f"Yes, {item_name} is available. {description} It comes in: {joined}."
+            return f"Yes, {item_name} is available. It comes in: {joined}."
+
+    if description:
+        return f"Yes, {item_name} is available. {description}"
+
+    return f"Yes, {item_name} is available."
+
+
+def show_modifier_availability_response(payload: dict) -> str:
+    match_type = payload.get("match_type")
+
+    if match_type == "modifier":
+        modifier_name = payload.get("modifier_name", "That add-on")
+        group_name = payload.get("group_name", "this item")
+        price_cents = payload.get("price_cents")
+
+        if price_cents is None or int(price_cents) <= 0:
+            return f"Yes, {modifier_name} is available for this item under {group_name}."
+
+        return f"Yes, {modifier_name} is available for this item under {group_name} for ${int(price_cents) / 100:.2f}."
+
+    if match_type == "side":
+        item_name = payload.get("item_name", "That option")
+        group_name = payload.get("group_name", "this item")
+        return f"Yes, {item_name} is available for this item under {group_name}."
+
+    return "Yes, that option is available for this item."
+
+
+def modifier_available_with_item_context_response(payload: dict) -> str:
+    modifier_name = str(payload.get("modifier_name", "that add-on")).strip() or "that add-on"
+    return (
+        f"{modifier_name.title()} is usually an add-on or modifier, not a standalone menu item. "
+        "Tell me the item name and I’ll check whether it’s available for that item."
+    )

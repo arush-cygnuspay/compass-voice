@@ -1,5 +1,4 @@
 # app/state_machine/state_router.py
-
 from __future__ import annotations
 
 from app.nlu.intent_resolution.intent import Intent
@@ -61,7 +60,6 @@ GREETING_INTENTS: set[Intent] = {
     Intent.NIGHT,
 }
 
-
 IDLE_ORDER_SUPPORT_INTENTS: set[Intent] = {
     Intent.CANCEL_ORDER,
     Intent.PAYMENT_STATUS,
@@ -87,23 +85,18 @@ class StateRouter:
     def route(self, state: ConversationState, intent_result: IntentResult) -> RouteResult:
         intent = intent_result.intent
 
-        # 1) Waiting states own the turn by default.
-        # Mid-flow exceptions like ASK_PRICE / SHOW_CART / SHOW_TOTAL
-        # must be intercepted earlier by FlowControlPolicy + TurnEngine.
         if state in WAITING_STATE_HANDLERS:
             return RouteResult(
                 allowed=True,
                 handler_name=WAITING_STATE_HANDLERS[state],
             )
 
-        # 2) Direct task states
         if state in DIRECT_STATE_HANDLERS:
             return RouteResult(
                 allowed=True,
                 handler_name=DIRECT_STATE_HANDLERS[state],
             )
 
-        # 3) IDLE entry routing
         if state == ConversationState.IDLE:
             if intent == Intent.ADD_ITEM:
                 return RouteResult(
@@ -135,7 +128,23 @@ class StateRouter:
                     handler_name="cart_handler",
                 )
 
-        # 4) Greeting
+            if intent == Intent.ASK_PRICE:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="ask_price_handler",
+                )
+
+            if intent in IDLE_MENU_INFO_INTENTS:
+                return RouteResult(
+                    allowed=True,
+                    handler_name="ask_menu_info_handler",
+                )
+
+            return RouteResult(
+                allowed=False,
+                reason=f"intent {intent.value} is not allowed in idle",
+            )
+
         if state == ConversationState.GREETING:
             if intent in GREETING_INTENTS:
                 return RouteResult(
@@ -148,7 +157,6 @@ class StateRouter:
                 reason=f"intent {intent.value} is not allowed in greeting",
             )
 
-        # 5) Error recovery
         if state == ConversationState.ERROR_RECOVERY:
             return RouteResult(
                 allowed=False,

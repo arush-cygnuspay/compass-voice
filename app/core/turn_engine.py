@@ -487,6 +487,17 @@ class TurnEngine:
     def _readonly_interrupt_handler_name(self, intent: Intent) -> str | None:
         if intent == Intent.ASK_PRICE:
             return "ask_price_handler"
+        if intent in {
+            Intent.ASK_ITEM_INFO,
+            Intent.ASK_MENU_INFO,
+            Intent.ASK_OPTIONS,
+            Intent.AVAILABILITY_QUERY,
+            Intent.BROWSE_MENU,
+            Intent.BROWSE_CATEGORY,
+            Intent.RECOMMENDATION_QUERY,
+            Intent.SHOW_MENU,
+        }:
+            return "ask_menu_info_handler"
         if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
             return "cart_handler"
         return None

@@ -26,6 +26,7 @@ READ_ONLY_INTERRUPT_INTENTS: set[Intent] = {
     Intent.ASK_PRICE,
     Intent.SHOW_CART,
     Intent.SHOW_TOTAL,
+    Intent.AVAILABILITY_QUERY,
 }
 
 
