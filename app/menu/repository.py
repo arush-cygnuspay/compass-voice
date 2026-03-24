@@ -7,7 +7,7 @@ from app.menu.slot_helpers import first_slot_value
 from app.menu.store import MenuStore
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
-from app.utils.item_matching import score_item
+from app.utils.item_matching import score_item, score_item_normalized
 
 
 class MenuRepository:
