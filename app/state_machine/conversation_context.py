@@ -1,5 +1,4 @@
 # app/state_machine/conversation_context.py
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,7 +6,13 @@ from typing import Any, Dict, Optional
 
 from app.core.pending_action import PendingAction
 from app.nlu.nlu_result import NLUResult
+from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.conversation_state import ConversationState
+
+
+# =========================================================
+# Serializable pending-flow models
+# =========================================================
 
 
 @dataclass(slots=True)
@@ -34,6 +39,7 @@ class InterruptProposal:
     def from_dict(cls, data: Optional[dict]) -> Optional["InterruptProposal"]:
         if not data:
             return None
+
         return cls(
             text=data.get("text"),
             predicted_main_intent=data.get("predicted_main_intent"),
@@ -56,7 +62,7 @@ class PendingSideChoice:
     normalized_name: str
     variants: list[PendingVariantChoice] = field(default_factory=list)
 
-    # Precomputed indexes
+    # Derived indexes for low-latency matching during waiting states.
     variants_by_id: dict[str, PendingVariantChoice] = field(default_factory=dict)
     variants_by_normalized_name: dict[str, PendingVariantChoice] = field(default_factory=dict)
     variant_names: tuple[str, ...] = ()
@@ -72,7 +78,7 @@ class PendingSideGroup:
     max_selector: int
     choices: list[PendingSideChoice] = field(default_factory=list)
 
-    # Precomputed indexes
+    # Derived indexes for low-latency matching during waiting states.
     choices_by_item_id: dict[str, PendingSideChoice] = field(default_factory=dict)
     choices_by_normalized_name: dict[str, list[PendingSideChoice]] = field(default_factory=dict)
     choice_names: tuple[str, ...] = ()
@@ -97,7 +103,7 @@ class PendingModifierGroup:
     max_selector: int
     choices: list[PendingModifierChoice] = field(default_factory=list)
 
-    # Precomputed indexes
+    # Derived indexes for low-latency matching during waiting states.
     choices_by_modifier_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
     choices_by_normalized_name: dict[str, list[PendingModifierChoice]] = field(default_factory=dict)
     choice_names: tuple[str, ...] = ()
@@ -113,7 +119,7 @@ class PendingAddItem:
     side_groups: list[PendingSideGroup] = field(default_factory=list)
     modifier_groups: list[PendingModifierGroup] = field(default_factory=list)
 
-    # Precomputed item-level indexes
+    # Derived item-level indexes for low-latency matching across turns.
     item_variants_by_id: dict[str, PendingVariantChoice] = field(default_factory=dict)
     item_variants_by_normalized_name: dict[str, PendingVariantChoice] = field(default_factory=dict)
     item_variant_names: tuple[str, ...] = ()
@@ -124,6 +130,49 @@ class PendingAddItem:
 
     modifier_groups_by_id: dict[str, PendingModifierGroup] = field(default_factory=dict)
     modifier_choice_by_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
+
+
+# =========================================================
+# Internal index helpers
+# =========================================================
+
+
+def _append_bucket_value[T](mapping: dict[str, list[T]], key: str, value: T) -> None:
+    bucket = mapping.get(key)
+    if bucket is None:
+        mapping[key] = [value]
+        return
+    bucket.append(value)
+
+
+def _index_variants(
+    variants: list[PendingVariantChoice],
+) -> tuple[
+    dict[str, PendingVariantChoice],
+    dict[str, PendingVariantChoice],
+    tuple[str, ...],
+    tuple[str, ...],
+]:
+    by_id: dict[str, PendingVariantChoice] = {}
+    by_normalized_name: dict[str, PendingVariantChoice] = {}
+    names: list[str] = []
+
+    for variant in variants:
+        by_id[variant.variant_id] = variant
+
+        if variant.normalized_name and variant.normalized_name not in by_normalized_name:
+            by_normalized_name[variant.normalized_name] = variant
+
+        if variant.name:
+            names.append(variant.name)
+
+    name_tuple = tuple(names)
+    return by_id, by_normalized_name, name_tuple, name_tuple[:4]
+
+
+# =========================================================
+# Serialization helpers
+# =========================================================
 
 
 def _pending_variant_to_dict(value: PendingVariantChoice) -> dict:
@@ -140,7 +189,7 @@ def _pending_side_choice_to_dict(value: PendingSideChoice) -> dict:
         "name": value.name,
         "pricing_mode": value.pricing_mode,
         "normalized_name": value.normalized_name,
-        "variants": [_pending_variant_to_dict(v) for v in value.variants],
+        "variants": [_pending_variant_to_dict(variant) for variant in value.variants],
     }
 
 
@@ -179,69 +228,187 @@ def _pending_add_item_to_dict(value: PendingAddItem) -> dict:
     return {
         "item_id": value.item_id,
         "item_name": value.item_name,
-        "item_variants": [_pending_variant_to_dict(v) for v in value.item_variants],
-        "side_groups": [_pending_side_group_to_dict(g) for g in value.side_groups],
-        "modifier_groups": [_pending_modifier_group_to_dict(g) for g in value.modifier_groups],
+        "item_variants": [_pending_variant_to_dict(variant) for variant in value.item_variants],
+        "side_groups": [_pending_side_group_to_dict(group) for group in value.side_groups],
+        "modifier_groups": [_pending_modifier_group_to_dict(group) for group in value.modifier_groups],
     }
 
 
+# =========================================================
+# Deserialization helpers
+# Rebuild all derived indexes so persisted sessions behave
+# the same as freshly created pending objects.
+# =========================================================
+
+
 def _pending_variant_from_dict(data: dict) -> PendingVariantChoice:
+    name = data["name"]
+    normalized_name = data.get("normalized_name") or normalize_text(name)
+
     return PendingVariantChoice(
         variant_id=data["variant_id"],
-        name=data["name"],
-        normalized_name=data.get("normalized_name", ""),
+        name=name,
+        normalized_name=normalized_name,
     )
 
 
 def _pending_side_choice_from_dict(data: dict) -> PendingSideChoice:
+    variants = [_pending_variant_from_dict(variant) for variant in data.get("variants", [])]
+    (
+        variants_by_id,
+        variants_by_normalized_name,
+        variant_names,
+        top_variant_names,
+    ) = _index_variants(variants)
+
+    name = data["name"]
+    normalized_name = data.get("normalized_name") or normalize_text(name)
+
     return PendingSideChoice(
         item_id=data["item_id"],
-        name=data["name"],
+        name=name,
         pricing_mode=data["pricing_mode"],
-        normalized_name=data.get("normalized_name", ""),
-        variants=[_pending_variant_from_dict(v) for v in data.get("variants", [])],
+        normalized_name=normalized_name,
+        variants=variants,
+        variants_by_id=variants_by_id,
+        variants_by_normalized_name=variants_by_normalized_name,
+        variant_names=variant_names,
+        top_variant_names=top_variant_names,
     )
 
 
 def _pending_modifier_choice_from_dict(data: dict) -> PendingModifierChoice:
+    name = data["name"]
+    normalized_name = data.get("normalized_name") or normalize_text(name)
+
     return PendingModifierChoice(
         modifier_id=data["modifier_id"],
-        name=data["name"],
+        name=name,
         group_id=data["group_id"],
-        normalized_name=data.get("normalized_name", ""),
+        normalized_name=normalized_name,
     )
 
 
 def _pending_side_group_from_dict(data: dict) -> PendingSideGroup:
+    choices = [_pending_side_choice_from_dict(choice) for choice in data.get("choices", [])]
+
+    choices_by_item_id: dict[str, PendingSideChoice] = {}
+    choices_by_normalized_name: dict[str, list[PendingSideChoice]] = {}
+    choice_names: list[str] = []
+    normalized_choice_names: list[str] = []
+
+    for choice in choices:
+        choices_by_item_id[choice.item_id] = choice
+
+        if choice.normalized_name:
+            _append_bucket_value(
+                choices_by_normalized_name,
+                choice.normalized_name,
+                choice,
+            )
+            normalized_choice_names.append(choice.normalized_name)
+
+        if choice.name:
+            choice_names.append(choice.name)
+
     return PendingSideGroup(
         group_id=data["group_id"],
         name=data["name"],
         is_required=bool(data["is_required"]),
         min_selector=int(data["min_selector"]),
         max_selector=int(data["max_selector"]),
-        choices=[_pending_side_choice_from_dict(choice) for choice in data.get("choices", [])],
+        choices=choices,
+        choices_by_item_id=choices_by_item_id,
+        choices_by_normalized_name=choices_by_normalized_name,
+        choice_names=tuple(choice_names),
+        normalized_choice_names=tuple(normalized_choice_names),
+        top_choice_names=tuple(choice_names[:3]),
     )
 
 
 def _pending_modifier_group_from_dict(data: dict) -> PendingModifierGroup:
+    choices = [_pending_modifier_choice_from_dict(choice) for choice in data.get("choices", [])]
+
+    choices_by_modifier_id: dict[str, PendingModifierChoice] = {}
+    choices_by_normalized_name: dict[str, list[PendingModifierChoice]] = {}
+    choice_names: list[str] = []
+    normalized_choice_names: list[str] = []
+
+    for choice in choices:
+        choices_by_modifier_id[choice.modifier_id] = choice
+
+        if choice.normalized_name:
+            _append_bucket_value(
+                choices_by_normalized_name,
+                choice.normalized_name,
+                choice,
+            )
+            normalized_choice_names.append(choice.normalized_name)
+
+        if choice.name:
+            choice_names.append(choice.name)
+
     return PendingModifierGroup(
         group_id=data["group_id"],
         name=data["name"],
         is_required=bool(data["is_required"]),
         min_selector=int(data["min_selector"]),
         max_selector=int(data["max_selector"]),
-        choices=[_pending_modifier_choice_from_dict(choice) for choice in data.get("choices", [])],
+        choices=choices,
+        choices_by_modifier_id=choices_by_modifier_id,
+        choices_by_normalized_name=choices_by_normalized_name,
+        choice_names=tuple(choice_names),
+        normalized_choice_names=tuple(normalized_choice_names),
+        top_choice_names=tuple(choice_names[:4]),
     )
 
 
 def _pending_add_item_from_dict(data: dict) -> PendingAddItem:
+    item_variants = [_pending_variant_from_dict(variant) for variant in data.get("item_variants", [])]
+    (
+        item_variants_by_id,
+        item_variants_by_normalized_name,
+        item_variant_names,
+        top_item_variant_names,
+    ) = _index_variants(item_variants)
+
+    side_groups = [_pending_side_group_from_dict(group) for group in data.get("side_groups", [])]
+    modifier_groups = [_pending_modifier_group_from_dict(group) for group in data.get("modifier_groups", [])]
+
+    side_groups_by_id: dict[str, PendingSideGroup] = {}
+    side_choice_by_item_id: dict[str, PendingSideChoice] = {}
+    for group in side_groups:
+        side_groups_by_id[group.group_id] = group
+        for choice in group.choices:
+            side_choice_by_item_id[choice.item_id] = choice
+
+    modifier_groups_by_id: dict[str, PendingModifierGroup] = {}
+    modifier_choice_by_id: dict[str, PendingModifierChoice] = {}
+    for group in modifier_groups:
+        modifier_groups_by_id[group.group_id] = group
+        for choice in group.choices:
+            modifier_choice_by_id[choice.modifier_id] = choice
+
     return PendingAddItem(
         item_id=data["item_id"],
         item_name=data["item_name"],
-        item_variants=[_pending_variant_from_dict(v) for v in data.get("item_variants", [])],
-        side_groups=[_pending_side_group_from_dict(g) for g in data.get("side_groups", [])],
-        modifier_groups=[_pending_modifier_group_from_dict(g) for g in data.get("modifier_groups", [])],
+        item_variants=item_variants,
+        side_groups=side_groups,
+        modifier_groups=modifier_groups,
+        item_variants_by_id=item_variants_by_id,
+        item_variants_by_normalized_name=item_variants_by_normalized_name,
+        item_variant_names=item_variant_names,
+        top_item_variant_names=top_item_variant_names,
+        side_groups_by_id=side_groups_by_id,
+        side_choice_by_item_id=side_choice_by_item_id,
+        modifier_groups_by_id=modifier_groups_by_id,
+        modifier_choice_by_id=modifier_choice_by_id,
     )
+
+
+# =========================================================
+# Main conversation context
+# =========================================================
 
 
 @dataclass(slots=True)
@@ -256,7 +423,6 @@ class ConversationContext:
     current_side_group_index: int = 0
     selected_side_groups: Dict[str, list[str]] = field(default_factory=dict)
     skipped_side_groups: set[str] = field(default_factory=set)
-
     selected_side_variants: Dict[str, str] = field(default_factory=dict)
 
     pending_side_item_id: Optional[str] = None
