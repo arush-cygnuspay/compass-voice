@@ -1,5 +1,4 @@
 # app/state_machine/handlers/info/ask_menu_info_handler.py
-
 from __future__ import annotations
 
 from app.menu.query_result import MenuQueryType
@@ -38,15 +37,9 @@ class AskMenuInfoHandler(BaseHandler):
         normalized_text = normalize_text(user_text or "")
         slots = getattr(context, "last_slots", ()) or ()
 
-        # --------------------------------------------------
-        # 1) Full menu browse
-        # --------------------------------------------------
         if intent in {Intent.BROWSE_MENU, Intent.SHOW_MENU}:
             return self._show_browse_categories()
 
-        # --------------------------------------------------
-        # 2) Category browse
-        # --------------------------------------------------
         if intent == Intent.BROWSE_CATEGORY:
             category = self._resolve_category_for_browse(
                 user_text=normalized_text,
@@ -57,9 +50,6 @@ class AskMenuInfoHandler(BaseHandler):
 
             return self._show_browse_categories()
 
-        # --------------------------------------------------
-        # 3) Generic options in IDLE
-        # --------------------------------------------------
         if intent == Intent.ASK_OPTIONS:
             category = self._resolve_category_for_browse(
                 user_text=normalized_text,
@@ -69,15 +59,51 @@ class AskMenuInfoHandler(BaseHandler):
                 return self._show_category_from_dict(category)
 
             result = self.menu_repo.resolve_menu_query(normalized_text, limit=5)
-            return self._menu_result_to_handler_result(result)
+            return self._menu_result_to_handler_result(intent=intent, result=result)
 
-        # --------------------------------------------------
-        # 4) Item/info/availability/recommendation queries
-        # --------------------------------------------------
+        if intent == Intent.AVAILABILITY_QUERY:
+            current_item_id = getattr(context, "current_item_id", None)
+
+            if current_item_id:
+                modifier_match = self.menu_repo.resolve_modifier_availability_for_item_normalized(
+                    normalized_text=normalized_text,
+                    item_id=current_item_id,
+                )
+                if modifier_match is not None:
+                    return HandlerResult(
+                        next_state=ConversationState.IDLE,
+                        response_key="show_modifier_availability",
+                        response_payload=modifier_match,
+                    )
+
+            category_slot_value = first_slot_value(slots, "CATEGORY", "MENU_CATEGORY")
+            if category_slot_value:
+                category_result = self.menu_repo.resolve_category_query(
+                    category_slot_value,
+                    limit=5,
+                )
+                if category_result is not None:
+                    return self._menu_result_to_handler_result(intent=intent, result=category_result)
+
+            result = self.menu_repo.resolve_idle_availability_query_normalized(
+                normalized_text,
+                limit=5,
+            )
+
+            if result.type == MenuQueryType.NOT_FOUND:
+                modifier_hits = self.menu_repo.store.find_modifier_entities(normalized_text)
+                if modifier_hits:
+                    return HandlerResult(
+                        next_state=ConversationState.IDLE,
+                        response_key="modifier_available_with_item_context",
+                        response_payload={"modifier_name": user_text},
+                    )
+
+            return self._menu_result_to_handler_result(intent=intent, result=result)
+
         if intent in {
             Intent.ASK_ITEM_INFO,
             Intent.ASK_MENU_INFO,
-            Intent.AVAILABILITY_QUERY,
             Intent.RECOMMENDATION_QUERY,
         }:
             category_slot_value = first_slot_value(slots, "CATEGORY", "MENU_CATEGORY")
@@ -87,20 +113,16 @@ class AskMenuInfoHandler(BaseHandler):
                     limit=5,
                 )
                 if category_result is not None:
-                    return self._menu_result_to_handler_result(category_result)
+                    return self._menu_result_to_handler_result(
+                        intent=intent,
+                        result=category_result,
+                    )
 
             result = self.menu_repo.resolve_menu_query(normalized_text, limit=5)
-            return self._menu_result_to_handler_result(result)
+            return self._menu_result_to_handler_result(intent=intent, result=result)
 
-        # --------------------------------------------------
-        # 5) Fallback
-        # --------------------------------------------------
         result = self.menu_repo.resolve_menu_query(normalized_text, limit=5)
-        return self._menu_result_to_handler_result(result)
-
-    # ======================================================
-    # Helpers
-    # ======================================================
+        return self._menu_result_to_handler_result(intent=intent, result=result)
 
     def _show_browse_categories(self) -> HandlerResult:
         categories = self._get_browse_categories(limit=6)
@@ -153,14 +175,6 @@ class AskMenuInfoHandler(BaseHandler):
         user_text: str,
         slots,
     ) -> dict | None:
-        """
-        Category-first resolution for browse-like intents.
-
-        Priority:
-        1) explicit CATEGORY slot
-        2) ITEM slot reused as category hint
-        3) full utterance
-        """
         candidates: list[str] = []
 
         def add_candidate(value: str | None) -> None:
@@ -176,13 +190,17 @@ class AskMenuInfoHandler(BaseHandler):
 
         for candidate in candidates:
             category_result = self.menu_repo.resolve_category_query(candidate, limit=10)
-            if category_result is not None:
-                if category_result.category_id:
-                    return self.menu_repo.store.categories.get(category_result.category_id)
+            if category_result is not None and category_result.category_id:
+                return self.menu_repo.store.categories.get(category_result.category_id)
 
         return None
 
-    def _menu_result_to_handler_result(self, result) -> HandlerResult:
+    def _menu_result_to_handler_result(
+        self,
+        *,
+        intent: Intent,
+        result,
+    ) -> HandlerResult:
         if result.type == MenuQueryType.CATEGORY:
             return HandlerResult(
                 next_state=ConversationState.IDLE,
@@ -202,20 +220,43 @@ class AskMenuInfoHandler(BaseHandler):
                     response_key="menu_not_found",
                 )
 
+            response_key = (
+                "show_item_availability"
+                if intent == Intent.AVAILABILITY_QUERY
+                else "show_item_info"
+            )
+
             return HandlerResult(
                 next_state=ConversationState.IDLE,
-                response_key="show_item_info",
+                response_key=response_key,
                 response_payload={
                     "item_name": single_item.name,
+                    "pricing": {
+                        "mode": getattr(single_item, "pricing_mode", None),
+                        "price_cents": getattr(single_item, "price_cents", None),
+                        "variants": list(getattr(single_item, "variants", []) or []),
+                    },
                 },
             )
 
         if result.type == MenuQueryType.ITEM and result.item is not None:
+            response_key = (
+                "show_item_availability"
+                if intent == Intent.AVAILABILITY_QUERY
+                else "show_item_info"
+            )
+
             return HandlerResult(
                 next_state=ConversationState.IDLE,
-                response_key="show_item_info",
+                response_key=response_key,
                 response_payload={
                     "item_name": result.item.name,
+                    "description": getattr(result.item, "description", "") or "",
+                    "pricing": {
+                        "mode": getattr(result.item, "pricing_mode", None),
+                        "price_cents": getattr(result.item, "price_cents", None),
+                        "variants": list(getattr(result.item, "variants", []) or []),
+                    },
                 },
             )
 

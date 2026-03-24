@@ -46,6 +46,9 @@ class MenuStore:
         self._item_ids_by_alias: dict[str, list[str]] = {}
         self._category_name_index: dict[str, dict] = {}
 
+        self._discoverable_item_ids: set[str] = set()
+        self._modifier_entries_by_name: dict[str, list[dict]] = {}
+
         self._load()
 
     def _load(self) -> None:
@@ -216,6 +219,8 @@ class MenuStore:
         self._item_by_name.clear()
         self._item_ids_by_alias.clear()
         self._category_name_index.clear()
+        self._discoverable_item_ids.clear()
+        self._modifier_entries_by_name.clear()
 
         for item in self.items.values():
             if item.normalized_name:
@@ -238,6 +243,22 @@ class MenuStore:
                     self._category_name_index[singular] = category
             else:
                 self._category_name_index[f"{norm_name}s"] = category
+
+            for item_id in category.get("item_ids", []) or []:
+                if item_id in self.items:
+                    self._discoverable_item_ids.add(item_id)
+
+        for norm_key, entries in self.entity_index.items():
+            for entry in entries:
+                entity_type = entry.get("type")
+
+                if entity_type == "item":
+                    item_id = entry.get("item_id")
+                    if item_id and item_id in self.items:
+                        self._discoverable_item_ids.add(item_id)
+
+                elif entity_type == "modifier":
+                    self._modifier_entries_by_name.setdefault(norm_key, []).append(entry)
 
     def get_item(self, item_id: str) -> MenuItem:
         item = self.items.get(item_id)
@@ -285,3 +306,16 @@ class MenuStore:
 
     def find_category_by_name(self, normalized_text: str) -> dict | None:
         return self._category_name_index.get(normalized_text)
+
+    def is_discoverable_item(self, item_id: str) -> bool:
+        return item_id in self._discoverable_item_ids
+
+    def iter_discoverable_items(self) -> list[MenuItem]:
+        return [
+            self.items[item_id]
+            for item_id in self._discoverable_item_ids
+            if item_id in self.items
+        ]
+
+    def find_modifier_entities(self, normalized_text: str) -> list[dict]:
+        return list(self._modifier_entries_by_name.get(normalized_text, []))

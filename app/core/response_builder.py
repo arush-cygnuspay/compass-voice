@@ -20,7 +20,7 @@ from app.responses.menu_responses import (
     show_category_response,
     show_item_info_response,
     show_item_price_response,
-    show_menu_categories_response,
+    show_menu_categories_response, show_item_availability_response,
 )
 
 
@@ -107,6 +107,7 @@ class ResponseBuilder:
 
             "show_menu_categories": lambda c, m, p: show_menu_categories_response(p),
             "show_category": lambda c, m, p: show_category_response(p),
+            "show_item_availability": lambda c, m, p: show_item_availability_response(p),
             "show_item_info": lambda c, m, p: show_item_info_response(p),
             "menu_ambiguity": lambda c, m, p: menu_ambiguity_response(p),
             "menu_not_found": lambda *_: menu_not_found_response(),

@@ -610,3 +610,171 @@ class MenuRepository:
 
         ranked.sort(key=lambda row: (row[0], row[1], row[2]))
         return [category for _, _, _, category in ranked]
+
+    def resolve_idle_availability_query_normalized(
+            self,
+            normalized_text: str,
+            *,
+            limit: int = 5,
+    ) -> MenuQueryResult:
+        if not normalized_text:
+            similar_items, categories = self.build_not_found_recovery_normalized(
+                normalized_text,
+                item_limit=3,
+                category_limit=4,
+            )
+            return MenuQueryResult(
+                type=MenuQueryType.NOT_FOUND,
+                suggested_items=similar_items,
+                suggested_categories=categories,
+            )
+
+        category_result = self.resolve_category_query_normalized(normalized_text, limit=limit)
+        if category_result is not None:
+            return category_result
+
+        candidate_ids: set[str] = set()
+
+        for entry in self.store.find_entity(normalized_text, allowed_types={"item"}):
+            item_id = entry.get("item_id")
+            if item_id and self.store.is_discoverable_item(item_id):
+                candidate_ids.add(item_id)
+
+        exact_item = self.store.find_item_exact(normalized_text)
+        if exact_item is not None and self.store.is_discoverable_item(exact_item.item_id):
+            candidate_ids.add(exact_item.item_id)
+
+        for item_id in self.store.find_item_ids_by_alias(normalized_text):
+            if self.store.is_discoverable_item(item_id):
+                candidate_ids.add(item_id)
+
+        candidates = (
+            [self.store.get_item(item_id) for item_id in candidate_ids if item_id in self.store.items]
+            if candidate_ids
+            else self.store.iter_discoverable_items()
+        )
+
+        scored_items: list[tuple[float, MenuItem]] = []
+        for item in candidates:
+            if not item.available:
+                continue
+
+            score = max(
+                score_item_normalized(normalized_text, item.normalized_name),
+                max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
+            )
+            if score > 0:
+                scored_items.append((score, item))
+
+        if not scored_items:
+            modifier_hits = self.store.find_modifier_entities(normalized_text)
+            if modifier_hits:
+                return MenuQueryResult(
+                    type=MenuQueryType.NOT_FOUND,
+                    suggested_items=[],
+                    suggested_categories=[],
+                )
+
+            similar_items, categories = self.build_not_found_recovery_normalized(
+                normalized_text,
+                item_limit=3,
+                category_limit=4,
+            )
+            return MenuQueryResult(
+                type=MenuQueryType.NOT_FOUND,
+                suggested_items=similar_items,
+                suggested_categories=categories,
+            )
+
+        scored_items.sort(key=lambda pair: pair[0], reverse=True)
+        best_score, best_item = scored_items[0]
+
+        strong_items: list[MenuItem] = []
+        seen_item_ids: set[str] = set()
+
+        for score, item in scored_items:
+            if score < best_score * 0.85:
+                break
+            if item.item_id in seen_item_ids:
+                continue
+            seen_item_ids.add(item.item_id)
+            strong_items.append(item)
+
+        if best_score >= 6.0 and len(strong_items) == 1:
+            return MenuQueryResult(type=MenuQueryType.ITEM, item=best_item)
+
+        if len(strong_items) > 1:
+            return MenuQueryResult(
+                type=MenuQueryType.ITEM_AMBIGUOUS,
+                matched_items=strong_items[:limit],
+            )
+
+        similar_items, categories = self.build_not_found_recovery_normalized(
+            normalized_text,
+            item_limit=3,
+            category_limit=4,
+        )
+        return MenuQueryResult(
+            type=MenuQueryType.NOT_FOUND,
+            suggested_items=similar_items,
+            suggested_categories=categories,
+        )
+
+    def resolve_modifier_availability_for_item_normalized(
+            self,
+            *,
+            normalized_text: str,
+            item_id: str,
+    ) -> dict | None:
+        if not normalized_text or not item_id or item_id not in self.store.items:
+            return None
+
+        item = self.store.get_item(item_id)
+
+        for group in item.modifier_groups:
+            for choice in group.choices:
+                choice_name = choice.normalized_name
+                if not choice_name:
+                    continue
+
+                if normalized_text == choice_name:
+                    return {
+                        "match_type": "modifier",
+                        "group_name": group.name,
+                        "modifier_name": choice.name,
+                        "price_cents": choice.price_cents,
+                    }
+
+                if len(normalized_text) >= 3 and (
+                        normalized_text in choice_name or choice_name in normalized_text
+                ):
+                    return {
+                        "match_type": "modifier",
+                        "group_name": group.name,
+                        "modifier_name": choice.name,
+                        "price_cents": choice.price_cents,
+                    }
+
+        for group in item.side_groups:
+            for choice in group.choices:
+                choice_name = choice.normalized_name
+                if not choice_name:
+                    continue
+
+                if normalized_text == choice_name:
+                    return {
+                        "match_type": "side",
+                        "group_name": group.name,
+                        "item_name": choice.name,
+                    }
+
+                if len(normalized_text) >= 3 and (
+                        normalized_text in choice_name or choice_name in normalized_text
+                ):
+                    return {
+                        "match_type": "side",
+                        "group_name": group.name,
+                        "item_name": choice.name,
+                    }
+
+        return None
