@@ -1,5 +1,6 @@
-from app.nlu.intent_patterns.quantity import *
+# app/utils/quantity_detection.py
 
+import re
 
 NUMBER_WORDS = {
     "zero": 0,
@@ -87,16 +88,5 @@ def detect_quantity(text: str) -> dict | None:
         "value": int | None
     }
     """
-    if PURE_QUANTITY_PAT.match(text):
-        return {"type": "exact", "value": normalize_quantity(text)}
-
-    if INCREMENTAL_QUANTITY_PAT.search(text):
-        return {"type": "incremental", "value": normalize_quantity(text)}
-
-    if SOFT_QUANTITY_PAT.search(text) or QUANTITY_NOUN_PAT.search(text):
-        return {"type": "exact", "value": normalize_quantity(text)}
-
-    if VAGUE_QUANTITY_PAT.search(text):
-        return {"type": "vague", "value": None}
 
     return None

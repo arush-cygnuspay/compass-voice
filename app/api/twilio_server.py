@@ -1,77 +1,39 @@
 # app/api/twilio_server.py
+from __future__ import annotations
+
+import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 
-from fastapi import FastAPI, Request, Form
+from fastapi import FastAPI, Form, Request
 from fastapi.responses import Response
+from twilio.twiml.voice_response import Gather, VoiceResponse
 
-from twilio.twiml.voice_response import VoiceResponse, Gather
-
-#  IMPORT ROUTERS
+from app.api.chat_demo import router as test_chat_router
 from app.api.ui.ui import router as ui_router
-from app.api.test_chat import router as test_chat_router
-
-from app.core.turn_engine import TurnEngine
+from app.bootstrap.runtime import build_runtime
 from app.core.response_builder import ResponseBuilder
-from app.menu.repository import MenuRepository
-from app.menu.store import MenuStore
-from app.menu.exceptions import MenuLoadError
-from app.state_machine.state_router import StateRouter
+from app.core.turn_engine import TurnEngine
 from app.session.repository import load_session, save_session
 
 
-# ----------------------------------------------------------
-# Lifespan
-# ----------------------------------------------------------
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # ---------- INIT ----------
-    restaurant_id = "demo"
+    runtime = build_runtime(restaurant_id="demo")
 
-    project_root = Path(__file__).resolve().parents[2]
-    data_root = project_root / "app" / "data" / "restaurants" / restaurant_id
-
-    try:
-        store = MenuStore(
-            data_root / "menu.json",
-            data_root / "entity_index.json",
-        )
-    except MenuLoadError as e:
-        raise RuntimeError(f"Failed to load menu: {e}")
-
-    menu_repo = MenuRepository(store)
-    router = StateRouter()
-
-    engine = TurnEngine(router, menu_repo)
-    responder = ResponseBuilder(menu_repo)
-
-    # Attach to app state
-    app.state.engine = engine
-    app.state.responder = responder
-
-    # ✅ REGISTER ROUTERS
-    app.include_router(test_chat_router)  # /test/chat
-    app.include_router(ui_router)         # /ui
+    app.state.runtime = runtime
+    app.state.engine = runtime.engine
+    app.state.responder = runtime.responder
 
     print("Twilio server initialized with Compass Voice v2 pipeline")
-
     yield
-
-    # ---------- SHUTDOWN ----------
     print("Shutting down Compass Voice v2")
 
 
-# ----------------------------------------------------------
-# App
-# ----------------------------------------------------------
-
 app = FastAPI(lifespan=lifespan)
 
+app.include_router(test_chat_router)
+app.include_router(ui_router)
 
-# ----------------------------------------------------------
-# Helper
-# ----------------------------------------------------------
 
 def gather(action_url: str, say: str | None = None) -> Gather:
     g = Gather(
@@ -87,10 +49,6 @@ def gather(action_url: str, say: str | None = None) -> Gather:
     return g
 
 
-# ==========================================================
-# ENTRY POINT — /voice
-# ==========================================================
-
 @app.post("/voice")
 async def voice(request: Request):
     form = await request.form()
@@ -99,7 +57,6 @@ async def voice(request: Request):
 
     session = load_session(call_sid, restaurant_id)
 
-    # 🔒 HARD GUARD
     if session.turn_count > 0:
         return Response("", media_type="application/xml")
 
@@ -109,16 +66,12 @@ async def voice(request: Request):
     vr.append(
         gather(
             action_url=str(request.url_for("process_speech")),
-            say="Thank you for calling Compass. What would you like to order?",
+            say="Hello! Thank you for calling Compass. What would you like to order?",
         )
     )
 
     return Response(str(vr), media_type="application/xml")
 
-
-# ==========================================================
-# PROCESS SPEECH — /process_speech
-# ==========================================================
 
 @app.post("/process_speech")
 async def process_speech(
@@ -145,9 +98,8 @@ async def process_speech(
         vr.append(gather(str(request.url_for("process_speech"))))
         return Response(str(vr), media_type="application/xml")
 
-    # -------------------------
-    # CORE V2 PIPELINE
-    # -------------------------
+    turn_start = time.perf_counter()
+
     turn_output = engine.process_turn(
         session=session,
         user_text=user_text,
@@ -161,6 +113,18 @@ async def process_speech(
         payload=turn_output.response_payload,
     )
 
+    turn_elapsed_seconds = time.perf_counter() - turn_start
+    turn_elapsed_milliseconds = turn_elapsed_seconds * 1000.0
+
+    print(
+        "[TURN_RESPONSE_TIME]",
+        {
+            "sid": call_sid,
+            "seconds": round(turn_elapsed_seconds, 3),
+            "milliseconds": round(turn_elapsed_milliseconds, 3),
+        },
+    )
+
     print(f"[BOT → CALLER] {response_text}")
 
     vr.say(response_text)
@@ -169,10 +133,6 @@ async def process_speech(
     return Response(str(vr), media_type="application/xml")
 
 
-# ==========================================================
-# RUN SERVER (DEV)
-# ==========================================================
-
 if __name__ == "__main__":
     import uvicorn
 
@@ -180,5 +140,5 @@ if __name__ == "__main__":
         "app.api.twilio_server:app",
         host="0.0.0.0",
         port=5000,
-        reload=True,
+        reload=False,
     )

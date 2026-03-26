@@ -4,9 +4,10 @@ from app.state_machine.conversation_state import ConversationState
 
 ADD_ITEM_FLOW_STATES = {
     ConversationState.CONFIRMING_ITEM,
-    ConversationState.WAITING_FOR_SIDE,
-    ConversationState.WAITING_FOR_MODIFIER,
     ConversationState.WAITING_FOR_SIZE,
+    ConversationState.WAITING_FOR_SIDE,
+    ConversationState.WAITING_FOR_SIDE_SIZE,
+    ConversationState.WAITING_FOR_MODIFIER,
     ConversationState.WAITING_FOR_QUANTITY,
 }
 

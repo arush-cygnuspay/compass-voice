@@ -1,27 +1,29 @@
-# app/core/flow_control/flow_decision.py
+from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, Dict
 from enum import Enum
+from typing import Any, Mapping
 
 from app.nlu.intent_resolution.intent import Intent
 
 
-class FlowAction(Enum):
+class FlowAction(str, Enum):
+    """
+    What FlowControlPolicy wants TurnEngine to do for this turn.
+    """
     PASS = "pass"
     REWRITE = "rewrite"
     BLOCK = "block"
     CANCEL = "cancel"
+    HANDLE_READONLY_INTERRUPT = "handle_readonly_interrupt"
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class FlowDecision:
     """
-    Result of FlowControlPolicy evaluation.
-    This object is PURE control logic — no side effects.
+    Pure control decision emitted by FlowControlPolicy.
     """
     action: FlowAction
-    effective_intent: Optional[Intent] = None
-    slot_interaction: Optional[str] = None
-    response_key: Optional[str] = None
-    response_payload: Optional[Dict] = None
+    effective_intent: Intent | None = None
+    response_key: str | None = None
+    response_payload: Mapping[str, Any] | None = None
