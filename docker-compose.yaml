@@ -1,7 +1,18 @@
 services:
-  compass-voice:
+  voice-stream:
     image: arushahmd/compass-voice:latest
-    container_name: compass-voice
+    container_name: compass-voice-stream
+    command:
+      [
+        "gunicorn",
+        "-k",
+        "uvicorn.workers.UvicornWorker",
+        "app.api.voice_stream_server:app",
+        "--bind",
+        "0.0.0.0:8000",
+        "--workers",
+        "2"
+      ]
     ports:
       - "8000:8000"
     depends_on:
@@ -9,20 +20,12 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      PUBLIC_WSS_BASE_URL: wss://voice.cygnuscompass.com
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: compass-redis
+    restart: unless-stopped
     ports:
       - "6379:6379"
-    restart: unless-stopped
-
-  cli:
-    image: arushahmd/compass-voice:latest
-    depends_on:
-      - redis
-    environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    command: python app/cli/main.py

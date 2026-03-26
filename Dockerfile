@@ -19,11 +19,15 @@ RUN pip install --no-cache-dir \
 
 RUN pip install --no-cache-dir -r requirements.docker.txt
 
+RUN pip install --no-cache-dir --force-reinstall \
+    torch==2.6.0 torchvision==0.21.0 torchaudio==2.6.0 \
+    --index-url https://download.pytorch.org/whl/cu124
+
 COPY . .
 
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
-EXPOSE 8000
+EXPOSE 8000 8001
 
-CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.api.twilio_server:app","--bind","0.0.0.0:8000","--workers","2"]
+CMD ["gunicorn","-k","uvicorn.workers.UvicornWorker","app.api.voice_stream_server:app","--bind","0.0.0.0:8000","--workers","2"]

@@ -31,10 +31,17 @@ from app.session.session import Session
 load_dotenv()
 
 
-# Twilio telephony audio is μ-law 8k mono. 20 ms at 8 kHz = 160 samples = 160 bytes.
-# Sending in 20 ms frames keeps playback responsive and avoids large buffered bursts.
+# app/api/voice_stream_server.py
+# Twilio telephony audio is μ-law 8k mono.
+# 20 ms at 8 kHz = 160 samples = 160 bytes.
 TWILIO_MULAW_FRAME_BYTES = 160
-TWILIO_SEND_PACING_SECONDS = 0.02
+TWILIO_FRAME_DURATION_SECONDS = 0.01
+
+# Send a small burst instead of sleeping after every single frame.
+# 5 frames = 100 ms of audio, which is a good balance between low latency and low overhead.
+TWILIO_BURST_FRAMES = 5
+TWILIO_BURST_BYTES = TWILIO_MULAW_FRAME_BYTES * TWILIO_BURST_FRAMES
+TWILIO_BURST_PACING_SECONDS = TWILIO_FRAME_DURATION_SECONDS * TWILIO_BURST_FRAMES
 
 
 @dataclass(slots=True)
@@ -77,7 +84,22 @@ def _build_stream_url(request: Request) -> str:
 
     explicit_public_base = os.getenv("PUBLIC_WSS_BASE_URL", "").strip()
     if explicit_public_base:
-        return f"{explicit_public_base.rstrip('/')}/ws/twilio-media"
+        base = explicit_public_base.rstrip("/")
+        if base.startswith("https://"):
+            base = "wss://" + base[len("https://") :]
+        elif base.startswith("http://"):
+            base = "ws://" + base[len("http://") :]
+        elif not base.startswith(("wss://", "ws://")):
+            raise ValueError(
+                "PUBLIC_WSS_BASE_URL must start with wss://, ws://, https://, or http://"
+            )
+        return f"{base}/ws/twilio-media"
+
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").strip().lower()
+    if forwarded_proto == "https":
+        return f"wss://{host}/ws/twilio-media"
+    if forwarded_proto == "http":
+        return f"ws://{host}/ws/twilio-media"
 
     return f"wss://{host}/ws/twilio-media"
 
@@ -175,12 +197,32 @@ async def twilio_media_ws(websocket: WebSocket):
         }
         await websocket.send_text(json.dumps(message))
 
+    async def _send_burst_frames(burst_bytes: bytes) -> int:
+        """
+        Send a burst composed of N Twilio-compatible 20 ms frames.
+
+        We still send Twilio media messages frame-by-frame for compatibility, but we avoid
+        sleeping after every frame. Instead, we send a short burst quickly and pace once.
+        """
+        sent = 0
+
+        for offset in range(0, len(burst_bytes), TWILIO_MULAW_FRAME_BYTES):
+            frame = burst_bytes[offset : offset + TWILIO_MULAW_FRAME_BYTES]
+            if not frame:
+                continue
+            await send_twilio_media(frame)
+            sent += len(frame)
+
+        return sent
+
     async def stream_audio_to_twilio(audio_chunk_stream) -> int:
         """
-        Streams Deepgram TTS output to Twilio as 20 ms μ-law frames.
+        Stream Deepgram TTS output to Twilio using small frame bursts.
 
-        This starts playback as soon as the first audio bytes arrive instead of waiting
-        for the full utterance to be synthesized.
+        Behavior:
+        - playback starts as soon as the first burst is available
+        - frames remain Twilio-compatible (160-byte μ-law chunks)
+        - pacing is applied once per burst instead of once per frame
         """
         buffered = bytearray()
         total_bytes_sent = 0
@@ -191,19 +233,28 @@ async def twilio_media_ws(websocket: WebSocket):
 
             buffered.extend(tts_chunk)
 
-            while len(buffered) >= TWILIO_MULAW_FRAME_BYTES:
-                frame = bytes(buffered[:TWILIO_MULAW_FRAME_BYTES])
-                del buffered[:TWILIO_MULAW_FRAME_BYTES]
+            while len(buffered) >= TWILIO_BURST_BYTES:
+                burst = bytes(buffered[:TWILIO_BURST_BYTES])
+                del buffered[:TWILIO_BURST_BYTES]
 
-                await send_twilio_media(frame)
-                total_bytes_sent += len(frame)
+                total_bytes_sent += await _send_burst_frames(burst)
+                await asyncio.sleep(TWILIO_BURST_PACING_SECONDS)
 
-                # Light pacing prevents dumping a large burst into Twilio all at once.
-                await asyncio.sleep(TWILIO_SEND_PACING_SECONDS)
+        # Flush remaining full frames in one last partial burst.
+        remaining_full_frame_bytes = (
+            len(buffered) // TWILIO_MULAW_FRAME_BYTES
+        ) * TWILIO_MULAW_FRAME_BYTES
 
+        if remaining_full_frame_bytes > 0:
+            burst = bytes(buffered[:remaining_full_frame_bytes])
+            del buffered[:remaining_full_frame_bytes]
+            total_bytes_sent += await _send_burst_frames(burst)
+
+        # Pad the final partial frame with μ-law silence.
         if buffered:
-            # Pad final partial frame with silence (μ-law silence is 0xFF).
-            padded = bytes(buffered) + (b"\xFF" * (TWILIO_MULAW_FRAME_BYTES - len(buffered)))
+            padded = bytes(buffered) + (
+                b"\xFF" * (TWILIO_MULAW_FRAME_BYTES - len(buffered))
+            )
             await send_twilio_media(padded)
             total_bytes_sent += len(padded)
 
@@ -247,6 +298,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 "bytes": streamed_bytes,
                 "mark_name": active_mark_name,
                 "barge_in_disabled": disable_barge_in,
+                "burst_frames": TWILIO_BURST_FRAMES,
             },
         )
 
@@ -305,8 +357,6 @@ async def twilio_media_ws(websocket: WebSocket):
 
             await speak_response_text(response_text)
 
-            # Do not process buffered interrupt here unless playback is already complete.
-            # Normal flow is: wait for Twilio mark -> phase becomes LISTENING -> replay buffered text.
             if pending_interrupt_text and phase == RealtimePhase.LISTENING:
                 buffered = pending_interrupt_text
                 pending_interrupt_text = None

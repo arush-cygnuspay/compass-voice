@@ -68,7 +68,6 @@ class DeepgramTTSClient:
 
             try:
                 async for message in ws:
-                    # Deepgram streams audio as binary frames.
                     if isinstance(message, bytes):
                         if message:
                             yield message
