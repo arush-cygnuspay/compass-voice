@@ -1,9 +1,14 @@
+# .github/workflows/deploy.yml
 name: Deploy Compass Voice
 
 on:
   push:
     branches:
       - main
+
+concurrency:
+  group: compass-voice-production
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -13,18 +18,25 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Login to Docker Hub
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
-        working-directory: ${{ github.workspace }}
-        run: |
-          ls -la
-          docker build -f Dockerfile -t arushahmd/compass-voice:latest .
-          docker push arushahmd/compass-voice:latest
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            arushahmd/compass-voice:latest
+            arushahmd/compass-voice:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
@@ -32,7 +44,11 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          script_stop: true
           script: |
+            set -e
             cd ~/apps/compass-voice
             docker compose pull
-            docker compose up -d
+            docker compose up -d --remove-orphans
+            docker image prune -f
+            docker ps

@@ -1,70 +1,78 @@
 # app/menu/models.py
+from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import List, Optional, Dict
+from typing import Optional
 
 
-@dataclass
+@dataclass(slots=True)
 class PricingVariant:
     variant_id: str
     label: str
+    normalized_label: str
     price_cents: int
 
 
-@dataclass
+@dataclass(slots=True)
 class Pricing:
-    mode: str                     # fixed | variant | unit
+    mode: str  # fixed | variant | unit
     price_cents: Optional[int] = None
-    variants: Optional[List[PricingVariant]] = None
+    variants: list[PricingVariant] | None = None
     currency: str = "USD"
 
 
-@dataclass
+@dataclass(slots=True)
 class SideChoice:
     item_id: str
     name: str
+    normalized_name: str
     pricing: Pricing
 
 
-@dataclass
+@dataclass(slots=True)
 class SideGroup:
     group_id: str
     name: str
+    normalized_name: str
     is_required: bool
     min_selector: int
     max_selector: int
-    choices: List[SideChoice]
+    choices: list[SideChoice]
 
 
-@dataclass
+@dataclass(slots=True)
 class ModifierChoice:
     modifier_id: str
     name: str
+    normalized_name: str
     price_cents: int
 
 
-@dataclass
+@dataclass(slots=True)
 class ModifierGroup:
     group_id: str
     name: str
+    normalized_name: str
     is_required: bool
     min_selector: int
     max_selector: int
-    choices: List[ModifierChoice]
+    choices: list[ModifierChoice]
 
 
-@dataclass
+@dataclass(slots=True)
 class MenuItem:
     item_id: str
     name: str
-    aliases: List[str]
+    normalized_name: str
+    aliases: tuple[str, ...]
+    normalized_aliases: tuple[str, ...]
     pricing: Pricing
-    side_groups: List[SideGroup]
-    modifier_groups: List[ModifierGroup]
+    side_groups: list[SideGroup]
+    modifier_groups: list[ModifierGroup]
     available: bool
 
 
-@dataclass
+@dataclass(slots=True)
 class ItemResolution:
     item: MenuItem
     score: float
