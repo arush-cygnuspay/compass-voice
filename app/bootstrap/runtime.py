@@ -32,7 +32,7 @@ def _project_root() -> Path:
 
 
 def _restaurant_data_root(restaurant_id: str) -> Path:
-    return _project_root() / "app" / "data" / "restaurants" / restaurant_id
+    return _project_root() / "data" / "restaurants" / restaurant_id # / "app"
 
 
 def _resolve_project_path(path_str: str) -> Path:
