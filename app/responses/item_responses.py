@@ -1,6 +1,5 @@
 # app/responses/item_responses.py
 
-
 from __future__ import annotations
 
 import re
@@ -36,13 +35,21 @@ def _format_options(options: list[str]) -> str:
     return f"{clean[0]}, {clean[1]}, or {clean[2]}"
 
 
-def _top_side_choices(context: ConversationContext, menu_repo: MenuRepository, k: int = 3) -> list[str]:
+def _top_side_choices(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+    k: int = 3,
+) -> list[str]:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.side_groups[context.current_side_group_index]
     return [choice.name for choice in get_top_k_choices(group.choices, k=k)]
 
 
-def _top_modifier_choices(context: ConversationContext, menu_repo: MenuRepository, k: int = 3) -> list[str]:
+def _top_modifier_choices(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+    k: int = 3,
+) -> list[str]:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.modifier_groups[context.current_modifier_group_index]
     return [choice.name for choice in get_top_k_choices(group.choices, k=k)]
@@ -60,13 +67,10 @@ def ask_for_side(context: ConversationContext, menu_repo: MenuRepository) -> str
 
     if group.is_required:
         if min_selector == 1 and max_selector == 1:
-            return f"Which {group_label} would you like with your {item.name}? You can choose {options}."
-        return (
-            f"Which {group_label}s would you like with your {item.name}? "
-            f"You can choose up to {max_selector}. Popular options include {options}."
-        )
+            return f"Which {group_label} would you like for your {item.name}? {options}."
+        return f"Choose up to {max_selector} {group_label}s for your {item.name}. {options}."
 
-    return f"Would you like any {group_label} with your {item.name}? You can choose {options}, or say no."
+    return f"Would you like a {group_label} with your {item.name}? {options}, or say no."
 
 
 def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository) -> str:
@@ -81,13 +85,10 @@ def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository) ->
 
     if group.is_required:
         if min_selector == 1 and max_selector == 1:
-            return f"Which {group_label} would you like for your {item.name}? You can choose {options}."
-        return (
-            f"Which {group_label}s would you like for your {item.name}? "
-            f"You can choose up to {max_selector}. Popular options include {options}."
-        )
+            return f"Which {group_label} would you like for your {item.name}? {options}."
+        return f"Choose up to {max_selector} {group_label}s for your {item.name}. {options}."
 
-    return f"Would you like any {group_label} for your {item.name}? You can choose {options}, or say no."
+    return f"Would you like a {group_label} for your {item.name}? {options}, or say no."
 
 
 def ask_for_size(context: ConversationContext, menu_repo: MenuRepository) -> str:
@@ -95,12 +96,12 @@ def ask_for_size(context: ConversationContext, menu_repo: MenuRepository) -> str
     variants = item.pricing.variants or []
 
     if not variants:
-        return f"Which size {item.name} would you like?"
+        return f"What size {item.name} would you like?"
 
     labels = [variant.label for variant in variants if variant.label]
     options = _format_options(labels[:3])
 
-    return f"Which size {item.name} would you like? You can choose {options}."
+    return f"What size {item.name}? {options}."
 
 
 def ask_item_quantity(payload: dict) -> str:
@@ -115,10 +116,8 @@ def repeat_item_request(
     menu_repo: MenuRepository,
     payload: dict,
 ) -> str:
-    return "I did not catch which item you want. Please say the menu item again."
+    return "Sorry, which item would you like?"
 
-
-# app/responses/item_responses.py
 
 def item_not_found(
     context: ConversationContext,
@@ -130,29 +129,19 @@ def item_not_found(
     category_names = [str(x).strip() for x in (payload.get("suggested_category_names") or []) if str(x).strip()]
 
     prefix = (
-        f"Sorry, I could not find {query} on the menu."
+        f"Sorry, I could not find {query}."
         if query
-        else "Sorry, I could not find that item on the menu."
+        else "Sorry, I could not find that item."
     )
 
     if item_names and category_names:
-        return (
-            f"{prefix} We do have {_format_options(item_names[:3])}. "
-            f"You can also choose from {_format_options(category_names[:4])}. "
-            f"Which would you like?"
-        )
+        return f"{prefix} We do have {_format_options(item_names[:3])}. Or you can choose from {_format_options(category_names[:4])}. Which would you like?"
 
     if item_names:
-        return (
-            f"{prefix} We do have {_format_options(item_names[:3])}. "
-            f"Which one would you like?"
-        )
+        return f"{prefix} We do have {_format_options(item_names[:3])}. Which one would you like?"
 
     if category_names:
-        return (
-            f"{prefix} You can choose from {_format_options(category_names[:4])}. "
-            f"Which category would you like?"
-        )
+        return f"{prefix} You can choose from {_format_options(category_names[:4])}. Which category would you like?"
 
     return f"{prefix} Please try another item."
 
@@ -166,12 +155,12 @@ def confirm_item_ambiguous(
     category_names = payload.get("candidate_category_names") or []
 
     if item_names:
-        return f"I found multiple matching items: {_format_options(item_names[:3])}. Which one would you like?"
+        return f"I found a few matches: {_format_options(item_names[:3])}. Which one would you like?"
 
     if category_names:
-        return f"I found multiple matching categories: {_format_options(category_names[:3])}. Which one did you mean?"
+        return f"I found a few categories: {_format_options(category_names[:3])}. Which one did you mean?"
 
-    return "I found multiple matching items. Which one would you like?"
+    return "I found a few matches. Which one would you like?"
 
 
 def confirm_item_from_category(
@@ -183,12 +172,12 @@ def confirm_item_from_category(
     item_names = payload.get("candidate_item_names") or []
 
     if not item_names:
-        return f"I found the category {category_name}. Which item would you like?"
+        return f"I found {category_name}. Which item would you like?"
 
     if len(item_names) == 1:
         return f"I found {item_names[0]} in {category_name}. Would you like that?"
 
-    return f"I found several items in {category_name}: {_format_options(item_names[:4])}. Which one would you like?"
+    return f"In {category_name}, I found {_format_options(item_names[:4])}. Which one would you like?"
 
 
 def repeat_side_options(
@@ -205,12 +194,9 @@ def repeat_side_options(
     reason = payload.get("repeat_reason", "invalid")
 
     if reason == "options":
-        return f"You can choose {options}. Which {group_label} would you like with your {item.name}?"
+        return f"The {group_label} options are {options}. Which one would you like?"
 
-    return (
-        f"That is not one of the available {group_label} options. "
-        f"You can choose {options}. Which {group_label} would you like with your {item.name}?"
-    )
+    return f"Sorry, that is not a valid {group_label}. You can choose {options}."
 
 
 def repeat_modifier_options(
@@ -227,12 +213,9 @@ def repeat_modifier_options(
     reason = payload.get("repeat_reason", "invalid")
 
     if reason == "options":
-        return f"You can choose {options}. Which {group_label} would you like for your {item.name}?"
+        return f"The {group_label} options are {options}. Which one would you like?"
 
-    return (
-        f"That is not one of the available {group_label} options. "
-        f"You can choose {options}. Which {group_label} would you like for your {item.name}?"
-    )
+    return f"Sorry, that is not a valid {group_label}. You can choose {options}."
 
 
 def too_many_side_choices(
@@ -245,10 +228,7 @@ def too_many_side_choices(
     group_label = _clean_group_label(payload.get("group_name") or group.name, "side").lower()
     options = _format_options(payload.get("top_choices") or _top_side_choices(context, menu_repo, k=3))
 
-    return (
-        f"You selected too many {group_label} options for your {item.name}. "
-        f"You can choose {options}. Please try again."
-    )
+    return f"That is too many {group_label}s for {item.name}. You can choose {options}."
 
 
 def too_many_modifier_choices(
@@ -261,10 +241,7 @@ def too_many_modifier_choices(
     group_label = _clean_group_label(payload.get("group_name") or group.name, "add-on").lower()
     options = _format_options(payload.get("top_choices") or _top_modifier_choices(context, menu_repo, k=3))
 
-    return (
-        f"You selected too many {group_label} options for your {item.name}. "
-        f"You can choose {options}. Please try again."
-    )
+    return f"That is too many {group_label}s for {item.name}. You can choose {options}."
 
 
 def required_side_cannot_skip(
@@ -276,7 +253,7 @@ def required_side_cannot_skip(
     group_label = _clean_group_label(group.name, "side").lower()
     options = _format_options(_top_side_choices(context, menu_repo, k=3))
 
-    return f"This item requires a {group_label}. You can choose {options}. Which {group_label} would you like with your {item.name}?"
+    return f"{item.name} needs a {group_label}. You can choose {options}."
 
 
 def required_modifier_cannot_skip(
@@ -288,7 +265,7 @@ def required_modifier_cannot_skip(
     group_label = _clean_group_label(group.name, "add-on").lower()
     options = _format_options(_top_modifier_choices(context, menu_repo, k=3))
 
-    return f"This item requires a {group_label}. You can choose {options}. Which {group_label} would you like for your {item.name}?"
+    return f"{item.name} needs a {group_label}. You can choose {options}."
 
 
 def required_size_cannot_skip(
@@ -299,7 +276,7 @@ def required_size_cannot_skip(
     labels = [variant.label for variant in (item.pricing.variants or []) if variant.label]
     options = _format_options(labels[:3])
 
-    return f"You need to choose a valid size for {item.name}. You can choose {options}."
+    return f"Please choose a size for {item.name}. {options}."
 
 
 def invalid_size_option(
@@ -311,7 +288,7 @@ def invalid_size_option(
     labels = [variant.label for variant in (item.pricing.variants or []) if variant.label]
     options = _format_options(labels[:3])
 
-    return f"That is not an available size for {item.name}. You can choose {options}."
+    return f"Sorry, that size is not available for {item.name}. Choose {options}."
 
 
 def invalid_quantity_option(
@@ -321,8 +298,8 @@ def invalid_quantity_option(
 ) -> str:
     item_name = payload.get("item_name") or context.current_item_name
     if item_name:
-        return f"Please tell me a valid quantity for {item_name}."
-    return "Please tell me a valid quantity."
+        return f"Please give a valid quantity for {item_name}."
+    return "Please give a valid quantity."
 
 
 def item_added_successfully(payload: dict) -> str:
@@ -330,15 +307,9 @@ def item_added_successfully(payload: dict) -> str:
     quantity = int(payload["quantity"])
 
     if quantity > 1:
-        return (
-            f"{quantity} x {item_name} have been added to your cart. "
-            f"Would you like to add anything else or check out?"
-        )
+        return f"{quantity} {item_name} added to your cart. Anything else or checkout?"
 
-    return (
-        f"Your {item_name} has been added to the cart. "
-        f"Would you like to add anything else or check out?"
-    )
+    return f"{item_name} added to your cart. Anything else or checkout?"
 
 
 def confirm_cancel_current_item(
@@ -347,7 +318,7 @@ def confirm_cancel_current_item(
     payload: dict,
 ) -> str:
     item_name = payload.get("item_name") or context.current_item_name or "this item"
-    return f"You are still adding {item_name}. Do you want to cancel it? Please say yes or no."
+    return f"You are still adding {item_name}. Cancel it? Please say yes or no."
 
 
 def confirm_cancel_current_item_for_new_request(
@@ -356,7 +327,7 @@ def confirm_cancel_current_item_for_new_request(
     payload: dict,
 ) -> str:
     item_name = payload.get("item_name") or context.current_item_name or "this item"
-    return f"I am still adding {item_name}. Do you want to cancel this item and do something else? Please say yes or no."
+    return f"You are still adding {item_name}. Cancel it and do something else? Please say yes or no."
 
 
 def continue_current_item_after_cancel_denied(
@@ -369,9 +340,8 @@ def continue_current_item_after_cancel_denied(
     options = _format_options(choices[:3]) if choices else ""
 
     if options:
-        return f"Okay, let’s continue. Please choose a {field_name}. You can choose {options}."
-
-    return f"Okay, let’s continue. Please choose a {field_name}."
+        return f"Okay, let’s continue. Please choose {field_name}: {options}."
+    return f"Okay, let’s continue. Please choose {field_name}."
 
 
 def item_cancelled_successfully(
@@ -379,7 +349,7 @@ def item_cancelled_successfully(
     menu_repo: MenuRepository,
     payload: dict,
 ) -> str:
-    return "Okay, I cancelled that item. What would you like to do next?"
+    return "Okay, I cancelled that item. What would you like next?"
 
 
 def repeat_size_options(
@@ -392,8 +362,8 @@ def repeat_size_options(
     options = _format_options(labels[:3])
 
     if options:
-        return f"You can choose {options} for your {item.name}. Which size would you like?"
-    return f"Which size would you like for your {item.name}?"
+        return f"Available sizes for {item.name} are {options}. Which one would you like?"
+    return f"What size would you like for {item.name}?"
 
 
 def item_context_missing(
@@ -401,7 +371,7 @@ def item_context_missing(
     menu_repo: MenuRepository,
     payload: dict,
 ) -> str:
-    return "Something went wrong with the item you were configuring. Let’s start again."
+    return "Something went wrong with that item. Let’s start again."
 
 
 def size_not_applicable(
@@ -409,7 +379,7 @@ def size_not_applicable(
     menu_repo: MenuRepository,
     payload: dict,
 ) -> str:
-    item_name = payload.get("item_name") or context.current_item_name or "that item"
+    item_name = payload.get("item_name") or context.current_item_name or "That item"
     return f"{item_name} does not have size options. Let’s continue."
 
 
@@ -430,9 +400,8 @@ def list_side_options(
     options = _format_options(top_choices)
 
     if options:
-        return f"For your {item.name}, you can choose {options} as your {group_label}."
-
-    return f"You can choose any available {group_label} for your {item.name}."
+        return f"For {item.name}, {group_label} options are {options}."
+    return f"There are available {group_label} options for {item.name}."
 
 
 def clarify_side_choice(
@@ -452,9 +421,8 @@ def clarify_side_choice(
     options = _format_options(top_choices)
 
     if options:
-        return f"Did you mean {options} for your {group_label}, or something else with your {item.name}?"
-
-    return f"Can you repeat which {group_label} you want with your {item.name}?"
+        return f"Did you mean {options} for your {group_label}?"
+    return f"Please repeat which {group_label} you want with your {item.name}."
 
 
 def list_modifier_options(
@@ -474,9 +442,8 @@ def list_modifier_options(
     options = _format_options(top_choices)
 
     if options:
-        return f"For your {item.name}, you can choose {options} as your {group_label}."
-
-    return f"You can choose any available {group_label} for your {item.name}."
+        return f"For {item.name}, {group_label} options are {options}."
+    return f"There are available {group_label} options for {item.name}."
 
 
 def clarify_modifier_choice(
@@ -496,6 +463,5 @@ def clarify_modifier_choice(
     options = _format_options(top_choices)
 
     if options:
-        return f"Did you mean {options} for your {group_label}, or something else for your {item.name}?"
-
-    return f"Can you repeat which {group_label} you want for your {item.name}?"
+        return f"Did you mean {options} for your {group_label}?"
+    return f"Please repeat which {group_label} you want for your {item.name}."
