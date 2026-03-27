@@ -1,37 +1,36 @@
-# app/responses/cart_responses.py
-
-def render_cart_summary(payload: dict) -> str:
-    items = payload.get("items", [])
-
-    if not items:
-        return "Your cart is empty."
-
-    count = len(items)
-    total = payload.get("total")
-
-    if count == 1:
-        item = items[0]
-        quantity = item.get("quantity", 1)
-        name = item.get("name", "item")
-
-        if total:
-            return f"{quantity} {name}. Total {total}. Add more or checkout?"
-
-        return f"{quantity} {name}. Add more or checkout?"
-
-    if total:
-        return f"{count} items. Total {total}. Add more or checkout?"
-
-    return f"{count} items. Add more or checkout?"
+# app/responses/flow_control_responses.py
+from app.state_machine.conversation_state import ConversationState
 
 
-def confirm_clear_cart_response() -> str:
-    return "Clear the cart? Yes or no."
+def flow_guard_finish_current_step(payload: dict) -> str:
+    """
+    User tried a blocked global action while in an active flow.
+    Keep the prompt short for telephony.
+    """
+    step = payload.get("current_step", "step")
+    item_name = payload.get("item_name")
+
+    if item_name:
+        return f"Finish the {step} for {item_name}, or say cancel."
+
+    return "Finish this step, or say cancel."
 
 
-def cart_cleared_response() -> str:
-    return "Cart cleared."
+def flow_guard_confirm_cancel(payload: dict) -> str:
+    """
+    Ask the user to confirm flow cancellation.
+    Keep the wording concise and direct.
+    """
+    item_name = payload.get("item_name")
+
+    if item_name:
+        return f"Cancel {item_name}? Say yes or no."
+
+    return "Cancel this? Say yes or no."
 
 
-def clear_cart_cancelled_response() -> str:
-    return "Okay, keeping your cart."
+def flow_guard_cancelled(_: dict | None = None) -> str:
+    """
+    Flow was cancelled and context reset.
+    """
+    return "Okay, cancelled. What next?"

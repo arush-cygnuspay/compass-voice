@@ -436,13 +436,55 @@ async def twilio_media_ws(websocket: WebSocket):
 
         return total_bytes_sent
 
+
+    def _normalize_response_text(text: str | None) -> str:
+        return " ".join((text or "").split()).strip()
+
+    def _compact_spoken_response(response_key: str, text: str) -> str:
+        compact_map = {
+            "ask_for_side": "Drink with that? Coke or Sprite.",
+            "ask_for_modifier": "Any extras? Say your choice or no.",
+            "ask_for_quantity": "How many would you like?",
+            "ask_for_size": "What size would you like?",
+            "ask_for_side_size": "What size for the side?",
+            "item_added_successfully": "Added. Anything else?",
+            "confirm_order_summary": "Your total is ready. Checkout now?",
+            "payment_link_sent": "Payment link sent. Tell me when done.",
+            "order_completed": "Payment confirmed. Your order is placed. Thank you.",
+            "show_cart": text,
+            "show_total": text,
+            "confirm_clear_cart": "Clear your cart? Yes or no.",
+            "cart_cleared": "Cart cleared.",
+            "clear_cart_cancelled": "Okay, keeping your cart.",
+        }
+        return _normalize_response_text(compact_map.get(response_key, text))
+
+    def _build_response_texts(
+        turn_output: Any,
+        app_session: Session,
+    ) -> tuple[str, str]:
+        internal_text = (
+            getattr(turn_output, "internal_response_text", None)
+            or app.state.responder.build(
+                response_key=turn_output.response_key,
+                context=app_session.conversation_context,
+                payload=turn_output.response_payload,
+            )
+        )
+
+        spoken_text = getattr(turn_output, "spoken_response_text", None)
+        if not spoken_text:
+            spoken_text = _compact_spoken_response(turn_output.response_key, internal_text)
+
+        return _normalize_response_text(internal_text), _normalize_response_text(spoken_text)
+
     async def speak_response_text(
-        response_text: str,
+        spoken_text: str,
         trace: RealtimeTurnTrace | None = None,
     ) -> None:
         nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at
 
-        cleaned = " ".join((response_text or "").split()).strip()
+        cleaned = _normalize_response_text(spoken_text)
         if not cleaned:
             phase = RealtimePhase.LISTENING
             return
@@ -451,7 +493,7 @@ async def twilio_media_ws(websocket: WebSocket):
         bot_playback_started_at = time.monotonic()
 
         if trace is not None:
-            _trace_set_attr(trace, "response_text", cleaned)
+            _trace_set_attr(trace, "spoken_response_text", cleaned)
             _trace_set_attr(trace, "tts_text_chars", len(cleaned))
             _trace_set_attr(trace, "tts_request_start_monotonic", time.perf_counter())
 
@@ -546,24 +588,25 @@ async def twilio_media_ws(websocket: WebSocket):
             save_session(app_session)
 
             _trace_set_attr(trace, "responder_start_monotonic", time.perf_counter())
-            response_text = app.state.responder.build(
-                response_key=turn_output.response_key,
-                context=app_session.conversation_context,
-                payload=turn_output.response_payload,
+            internal_response_text, spoken_response_text = _build_response_texts(
+                turn_output=turn_output,
+                app_session=app_session,
             )
             _trace_set_attr(trace, "responder_end_monotonic", time.perf_counter())
             _trace_set_attr(trace, "response_key", turn_output.response_key)
-            _trace_set_attr(trace, "response_text", response_text)
+            _trace_set_attr(trace, "response_text", internal_response_text)
+            _trace_set_attr(trace, "spoken_response_text", spoken_response_text)
 
             _debug_log(
                 "[BOT RESPONSE TEXT]",
                 {
                     "stream_sid": stream_session.stream_sid,
-                    "text": response_text,
+                    "internal_text": internal_response_text,
+                    "spoken_text": spoken_response_text,
                 },
             )
 
-            await speak_response_text(response_text, trace=trace)
+            await speak_response_text(spoken_response_text, trace=trace)
 
             if pending_interrupt_text and phase == RealtimePhase.LISTENING:
                 buffered = pending_interrupt_text
