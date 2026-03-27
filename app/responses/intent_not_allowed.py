@@ -21,4 +21,4 @@ def handle_intent_not_allowed(payload: dict) -> str:
     if state == ConversationState.WAITING_FOR_PAYMENT:
         return "Please complete payment, or say cancel."
 
-    return "Sorry, not right now."
+    return "Sorry, Intent not allowed yet."

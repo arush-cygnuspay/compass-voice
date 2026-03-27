@@ -29,11 +29,16 @@ from app.realtime.deepgram_stt_client import (
     DeepgramSTTConfig,
 )
 from app.realtime.deepgram_tts_client import DeepgramTTSClient
+from app.realtime.local_stt_client import (
+    LocalWhisperSTTConfig,
+    LocalWhisperSTTEngine,
+)
 from app.realtime.realtime_conversation_state import RealtimePhase
 from app.realtime.turn_commit_controller import TurnCommitController
 from app.session.repository import load_session, save_session
 from app.session.session import Session
 
+# Always load .env before reading any provider/config variables.
 load_dotenv()
 
 # Twilio telephony audio is μ-law 8k mono.
@@ -48,8 +53,58 @@ TWILIO_BURST_BYTES = TWILIO_MULAW_FRAME_BYTES * TWILIO_BURST_FRAMES
 TWILIO_BURST_PACING_SECONDS = TWILIO_FRAME_DURATION_SECONDS * TWILIO_BURST_FRAMES
 
 VOICE_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_DEBUG_ENABLED", "0") == "1"
-VOICE_TRANSCRIPT_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_TRANSCRIPT_DEBUG_ENABLED", "0") == "1"
-VOICE_MEDIA_PROGRESS_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_MEDIA_PROGRESS_DEBUG_ENABLED", "0") == "1"
+VOICE_TRANSCRIPT_DEBUG_ENABLED = (
+    os.getenv("COMPASS_VOICE_TRANSCRIPT_DEBUG_ENABLED", "0") == "1"
+)
+VOICE_MEDIA_PROGRESS_DEBUG_ENABLED = (
+    os.getenv("COMPASS_VOICE_MEDIA_PROGRESS_DEBUG_ENABLED", "0") == "1"
+)
+
+STT_PROVIDER = os.getenv("COMPASS_STT_PROVIDER", "deepgram").strip().lower()
+TTS_PROVIDER = os.getenv("COMPASS_TTS_PROVIDER", "deepgram").strip().lower()
+
+
+def _mask_secret(value: str | None, *, visible_prefix: int = 4, visible_suffix: int = 2) -> str:
+    if not value:
+        return ""
+    value = str(value)
+    if len(value) <= visible_prefix + visible_suffix:
+        return "*" * len(value)
+    return f"{value[:visible_prefix]}{'*' * (len(value) - visible_prefix - visible_suffix)}{value[-visible_suffix:]}"
+
+
+def _print_loaded_env_config() -> None:
+    print(
+        "[VOICE CONFIG LOADED]",
+        {
+            "COMPASS_STT_PROVIDER": STT_PROVIDER,
+            "COMPASS_TTS_PROVIDER": TTS_PROVIDER,
+            "COMPASS_LOCAL_STT_MODEL": os.getenv("COMPASS_LOCAL_STT_MODEL", ""),
+            "COMPASS_LOCAL_STT_DEVICE": os.getenv("COMPASS_LOCAL_STT_DEVICE", ""),
+            "COMPASS_LOCAL_STT_COMPUTE_TYPE": os.getenv("COMPASS_LOCAL_STT_COMPUTE_TYPE", ""),
+            "COMPASS_LOCAL_STT_LANGUAGE": os.getenv("COMPASS_LOCAL_STT_LANGUAGE", ""),
+            "COMPASS_LOCAL_STT_SAMPLE_RATE": os.getenv("COMPASS_LOCAL_STT_SAMPLE_RATE", ""),
+            "COMPASS_LOCAL_STT_VAD_ENABLED": os.getenv("COMPASS_LOCAL_STT_VAD_ENABLED", ""),
+            "COMPASS_LOCAL_STT_ENDPOINTING_MS": os.getenv("COMPASS_LOCAL_STT_ENDPOINTING_MS", ""),
+            "COMPASS_LOCAL_STT_UTTERANCE_END_MS": os.getenv("COMPASS_LOCAL_STT_UTTERANCE_END_MS", ""),
+            "COMPASS_LOCAL_TTS_MODEL_PATH": os.getenv("COMPASS_LOCAL_TTS_MODEL_PATH", ""),
+            "COMPASS_LOCAL_TTS_CONFIG_PATH": os.getenv("COMPASS_LOCAL_TTS_CONFIG_PATH", ""),
+            "COMPASS_LOCAL_TTS_SPEAKER_ID": os.getenv("COMPASS_LOCAL_TTS_SPEAKER_ID", ""),
+            "COMPASS_LOCAL_TTS_TARGET_SAMPLE_RATE": os.getenv("COMPASS_LOCAL_TTS_TARGET_SAMPLE_RATE", ""),
+            "COMPASS_NLU_CSV_LOGGER_ENABLED": os.getenv("COMPASS_NLU_CSV_LOGGER_ENABLED", ""),
+            "COMPASS_NLU_CSV_LOG_DIR": os.getenv("COMPASS_NLU_CSV_LOG_DIR", ""),
+            "COMPASS_REALTIME_LATENCY_LOG_PATH": os.getenv(
+                "COMPASS_REALTIME_LATENCY_LOG_PATH",
+                "app/logs/realtime_turn_latency.jsonl",
+            ),
+            "COMPASS_REALTIME_LATENCY_CSV_PATH": os.getenv(
+                "COMPASS_REALTIME_LATENCY_CSV_PATH",
+                "app/logs/realtime_turn_latency.csv",
+            ),
+            "DEEPGRAM_TTS_MODEL": os.getenv("DEEPGRAM_TTS_MODEL", ""),
+            "DEEPGRAM_API_KEY": _mask_secret(os.getenv("DEEPGRAM_API_KEY", "")),
+        },
+    )
 
 
 def _debug_log(event: str, payload: dict[str, Any]) -> None:
@@ -158,6 +213,10 @@ def _build_turn_trace(
         turn_commit_monotonic=time.perf_counter(),
         user_text=user_text,
         inbound_audio_bytes=stream_session.current_utterance_inbound_audio_bytes,
+        notes={
+            "stt_provider": STT_PROVIDER,
+            "tts_provider": TTS_PROVIDER,
+        },
     )
 
 
@@ -191,6 +250,64 @@ def _finalize_active_trace(
         _reset_utterance_tracking(stream_session)
 
 
+def _build_stt_client(app: FastAPI, callbacks: DeepgramSTTCallbacks) -> Any:
+    provider = STT_PROVIDER
+
+    if provider == "deepgram":
+        return DeepgramSTTClient(
+            config=DeepgramSTTConfig(
+                model=os.getenv("COMPASS_DEEPGRAM_STT_MODEL", "nova-3"),
+                language=os.getenv("COMPASS_DEEPGRAM_STT_LANGUAGE", "en-US"),
+                encoding="mulaw",
+                sample_rate=8000,
+                channels=1,
+                interim_results=True,
+                smart_format=True,
+                punctuate=True,
+                vad_events=True,
+                endpointing=int(os.getenv("COMPASS_DEEPGRAM_ENDPOINTING_MS", "300")),
+                utterance_end_ms=int(os.getenv("COMPASS_DEEPGRAM_UTTERANCE_END_MS", "1000")),
+                keepalive_interval_seconds=float(
+                    os.getenv("COMPASS_DEEPGRAM_KEEPALIVE_SECONDS", "4.0")
+                ),
+            ),
+            callbacks=callbacks,
+        )
+
+    if provider == "local":
+        local_stt_engine = getattr(app.state, "local_stt_engine", None)
+        if local_stt_engine is None:
+            raise RuntimeError("Shared local STT engine is not initialized.")
+
+        # IMPORTANT: session comes from shared model
+        return local_stt_engine.create_session(callbacks=callbacks)
+
+    raise ValueError(
+        f"Unsupported COMPASS_STT_PROVIDER='{provider}'. Supported values: deepgram, local."
+    )
+
+
+def _build_tts_client(app: FastAPI) -> Any:
+    provider = TTS_PROVIDER
+
+    if provider == "deepgram":
+        shared_tts_client = getattr(app.state, "shared_tts_client", None)
+        if shared_tts_client is None:
+            raise RuntimeError("Shared Deepgram TTS client is not initialized.")
+        return shared_tts_client
+
+    if provider == "local":
+        shared_tts_client = getattr(app.state, "shared_tts_client", None)
+        if shared_tts_client is None:
+            raise RuntimeError("Shared local TTS client is not initialized.")
+        return shared_tts_client
+
+    raise ValueError(
+        f"Unsupported COMPASS_TTS_PROVIDER='{provider}'. "
+        "Supported values: deepgram, local."
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     runtime = build_runtime(restaurant_id="demo")
@@ -198,6 +315,7 @@ async def lifespan(app: FastAPI):
     app.state.runtime = runtime
     app.state.engine = runtime.engine
     app.state.responder = runtime.responder
+
     app.state.realtime_latency_logger = RealtimeLatencyLogger(
         file_path=os.getenv(
             "COMPASS_REALTIME_LATENCY_LOG_PATH",
@@ -211,17 +329,75 @@ async def lifespan(app: FastAPI):
         write_csv=os.getenv("COMPASS_REALTIME_LATENCY_WRITE_CSV", "1") == "1",
     )
 
-    print("Voice stream server initialized with Twilio Media Streams + Deepgram STT/TTS")
+    app.state.local_stt_engine = None
+    app.state.shared_tts_client = None
+
+    if STT_PROVIDER == "local":
+        from app.realtime.local_stt_client import (
+            LocalWhisperSTTConfig,
+            LocalWhisperSTTEngine,
+        )
+
+        local_stt_config = LocalWhisperSTTConfig(
+            model_name=os.getenv("COMPASS_LOCAL_STT_MODEL", "medium.en"),
+            device=os.getenv("COMPASS_LOCAL_STT_DEVICE", "cuda"),
+            compute_type=os.getenv("COMPASS_LOCAL_STT_COMPUTE_TYPE", "float16"),
+            language=os.getenv("COMPASS_LOCAL_STT_LANGUAGE", "en"),
+            sample_rate=int(os.getenv("COMPASS_LOCAL_STT_SAMPLE_RATE", "16000")),
+            vad_enabled=os.getenv("COMPASS_LOCAL_STT_VAD_ENABLED", "1") == "1",
+            endpointing_ms=int(os.getenv("COMPASS_LOCAL_STT_ENDPOINTING_MS", "300")),
+            utterance_end_ms=int(os.getenv("COMPASS_LOCAL_STT_UTTERANCE_END_MS", "1000")),
+            rms_threshold=int(os.getenv("COMPASS_LOCAL_STT_RMS_THRESHOLD", "400")),
+            min_utterance_ms=int(os.getenv("COMPASS_LOCAL_STT_MIN_UTTERANCE_MS", "250")),
+            speech_start_min_ms=int(os.getenv("COMPASS_LOCAL_STT_SPEECH_START_MIN_MS", "180")),
+        )
+        app.state.local_stt_engine = LocalWhisperSTTEngine(local_stt_config)
+        app.state.local_stt_engine.load()
+        print("[LOCAL STT] shared model loaded")
+
+    if TTS_PROVIDER == "deepgram":
+        app.state.shared_tts_client = DeepgramTTSClient()
+        print("[DEEPGRAM TTS] shared client initialized")
+
+    elif TTS_PROVIDER == "local":
+        from app.realtime.local_tts_client import LocalPiperTTSClient
+
+        app.state.shared_tts_client = LocalPiperTTSClient(
+            model_path=os.getenv("COMPASS_LOCAL_TTS_MODEL_PATH", "").strip(),
+            config_path=os.getenv("COMPASS_LOCAL_TTS_CONFIG_PATH", "").strip(),
+            speaker_id=int(os.getenv("COMPASS_LOCAL_TTS_SPEAKER_ID", "0")),
+            target_sample_rate=int(
+                os.getenv("COMPASS_LOCAL_TTS_TARGET_SAMPLE_RATE", "8000")
+            ),
+        )
+        print("[LOCAL TTS] shared client initialized")
+
+    print(
+        "Voice stream server initialized",
+        {
+            "stt_provider": STT_PROVIDER,
+            "tts_provider": TTS_PROVIDER,
+        },
+    )
+
     try:
         yield
     finally:
         try:
-            app.state.realtime_latency_logger.shutdown()
+            if getattr(app.state, "realtime_latency_logger", None) is not None:
+                app.state.realtime_latency_logger.shutdown()
         except Exception:
             pass
 
         try:
-            runtime.engine.nlu_logger.shutdown()
+            if getattr(runtime.engine, "nlu_logger", None) is not None:
+                runtime.engine.nlu_logger.shutdown()
+        except Exception:
+            pass
+
+        try:
+            if getattr(app.state, "local_stt_engine", None) is not None:
+                app.state.local_stt_engine.unload()
         except Exception:
             pass
 
@@ -277,6 +453,8 @@ async def voice(request: Request):
             "from": from_number,
             "to": to_number,
             "stream_url": stream_url,
+            "stt_provider": STT_PROVIDER,
+            "tts_provider": TTS_PROVIDER,
         },
     )
 
@@ -298,9 +476,9 @@ async def twilio_media_ws(websocket: WebSocket):
     await websocket.accept()
 
     stream_session = StreamSession()
-    dg_stt_client: DeepgramSTTClient | None = None
-    dg_stt_started = False
-    dg_tts_client = DeepgramTTSClient()
+    stt_client: Any | None = None
+    stt_started = False
+    tts_client = _build_tts_client(app)
 
     restaurant_id = "demo"
     app_session: Session | None = None
@@ -454,9 +632,10 @@ async def twilio_media_ws(websocket: WebSocket):
             _trace_set_attr(trace, "response_text", cleaned)
             _trace_set_attr(trace, "tts_text_chars", len(cleaned))
             _trace_set_attr(trace, "tts_request_start_monotonic", time.perf_counter())
+            _trace_add_note(trace, "tts_provider", TTS_PROVIDER)
 
         streamed_bytes = await stream_audio_to_twilio(
-            dg_tts_client.stream_mulaw_8k(cleaned),
+            tts_client.stream_mulaw_8k(cleaned),
             trace=trace,
         )
 
@@ -466,6 +645,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 {
                     "stream_sid": stream_session.stream_sid,
                     "text": cleaned,
+                    "tts_provider": TTS_PROVIDER,
                 },
             )
             _trace_add_note(trace, "tts_empty_audio", True)
@@ -493,6 +673,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 "mark_name": active_mark_name,
                 "barge_in_disabled": disable_barge_in,
                 "burst_frames": TWILIO_BURST_FRAMES,
+                "tts_provider": TTS_PROVIDER,
             },
         )
 
@@ -534,6 +715,8 @@ async def twilio_media_ws(websocket: WebSocket):
                     "stream_sid": stream_session.stream_sid,
                     "text": cleaned,
                     "turn_index": stream_session.turn_index,
+                    "stt_provider": STT_PROVIDER,
+                    "tts_provider": TTS_PROVIDER,
                 },
             )
 
@@ -570,13 +753,14 @@ async def twilio_media_ws(websocket: WebSocket):
                 pending_interrupt_text = None
                 await process_committed_turn(buffered)
 
-    async def on_dg_transcript(transcript: str, is_final: bool, payload: dict) -> None:
+    async def on_stt_transcript(transcript: str, is_final: bool, payload: dict) -> None:
         controller.on_transcript(transcript, is_final)
 
         _debug_transcript_log(
-            "[DEEPGRAM TRANSCRIPT]",
+            "[STT TRANSCRIPT]",
             {
                 "stream_sid": stream_session.stream_sid,
+                "provider": STT_PROVIDER,
                 "type": "FINAL" if is_final else "INTERIM",
                 "text": transcript,
             },
@@ -591,13 +775,14 @@ async def twilio_media_ws(websocket: WebSocket):
             if committed is not None:
                 await process_committed_turn(committed.text)
 
-    async def on_dg_event(name: str, payload: dict) -> None:
+    async def on_stt_event(name: str, payload: dict) -> None:
         nonlocal phase, active_mark_name, bot_playback_started_at
 
         _debug_log(
-            "[DEEPGRAM EVENT]",
+            "[STT EVENT]",
             {
                 "stream_sid": stream_session.stream_sid,
+                "provider": STT_PROVIDER,
                 "event": name,
                 "payload": payload,
             },
@@ -676,21 +861,29 @@ async def twilio_media_ws(websocket: WebSocket):
             if committed is not None:
                 await process_committed_turn(committed.text)
 
-    async def on_dg_error(name: str, payload: dict) -> None:
+    async def on_stt_error(name: str, payload: dict) -> None:
         print(
-            "[DEEPGRAM ERROR]",
+            "[STT ERROR]",
             {
                 "stream_sid": stream_session.stream_sid,
+                "provider": STT_PROVIDER,
                 "event": name,
                 "payload": payload,
             },
         )
 
         if stream_session.active_trace is not None:
-            _trace_add_note(stream_session.active_trace, "deepgram_error_event", name)
-            _trace_add_note(stream_session.active_trace, "deepgram_error_payload", payload)
+            _trace_add_note(stream_session.active_trace, "stt_error_event", name)
+            _trace_add_note(stream_session.active_trace, "stt_error_payload", payload)
+            _trace_add_note(stream_session.active_trace, "stt_provider", STT_PROVIDER)
 
-    print("[WS OPEN] Twilio media WebSocket connected")
+    print(
+        "[WS OPEN] Twilio media WebSocket connected",
+        {
+            "stt_provider": STT_PROVIDER,
+            "tts_provider": TTS_PROVIDER,
+        },
+    )
 
     try:
         while True:
@@ -715,42 +908,30 @@ async def twilio_media_ws(websocket: WebSocket):
                         "stream_sid": stream_session.stream_sid,
                         "tracks": stream_session.tracks,
                         "media_format": stream_session.media_format,
+                        "stt_provider": STT_PROVIDER,
+                        "tts_provider": TTS_PROVIDER,
                     },
                 )
 
                 if stream_session.call_sid:
                     app_session = load_session(stream_session.call_sid, restaurant_id)
 
-                dg_stt_client = DeepgramSTTClient(
-                    config=DeepgramSTTConfig(
-                        model="nova-3",
-                        language="en-US",
-                        encoding="mulaw",
-                        sample_rate=8000,
-                        channels=1,
-                        interim_results=True,
-                        smart_format=True,
-                        punctuate=True,
-                        vad_events=True,
-                        endpointing=300,
-                        utterance_end_ms=1000,
-                        keepalive_interval_seconds=4.0,
-                    ),
-                    callbacks=DeepgramSTTCallbacks(
-                        on_transcript=on_dg_transcript,
-                        on_event=on_dg_event,
-                        on_error=on_dg_error,
-                    ),
+                stt_callbacks = DeepgramSTTCallbacks(
+                    on_transcript=on_stt_transcript,
+                    on_event=on_stt_event,
+                    on_error=on_stt_error,
                 )
 
-                await dg_stt_client.start()
-                dg_stt_started = True
+                stt_client = _build_stt_client(app, callbacks=stt_callbacks)
+
+                await stt_client.start()
+                stt_started = True
 
                 print(
-                    "[DEEPGRAM CONNECTED]",
+                    "[STT CONNECTED]",
                     {
                         "stream_sid": stream_session.stream_sid,
-                        "url": dg_stt_client.config.websocket_url(),
+                        "stt_provider": STT_PROVIDER,
                     },
                 )
 
@@ -774,8 +955,8 @@ async def twilio_media_ws(websocket: WebSocket):
                     stream_session.current_utterance_last_media_monotonic = now
                     stream_session.current_utterance_inbound_audio_bytes += len(audio_bytes)
 
-                if dg_stt_started and dg_stt_client is not None:
-                    await dg_stt_client.send_audio(audio_bytes)
+                if stt_started and stt_client is not None:
+                    await stt_client.send_audio(audio_bytes)
 
                 if stream_session.inbound_chunks % 50 == 0:
                     _debug_media_log(
@@ -854,8 +1035,8 @@ async def twilio_media_ws(websocket: WebSocket):
                     )
                     _finalize_active_trace(app=app, stream_session=stream_session)
 
-                if dg_stt_client is not None:
-                    await dg_stt_client.finalize()
+                if stt_client is not None:
+                    await stt_client.finalize()
 
                 break
 
@@ -905,8 +1086,8 @@ async def twilio_media_ws(websocket: WebSocket):
         except Exception:
             pass
     finally:
-        if dg_stt_client is not None:
-            await dg_stt_client.close()
+        if stt_client is not None:
+            await stt_client.close()
 
 
 if __name__ == "__main__":
