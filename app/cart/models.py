@@ -15,4 +15,5 @@ class CartItemView:
     quantity: int
     variant_id: Optional[str]
     sides: Dict[str, List[str]]
+    side_variants: Dict[str, str]
     modifiers: Dict[str, List[str]]
