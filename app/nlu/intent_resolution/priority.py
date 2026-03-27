@@ -13,8 +13,16 @@ INTENT_PRIORITY: list[Intent] = [
     Intent.CONFIRM,
     Intent.DENY,
 
-    # ---- Payment Flow ----
-    Intent.PAYMENT_REQUEST,
+    # ---- Cart overlays (GLOBAL, MUST WIN) ----
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+    Intent.CLEAR_CART,
+
+    # ---- Price inquiry (read-only) ----
+    Intent.ASK_PRICE,
+
+    # ---- Menu info ----
+    Intent.ASK_MENU_INFO,
 
     # ---- Explicit Order Control ----
     Intent.ORDER_STATUS,
@@ -23,15 +31,10 @@ INTENT_PRIORITY: list[Intent] = [
     # ---- Flow Transition ----
     Intent.END_ADDING,
 
-    # ---- Informational ----
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-    Intent.SHOW_MENU,
-
     # ---- Cart Mutation ----
-    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,  # Higher priority than ADD_ITEM to prevent "remove X" from being interpreted as "add X"
     Intent.MODIFY_ITEM,
-    Intent.REMOVE_ITEM,
+    Intent.ADD_ITEM,
 
     # ---- Meta / Repair ----
     Intent.META_CLARIFY,

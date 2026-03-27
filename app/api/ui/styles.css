@@ -1,0 +1,194 @@
+/* ---------- Reset ---------- */
+* {
+  box-sizing: border-box;
+}
+
+/* ---------- Base ---------- */
+body {
+  margin: 0;
+  font-family: Inter, system-ui, -apple-system, sans-serif;
+  background: #f6f9fc;
+  height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #0f172a;
+  overflow: hidden;
+}
+
+/* ---------- Glass Sky Background ---------- */
+.bg-glass {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+
+  background:
+    radial-gradient(700px 450px at 15% 15%, rgba(56,189,248,0.35), transparent 60%),
+    radial-gradient(600px 400px at 85% 25%, rgba(37,99,235,0.30), transparent 60%),
+    radial-gradient(500px 350px at 50% 85%, rgba(14,165,233,0.25), transparent 60%),
+    linear-gradient(180deg, #f8fbff, #eef4ff);
+
+  filter: blur(18px);
+  transform: scale(1.05);
+}
+
+/* ---------- Shell ---------- */
+.chat-shell {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 420px;
+  padding: 16px;
+}
+
+/* ---------- Container ---------- */
+.chat-container {
+  height: 620px;
+  background: #ffffff;
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+
+  border: 1px solid #e2e8f0;
+  box-shadow:
+    0 20px 40px rgba(15, 23, 42, 0.08),
+    0 4px 12px rgba(15, 23, 42, 0.04);
+}
+
+/* ---------- Header ---------- */
+.chat-header {
+  height: 56px;
+  padding: 0 16px;
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.chat-header .title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.logo {
+  font-size: 18px;
+}
+
+/* ---------- Header Button ---------- */
+.ghost-btn {
+  background: rgba(255,255,255,0.15);
+  border: 1px solid rgba(255,255,255,0.35);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.ghost-btn:hover {
+  background: rgba(255,255,255,0.25);
+}
+
+/* ---------- Chat Window ---------- */
+.chat-window {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #f8fafc;
+}
+
+/* ---------- Messages ---------- */
+.message {
+  max-width: 78%;
+  padding: 12px 14px;
+  border-radius: 14px;
+  font-size: 14px;
+  line-height: 1.45;
+  animation: fadeUp 0.2s ease;
+}
+
+/* User */
+.user {
+  margin-left: auto;
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  color: white;
+  border-bottom-right-radius: 4px;
+  font-weight: 500;
+}
+
+/* Bot */
+.bot {
+  background: white;
+  color: #0f172a;
+  border: 1px solid #e2e8f0;
+  border-bottom-left-radius: 4px;
+}
+
+/* ---------- Input ---------- */
+.input-area {
+  padding: 12px;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  gap: 8px;
+  background: white;
+}
+
+.input-area input {
+  flex: 1;
+  background: white;
+  border: 1px solid #cbd5e1;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-size: 14px;
+  outline: none;
+  color: #0f172a;
+  transition: border 0.2s ease, box-shadow 0.2s ease;
+}
+
+.input-area input::placeholder {
+  color: #64748b;
+}
+
+.input-area input:focus {
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 3px rgba(56,189,248,0.25);
+}
+
+/* ---------- Send Button ---------- */
+.send-btn {
+  background: linear-gradient(135deg, #2563eb, #38bdf8);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  padding: 0 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.1s ease, filter 0.2s ease;
+}
+
+.send-btn:hover {
+  filter: brightness(1.05);
+}
+
+.send-btn:active {
+  transform: scale(0.96);
+}
+
+/* ---------- Motion ---------- */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

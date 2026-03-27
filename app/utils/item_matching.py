@@ -1,57 +1,69 @@
 # app/utils/item_matching.py
-
-from difflib import SequenceMatcher
-
-
-def _normalize(text: str) -> str:
-    return text.lower().strip()
+from __future__ import annotations
 
 
-def _tokens(text: str) -> list[str]:
-    return _normalize(text).split()
+def _tokens_from_normalized(text: str) -> tuple[str, ...]:
+    return tuple(part for part in text.split() if part)
 
 
-def _ngrams(tokens: list[str], n: int) -> set[tuple[str, ...]]:
+def _ngrams(tokens: tuple[str, ...], n: int) -> set[tuple[str, ...]]:
+    token_count = len(tokens)
+    if n <= 0 or token_count < n:
+        return set()
+
     return {
-        tuple(tokens[i : i + n])
-        for i in range(len(tokens) - n + 1)
+        tokens[i : i + n]
+        for i in range(token_count - n + 1)
     }
 
 
-def score_item(user_text: str, item_name: str) -> float:
+def score_item_normalized(user_text: str, item_name: str) -> float:
     """
-    Deterministic similarity score between user text and item name.
+    Deterministic similarity score between already-normalized user text
+    and already-normalized item text.
+
+    Contract:
+    - inputs must already be normalized upstream
+    - function does no lowercase/strip/punctuation cleanup
     """
+    if not user_text or not item_name:
+        return 0.0
 
-    user_norm = _normalize(user_text)
-    name_norm = _normalize(item_name)
+    if user_text == item_name:
+        return 10.0
 
-    user_tokens = _tokens(user_text)
-    name_tokens = _tokens(item_name)
+    user_tokens = _tokens_from_normalized(user_text)
+    name_tokens = _tokens_from_normalized(item_name)
 
     if not user_tokens or not name_tokens:
         return 0.0
 
-    # 1️⃣ Exact match
-    if user_norm == name_norm:
-        return 10.0
-
     score = 0.0
 
-    # 2️⃣ Ordered n-gram match (strongest fuzzy signal)
     max_n = min(len(user_tokens), len(name_tokens))
     for n in range(max_n, 0, -1):
         if _ngrams(user_tokens, n) & _ngrams(name_tokens, n):
             score = max(score, 6.0 + n / max_n)
             break
 
-    # 3️⃣ Token coverage ratio
-    overlap = len(set(user_tokens) & set(name_tokens))
+    user_token_set = set(user_tokens)
+    name_token_set = set(name_tokens)
+    overlap = len(user_token_set & name_token_set)
+
     if overlap > 0:
         coverage = overlap / len(name_tokens)
         score = max(score, 4.0 * coverage)
 
-    # 4️⃣ Raw overlap fallback
     score = max(score, 1.0 * overlap)
-
     return score
+
+
+def score_item(user_text: str, item_name: str) -> float:
+    """
+    Backward-compatible wrapper.
+
+    Prefer score_item_normalized(...) in hot-path code.
+    """
+    user_norm = (user_text or "").lower().strip()
+    item_norm = (item_name or "").lower().strip()
+    return score_item_normalized(user_norm, item_norm)
