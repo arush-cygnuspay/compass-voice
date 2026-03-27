@@ -58,6 +58,8 @@ from app.state_machine.state_router import StateRouter
 class TurnOutput:
     response_key: str
     response_payload: dict[str, Any] | None = None
+    internal_response_text: str | None = None
+    spoken_response_text: str | None = None
 
 
 INTENT_MIN_CONF = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
@@ -499,6 +501,8 @@ class TurnEngine:
         return TurnOutput(
             response_key=result.response_key,
             response_payload=result.response_payload,
+            internal_response_text=getattr(result, "internal_response_text", None),
+            spoken_response_text=getattr(result, "spoken_response_text", None),
         )
 
     def _maybe_print_timing(
