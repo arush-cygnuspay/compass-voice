@@ -59,3 +59,57 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
     print(f"[runtime] entity_index_path={entity_index_path}")
     print(f"[runtime] menu_exists={menu_path.exists()}")
     print(f"[runtime] entity_exists={entity_index_path.exists()}")
+
+    intent_model_dir = _get_env_path(
+        "COMPASS_INTENT_MODEL_DIR",
+        "app/ml/models/distilbert-multihead-intent",
+    )
+    intent_labels_main_path = _get_env_path(
+        "COMPASS_INTENT_LABELS_MAIN",
+        "app/ml/config/labels_main.json",
+    )
+    intent_labels_sub_path = _get_env_path(
+        "COMPASS_INTENT_LABELS_SUB",
+        "app/ml/config/labels_sub.json",
+    )
+    intent_device = os.getenv("COMPASS_INTENT_DEVICE", "auto").strip()
+
+    slot_model_dir = _get_env_path(
+        "COMPASS_SLOT_MODEL_DIR",
+        "app/ml/models/spacy_slot_trf_out/model-best",
+    )
+
+    try:
+        menu_store = MenuStore(menu_path, entity_index_path)
+    except MenuLoadError as exc:
+        raise RuntimeError(f"Failed to load menu: {exc}") from exc
+
+    menu_repo = MenuRepository(menu_store)
+    router = StateRouter()
+
+    intent_bundle = load_intent_bundle(
+        model_dir=str(intent_model_dir),
+        labels_main_path=str(intent_labels_main_path),
+        labels_sub_path=str(intent_labels_sub_path),
+        device=intent_device,
+    )
+    slot_bundle = load_slot_bundle(str(slot_model_dir))
+
+    engine = TurnEngine(
+        router=router,
+        menu_repo=menu_repo,
+        intent_bundle=intent_bundle,
+        slot_bundle=slot_bundle,
+        nlu_logger=NluCsvLogger(),
+    )
+    responder = ResponseBuilder(menu_repo)
+
+    return AppRuntime(
+        menu_store=menu_store,
+        menu_repo=menu_repo,
+        router=router,
+        intent_bundle=intent_bundle,
+        slot_bundle=slot_bundle,
+        engine=engine,
+        responder=responder,
+    )
