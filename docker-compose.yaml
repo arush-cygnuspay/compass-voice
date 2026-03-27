@@ -23,6 +23,11 @@ services:
       PUBLIC_WSS_BASE_URL: https://voice.cygnuscompass.com
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
       DEEPGRAM_TTS_MODEL: aura-2-thalia-en
+      COMPASS_REALTIME_LATENCY_LOG_PATH: /runtime-logs/realtime_turn_latency.jsonl
+      COMPASS_REALTIME_LATENCY_CSV_PATH: /runtime-logs/realtime_turn_latency.csv
+      COMPASS_NLU_CSV_LOG_DIR: /runtime-logs/nlu
+    volumes:
+      - /home/ubuntu/compass-voice-logs:/runtime-logs
     restart: unless-stopped
 
   redis:
