@@ -1,35 +1,37 @@
-# app/responses/flow_control_responses.py
+# app/responses/cart_responses.py
 
-from app.state_machine.conversation_state import ConversationState
+def render_cart_summary(payload: dict) -> str:
+    items = payload.get("items", [])
 
+    if not items:
+        return "Your cart is empty."
 
-def flow_guard_finish_current_step(payload: dict) -> str:
-    """
-    User attempted a forbidden global action while mid-flow.
-    """
-    step = payload.get("current_step", "this step")
-    item_name = payload.get("item_name")
+    count = len(items)
+    total = payload.get("total")
 
-    if item_name:
-        return f"Please finish the {step} for your {item_name}, or say cancel."
+    if count == 1:
+        item = items[0]
+        quantity = item.get("quantity", 1)
+        name = item.get("name", "item")
 
-    return "Please finish this step, choose an option, or say cancel."
+        if total:
+            return f"{quantity} {name}. Total {total}. Add more or checkout?"
 
+        return f"{quantity} {name}. Add more or checkout?"
 
-def flow_guard_confirm_cancel(payload: dict) -> str:
-    """
-    Ask the user to confirm cancelling the current flow.
-    """
-    item_name = payload.get("item_name")
+    if total:
+        return f"{count} items. Total {total}. Add more or checkout?"
 
-    if item_name:
-        return f"Do you want to cancel {item_name}? Please say yes or no."
-
-    return "Do you want to cancel this? Please say yes or no."
+    return f"{count} items. Add more or checkout?"
 
 
-def flow_guard_cancelled(_: dict | None = None) -> str:
-    """
-    Flow was cancelled and context reset.
-    """
-    return "Okay, cancelled. What would you like next?"
+def confirm_clear_cart_response() -> str:
+    return "Clear the cart? Yes or no."
+
+
+def cart_cleared_response() -> str:
+    return "Cart cleared."
+
+
+def clear_cart_cancelled_response() -> str:
+    return "Okay, keeping your cart."
