@@ -22,7 +22,7 @@ class DeepgramTTSClient:
     def __init__(self) -> None:
         load_dotenv()
 
-        api_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
+        api_key = os.getenv("DEEPGRAM_API_KEY", "416dca8bd948ca8dcb5d81a5cb6b52d160cfd4bf").strip()
         if not api_key:
             raise RuntimeError("DEEPGRAM_API_KEY is not set in environment or .env file.")
 
