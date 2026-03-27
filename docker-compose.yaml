@@ -20,7 +20,9 @@ services:
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      PUBLIC_WSS_BASE_URL: wss://voice.cygnuscompass.com
+      PUBLIC_WSS_BASE_URL: https://voice.cygnuscompass.com
+      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+      DEEPGRAM_TTS_MODEL: aura-2-thalia-en
     restart: unless-stopped
 
   redis:
