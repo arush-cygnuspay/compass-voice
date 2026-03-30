@@ -1,4 +1,3 @@
-# app/menu/models.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -27,6 +26,9 @@ class SideChoice:
     name: str
     normalized_name: str
     pricing: Pricing
+    aliases: tuple[str, ...] = ()
+    normalized_aliases: tuple[str, ...] = ()
+    voice_labels: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -46,6 +48,9 @@ class ModifierChoice:
     name: str
     normalized_name: str
     price_cents: int
+    aliases: tuple[str, ...] = ()
+    normalized_aliases: tuple[str, ...] = ()
+    voice_labels: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)
@@ -66,6 +71,7 @@ class MenuItem:
     normalized_name: str
     aliases: tuple[str, ...]
     normalized_aliases: tuple[str, ...]
+    voice_labels: tuple[str, ...]
     pricing: Pricing
     side_groups: list[SideGroup]
     modifier_groups: list[ModifierGroup]

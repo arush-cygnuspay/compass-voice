@@ -1,4 +1,3 @@
-# app/state_machine/handlers/item/add_item/waiting_for_side_size_handler.py
 from __future__ import annotations
 
 from app.menu.repository import MenuRepository
@@ -17,7 +16,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,
 )
-
+from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
@@ -40,12 +39,6 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
 
 
 def _first_size_slot_normalized(slots) -> str | None:
-    """
-    Extract the first normalized size slot value.
-
-    Keep this tolerant because slot models may emit slightly different
-    slot structures across runs.
-    """
     for slot in slots:
         if str(slot.name).lower() != "size":
             continue
@@ -69,14 +62,15 @@ def _match_variant_value_normalized(
         return None
 
     exact = choices_by_normalized_name.get(normalized_value)
-    if exact is not None:
+    if exact:
         return exact
 
-    if len(normalized_value) < 3:
-        return None
+    for name, choice in choices_by_normalized_name.items():
+        if is_strong_token_match(normalized_value, name):
+            return choice
 
-    for choice_name, choice in choices_by_normalized_name.items():
-        if normalized_value in choice_name or choice_name in normalized_value:
+    for name, choice in choices_by_normalized_name.items():
+        if is_controlled_partial_match(normalized_value, name):
             return choice
 
     return None
@@ -86,21 +80,6 @@ def _looks_like_pure_size_answer(
     normalized_user_text: str,
     normalized_choice_names: tuple[str, ...],
 ) -> bool:
-    """
-    Conservative direct-answer detector for side size selection.
-
-    Accept:
-    - small
-    - medium please
-    - i want large
-    - make it small
-
-    Reject:
-    - how much is small
-    - add fries
-    - show menu
-    - checkout
-    """
     if not normalized_user_text:
         return False
 

@@ -122,7 +122,7 @@ class ResponseBuilder:
             "payment_link_sent": lambda *_: "Payment link sent. Tell me when done.",
             "waiting_for_payment": lambda *_: "Waiting for payment. Tell me when it’s done.",
             "order_completed": lambda *_: (
-                "Payment confirmed. Order placed. Ready in 25 minutes. Thank you."
+                "Payment confirmed. Order placed. will be Ready in 25 minutes. Thank you."
             ),
             "no_active_order_to_cancel": lambda *_: "There’s no active order to cancel.",
             "no_active_payment": lambda *_: "There’s no payment in progress.",

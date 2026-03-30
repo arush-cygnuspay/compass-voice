@@ -27,16 +27,12 @@ class DeepgramTTSClient:
     def __init__(self) -> None:
         load_dotenv()
 
-        api_key = os.getenv(
-            "DEEPGRAM_API_KEY",
-            "416dca8bd948ca8dcb5d81a5cb6b52d160cfd4bf",
-        ).strip()
+        api_key = os.getenv("DEEPGRAM_API_KEY", "").strip()
         if not api_key:
             raise RuntimeError("DEEPGRAM_API_KEY is not set.")
 
         self._api_key = api_key
         self._model = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en").strip()
-        self._speed = os.getenv("DEEPGRAM_TTS_SPEED", "0.9").strip()
         self._encoding = "mulaw"
         self._sample_rate = 8000
         self._container = "none"
@@ -48,18 +44,15 @@ class DeepgramTTSClient:
         self._connected = False
         self._closed = False
 
-        # Per-connection queues. These are reset per utterance.
         self._audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
         self._event_queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
 
-        # Per-utterance state.
         self._utterance_open = False
         self._clear_requested = False
 
     def _websocket_url(self) -> str:
         params = {
             "model": self._model,
-            "speed": self._speed,
             "encoding": self._encoding,
             "sample_rate": str(self._sample_rate),
             "container": self._container,
@@ -86,7 +79,10 @@ class DeepgramTTSClient:
 
         self._connected = True
         self._closed = False
-        self._reader_task = asyncio.create_task(self._reader_loop(), name="deepgram-tts-reader")
+        self._reader_task = asyncio.create_task(
+            self._reader_loop(),
+            name="deepgram-tts-reader",
+        )
 
     async def _reader_loop(self) -> None:
         assert self._ws is not None
@@ -285,7 +281,6 @@ class DeepgramTTSClient:
                     flush_seen = True
 
             if flush_seen:
-                # Grace-drain window for late audio after Flushed.
                 grace_deadline = asyncio.get_running_loop().time() + 0.15
                 while asyncio.get_running_loop().time() < grace_deadline:
                     kind, payload = await self._wait_for_audio_or_event(0.03)
@@ -314,7 +309,6 @@ class DeepgramTTSClient:
             kind, payload = await self._wait_for_audio_or_event(1.0)
 
             if kind == "timeout":
-                # If we already emitted audio and then nothing else arrives, stop safely.
                 if audio_emitted:
                     self._utterance_open = False
                     return

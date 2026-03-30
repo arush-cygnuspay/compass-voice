@@ -1,4 +1,3 @@
-# app/state_machine/handlers/item/add_item/add_item_handler.py
 from __future__ import annotations
 
 import re
@@ -23,7 +22,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
 )
 from app.state_machine.handlers.item.add_item.pending_add_item_factory import build_pending_add_item
 from app.utils.quantity_detection import normalize_quantity
-
+from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
 
 SIZE_WORDS = (
     "extra large",
@@ -33,6 +32,28 @@ SIZE_WORDS = (
     "regular",
     "mini",
     "xl",
+)
+
+ITEM_FILLER_PREFIXES: tuple[str, ...] = (
+    "i want ",
+    "i want a ",
+    "i want an ",
+    "i would like ",
+    "i would like a ",
+    "i would like an ",
+    "i would like to order ",
+    "i would like to get ",
+    "i will take ",
+    "ill take ",
+    "can i get ",
+    "give me ",
+    "add ",
+    "get ",
+    "bring ",
+    "make it ",
+    "a ",
+    "an ",
+    "the ",
 )
 
 
@@ -53,7 +74,7 @@ class AddItemHandler(BaseHandler):
                 response_key="unhandled_intent",
             )
 
-        normalized_user_text = user_text or ""
+        normalized_user_text = self._normalize_item_request_text(user_text)
 
         context.reset_task()
         context.pending_action = PendingAction.ADD_ITEM
@@ -81,7 +102,7 @@ class AddItemHandler(BaseHandler):
             return self._route_menu_query_result(
                 context=context,
                 result=result,
-                requested_item_text=requested_item_text,
+                requested_item_text=normalize_text(requested_item_text),
                 original_user_text=normalized_user_text,
                 slots=slots,
             )
@@ -285,7 +306,12 @@ class AddItemHandler(BaseHandler):
 
         return None
 
-    def _match_variant_label(self, *, requested_size: str, pending_variants) -> object | None:
+    def _match_variant_label(
+        self,
+        *,
+        requested_size: str,
+        pending_variants,
+    ) -> object | None:
         if not requested_size:
             return None
 
@@ -294,8 +320,11 @@ class AddItemHandler(BaseHandler):
                 return variant
 
         for variant in pending_variants:
-            label = variant.normalized_name
-            if requested_size in label or label in requested_size:
+            if is_strong_token_match(requested_size, variant.normalized_name):
+                return variant
+
+        for variant in pending_variants:
+            if is_controlled_partial_match(requested_size, variant.normalized_name):
                 return variant
 
         return None
@@ -308,3 +337,19 @@ class AddItemHandler(BaseHandler):
             return normalize_quantity(text)
         except Exception:
             return None
+
+    def _normalize_item_request_text(self, text: str) -> str:
+        normalized = normalize_text(text or "")
+        if not normalized:
+            return ""
+
+        changed = True
+        while changed and normalized:
+            changed = False
+            for prefix in ITEM_FILLER_PREFIXES:
+                if normalized.startswith(prefix):
+                    normalized = normalized[len(prefix):].strip()
+                    changed = True
+                    break
+
+        return normalized

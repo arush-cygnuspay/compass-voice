@@ -10,6 +10,7 @@ from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.core.flow_control.flow_decision import FlowAction
 from app.core.flow_control.flow_control_policy import FlowControlPolicy
 from app.logging.nlu_csv_logger import NluCsvLogger
+from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository
 from app.ml.intent.inference_intent import IntentBundle
 from app.ml.slot.inference_slot import SlotBundle
@@ -66,6 +67,35 @@ INTENT_MIN_CONF = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
 TURN_TIMING_ENABLED = os.getenv("COMPASS_TURN_TIMING_ENABLED", "0") == "1"
 ROUTE_DEBUG_ENABLED = os.getenv("COMPASS_ROUTE_DEBUG_ENABLED", "0") == "1"
 
+CONFIRMING_ORDER_EXIT_TO_IDLE_INTENTS: set[Intent] = {
+    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,
+    Intent.ASK_ITEM_INFO,
+    Intent.ASK_MENU_INFO,
+    Intent.ASK_OPTIONS,
+    Intent.AVAILABILITY_QUERY,
+    Intent.BROWSE_MENU,
+    Intent.BROWSE_CATEGORY,
+    Intent.RECOMMENDATION_QUERY,
+    Intent.SHOW_MENU,
+}
+
+WAITING_STATE_ALLOWED_CONTROL_INTENTS = {
+    Intent.DENY,
+    Intent.CANCEL,
+    Intent.CANCEL_ORDER,
+    Intent.ASK_OPTIONS,
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+    Intent.ASK_PRICE,
+    Intent.ASK_ITEM_INFO,
+    Intent.ASK_MENU_INFO,
+    Intent.AVAILABILITY_QUERY,
+    Intent.BROWSE_MENU,
+    Intent.BROWSE_CATEGORY,
+    Intent.RECOMMENDATION_QUERY,
+    Intent.SHOW_MENU,
+}
 
 class TurnEngine:
     """
@@ -167,6 +197,23 @@ class TurnEngine:
             raw_text=nlu.normalized_text,
         )
 
+        if session.conversation_state in {
+            ConversationState.WAITING_FOR_SIDE,
+            ConversationState.WAITING_FOR_SIDE_SIZE,
+            ConversationState.WAITING_FOR_MODIFIER,
+            ConversationState.WAITING_FOR_SIZE,
+            ConversationState.WAITING_FOR_QUANTITY,
+        } and intent_result.intent not in WAITING_STATE_ALLOWED_CONTROL_INTENTS:
+            intent_result = IntentResult(
+                intent=Intent.UNKNOWN,
+                raw_text=nlu.normalized_text,
+            )
+
+        session.conversation_state = self._rewrite_confirming_order_to_idle_if_needed(
+            session=session,
+            intent=intent_result.intent,
+        )
+
         intent_result, shortcut_output = self._apply_idle_shortcuts(session, intent_result)
         if shortcut_output is not None:
             self._apply_session_response(
@@ -198,6 +245,12 @@ class TurnEngine:
                 handler_ms=0.0,
             )
             return shortcut_output
+
+        intent_result = self._rewrite_idle_unknown_menu_followup(
+            session=session,
+            intent_result=intent_result,
+            normalized_text=nlu.normalized_text,
+        )
 
         t0 = time.perf_counter()
         flow = self.flow_policy.evaluate(
@@ -785,6 +838,67 @@ class TurnEngine:
             ),
         )
 
+    def _rewrite_confirming_order_to_idle_if_needed(
+        self,
+        *,
+        session: Session,
+        intent: Intent,
+    ) -> ConversationState:
+        if session.conversation_state != ConversationState.CONFIRMING_ORDER:
+            return session.conversation_state
+
+        if intent in CONFIRMING_ORDER_EXIT_TO_IDLE_INTENTS:
+            return ConversationState.IDLE
+
+        return session.conversation_state
+
+    def _rewrite_idle_unknown_menu_followup(
+        self,
+        *,
+        session: Session,
+        intent_result: IntentResult,
+        normalized_text: str,
+    ) -> IntentResult:
+        if session.conversation_state != ConversationState.IDLE:
+            return intent_result
+
+        if intent_result.intent != Intent.UNKNOWN:
+            return intent_result
+
+        if not normalized_text:
+            return intent_result
+
+        last_key = getattr(session, "last_response_key", None) or ""
+        if last_key not in {
+            "show_category",
+            "menu_ambiguity",
+            "show_menu_categories",
+            "show_item_info",
+            "show_item_availability",
+        }:
+            return intent_result
+
+        result = self.menu_repo.resolve_menu_query_normalized(normalized_text, limit=5)
+        if result.type in {
+            MenuQueryType.ITEM,
+            MenuQueryType.ITEM_AMBIGUOUS,
+            MenuQueryType.CATEGORY,
+            MenuQueryType.CATEGORY_SINGLE_ITEM,
+            MenuQueryType.CATEGORY_AMBIGUOUS,
+        }:
+            return IntentResult(
+                intent=Intent.ASK_ITEM_INFO,
+                raw_text=intent_result.raw_text,
+            )
+
+        if last_key in {"show_category", "menu_ambiguity", "show_menu_categories"}:
+            return IntentResult(
+                intent=Intent.ASK_ITEM_INFO,
+                raw_text=intent_result.raw_text,
+            )
+
+        return intent_result
+
     def _trace_set_initial_fields(
         self,
         *,
@@ -872,5 +986,4 @@ class TurnEngine:
         try:
             setattr(trace, attr_name, value)
         except Exception:
-            # Tracing must never break turn processing.
             return

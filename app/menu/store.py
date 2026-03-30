@@ -1,4 +1,3 @@
-# app/menu/store.py
 from __future__ import annotations
 
 import json
@@ -44,10 +43,18 @@ class MenuStore:
 
         self._item_by_name: dict[str, MenuItem] = {}
         self._item_ids_by_alias: dict[str, list[str]] = {}
+        self._item_ids_by_voice_label: dict[str, list[str]] = {}
         self._category_name_index: dict[str, dict] = {}
 
         self._discoverable_item_ids: set[str] = set()
         self._modifier_entries_by_name: dict[str, list[dict]] = {}
+
+        # Scoped hot-path indexes for waiting-state resolution.
+        # group_id -> normalized_label -> [item_id]
+        self._side_ids_by_group_and_label: dict[str, dict[str, list[str]]] = {}
+
+        # group_id -> normalized_label -> [modifier_id]
+        self._modifier_ids_by_group_and_label: dict[str, dict[str, list[str]]] = {}
 
         self._load()
 
@@ -107,12 +114,18 @@ class MenuStore:
             if (norm_alias := normalize_text(alias))
         )
 
+        voice_labels = self._build_voice_labels(
+            primary_name=str(raw["name"]),
+            aliases=aliases,
+        )
+
         return MenuItem(
             item_id=raw["item_id"],
             name=raw["name"],
             normalized_name=normalize_text(raw["name"]),
             aliases=aliases,
             normalized_aliases=normalized_aliases,
+            voice_labels=voice_labels,
             pricing=self._parse_pricing(raw["pricing"]),
             side_groups=self._parse_side_groups(raw.get("side_groups", [])),
             modifier_groups=self._parse_modifier_groups(raw.get("modifier_groups", [])),
@@ -158,15 +171,30 @@ class MenuStore:
         parsed: list[SideGroup] = []
 
         for group in groups:
-            choices = [
-                SideChoice(
-                    item_id=choice["item_id"],
-                    name=choice["name"],
-                    normalized_name=normalize_text(choice["name"]),
-                    pricing=self._parse_pricing(choice["pricing"]),
+            choices = []
+            for choice in group.get("choices", []):
+                aliases = tuple(str(alias) for alias in choice.get("aliases", []))
+                normalized_aliases = tuple(
+                    norm_alias
+                    for alias in aliases
+                    if (norm_alias := normalize_text(alias))
                 )
-                for choice in group.get("choices", [])
-            ]
+                voice_labels = self._build_voice_labels(
+                    primary_name=str(choice["name"]),
+                    aliases=aliases,
+                )
+
+                choices.append(
+                    SideChoice(
+                        item_id=choice["item_id"],
+                        name=choice["name"],
+                        normalized_name=normalize_text(choice["name"]),
+                        pricing=self._parse_pricing(choice["pricing"]),
+                        aliases=aliases,
+                        normalized_aliases=normalized_aliases,
+                        voice_labels=voice_labels,
+                    )
+                )
 
             parsed.append(
                 SideGroup(
@@ -186,15 +214,30 @@ class MenuStore:
         parsed: list[ModifierGroup] = []
 
         for group in groups:
-            choices = [
-                ModifierChoice(
-                    modifier_id=choice["modifier_id"],
-                    name=choice["name"],
-                    normalized_name=normalize_text(choice["name"]),
-                    price_cents=choice["price_cents"],
+            choices = []
+            for choice in group.get("choices", []):
+                aliases = tuple(str(alias) for alias in choice.get("aliases", []))
+                normalized_aliases = tuple(
+                    norm_alias
+                    for alias in aliases
+                    if (norm_alias := normalize_text(alias))
                 )
-                for choice in group.get("choices", [])
-            ]
+                voice_labels = self._build_voice_labels(
+                    primary_name=str(choice["name"]),
+                    aliases=aliases,
+                )
+
+                choices.append(
+                    ModifierChoice(
+                        modifier_id=choice["modifier_id"],
+                        name=choice["name"],
+                        normalized_name=normalize_text(choice["name"]),
+                        price_cents=choice["price_cents"],
+                        aliases=aliases,
+                        normalized_aliases=normalized_aliases,
+                        voice_labels=voice_labels,
+                    )
+                )
 
             parsed.append(
                 ModifierGroup(
@@ -218,9 +261,12 @@ class MenuStore:
         """
         self._item_by_name.clear()
         self._item_ids_by_alias.clear()
+        self._item_ids_by_voice_label.clear()
         self._category_name_index.clear()
         self._discoverable_item_ids.clear()
         self._modifier_entries_by_name.clear()
+        self._side_ids_by_group_and_label.clear()
+        self._modifier_ids_by_group_and_label.clear()
 
         for item in self.items.values():
             if item.normalized_name:
@@ -228,6 +274,30 @@ class MenuStore:
 
             for alias in item.normalized_aliases:
                 self._item_ids_by_alias.setdefault(alias, []).append(item.item_id)
+
+            for voice_label in item.voice_labels:
+                self._item_ids_by_voice_label.setdefault(voice_label, []).append(item.item_id)
+
+            for side_group in item.side_groups:
+                group_bucket = self._side_ids_by_group_and_label.setdefault(side_group.group_id, {})
+
+                for choice in side_group.choices:
+                    for label in choice.voice_labels:
+                        ids = group_bucket.setdefault(label, [])
+                        if choice.item_id not in ids:
+                            ids.append(choice.item_id)
+
+            for modifier_group in item.modifier_groups:
+                group_bucket = self._modifier_ids_by_group_and_label.setdefault(
+                    modifier_group.group_id,
+                    {},
+                )
+
+                for choice in modifier_group.choices:
+                    for label in choice.voice_labels:
+                        ids = group_bucket.setdefault(label, [])
+                        if choice.modifier_id not in ids:
+                            ids.append(choice.modifier_id)
 
         for category in self.categories.values():
             category_name = str(category.get("name", ""))
@@ -259,6 +329,125 @@ class MenuStore:
 
                 elif entity_type == "modifier":
                     self._modifier_entries_by_name.setdefault(norm_key, []).append(entry)
+
+    def _build_voice_labels(
+        self,
+        *,
+        primary_name: str,
+        aliases: tuple[str, ...],
+    ) -> tuple[str, ...]:
+        values: list[str] = []
+
+        def add(value: str | None) -> None:
+            normalized = normalize_text(value or "")
+            if not normalized:
+                return
+            if normalized not in values:
+                values.append(normalized)
+
+        add(primary_name)
+        for alias in aliases:
+            add(alias)
+
+        expanded: list[str] = []
+        for value in values:
+            for variant in self._voice_label_variants(value):
+                if variant and variant not in expanded:
+                    expanded.append(variant)
+
+        return tuple(expanded)
+
+    def _voice_label_variants(self, normalized_text: str) -> list[str]:
+        variants: list[str] = []
+
+        def add(value: str) -> None:
+            value = " ".join((value or "").split()).strip()
+            if value and value not in variants:
+                variants.append(value)
+
+        base = normalized_text
+        add(base)
+
+        stripped_number = self._strip_leading_menu_number(base)
+        add(stripped_number)
+
+        no_hash = stripped_number.replace("#", "").strip()
+        add(no_hash)
+
+        bbq_to_barbecue = base.replace("bbq", "barbecue")
+        barbecue_to_bbq = base.replace("barbecue", "bbq")
+        add(bbq_to_barbecue)
+        add(barbecue_to_bbq)
+
+        stripped_bbq = stripped_number.replace("bbq", "barbecue")
+        stripped_barbecue = stripped_number.replace("barbecue", "bbq")
+        add(stripped_bbq)
+        add(stripped_barbecue)
+
+        singular_plural_variants: list[str] = []
+        for value in list(variants):
+            singular_plural_variants.extend(self._singular_plural_variants(value))
+
+        for value in singular_plural_variants:
+            add(value)
+
+        return variants
+
+    def _strip_leading_menu_number(self, text: str) -> str:
+        value = (text or "").strip()
+        idx = 0
+
+        while idx < len(value) and value[idx] in {"#", " "}:
+            idx += 1
+
+        start_digits = idx
+        while idx < len(value) and value[idx].isdigit():
+            idx += 1
+
+        if idx > start_digits:
+            while idx < len(value) and value[idx] in {".", ")", "-", " "}:
+                idx += 1
+            return value[idx:].strip()
+
+        return value
+
+    def _singular_plural_variants(self, text: str) -> list[str]:
+        tokens = [token for token in text.split() if token]
+        if not tokens:
+            return []
+
+        variants: list[str] = []
+
+        for i, token in enumerate(tokens):
+            changed = self._toggle_plural(token)
+            if not changed or changed == token:
+                continue
+
+            clone = list(tokens)
+            clone[i] = changed
+            variants.append(" ".join(clone))
+
+        return variants
+
+    def _toggle_plural(self, token: str) -> str:
+        if len(token) <= 2:
+            return token
+
+        if token.endswith("ies") and len(token) > 3:
+            return token[:-3] + "y"
+
+        if token.endswith("es") and len(token) > 3:
+            singular = token[:-2]
+            if singular:
+                return singular
+
+        if token.endswith("s") and len(token) > 3:
+            return token[:-1]
+
+        if token.endswith("y") and len(token) > 2:
+            return token[:-1] + "ies"
+
+        return token + "s"
 
     def get_item(self, item_id: str) -> MenuItem:
         item = self.items.get(item_id)
@@ -303,6 +492,29 @@ class MenuStore:
 
     def find_item_ids_by_alias(self, normalized_alias: str) -> list[str]:
         return self._item_ids_by_alias.get(normalized_alias, [])
+
+    def find_item_ids_by_voice_label(self, normalized_voice_label: str) -> list[str]:
+        return self._item_ids_by_voice_label.get(normalized_voice_label, [])
+
+    def find_side_ids_for_group_by_label(
+        self,
+        group_id: str,
+        normalized_label: str,
+    ) -> list[str]:
+        if not group_id or not normalized_label:
+            return []
+        return list(self._side_ids_by_group_and_label.get(group_id, {}).get(normalized_label, []))
+
+    def find_modifier_ids_for_group_by_label(
+        self,
+        group_id: str,
+        normalized_label: str,
+    ) -> list[str]:
+        if not group_id or not normalized_label:
+            return []
+        return list(
+            self._modifier_ids_by_group_and_label.get(group_id, {}).get(normalized_label, [])
+        )
 
     def find_category_by_name(self, normalized_text: str) -> dict | None:
         return self._category_name_index.get(normalized_text)
