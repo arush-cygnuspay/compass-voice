@@ -1,4 +1,3 @@
-# app/state_machine/handlers/item/add_item/waiting_for_size_handler.py
 from __future__ import annotations
 
 from app.menu.repository import MenuRepository
@@ -18,7 +17,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     determine_next_add_item_step,
 )
 from app.utils.candidate_texts import build_candidate_texts_normalized
-
+from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
@@ -41,12 +40,6 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
 
 
 def _extract_size_slot_values_normalized(context: ConversationContext) -> list[str]:
-    """
-    Extract size-like values from slots.
-
-    Keep this tolerant because different slot models may emit SIZE,
-    VARIANT, or even ITEM for utterances like 'small coke'.
-    """
     slots = context.last_slots or ()
     values: list[str] = []
     seen: set[str] = set()
@@ -74,21 +67,6 @@ def _looks_like_pure_size_answer(
     normalized_user_text: str,
     normalized_choice_names: tuple[str, ...],
 ) -> bool:
-    """
-    Conservative direct-answer detector for size selection.
-
-    Accept:
-    - small
-    - large please
-    - make it medium
-    - i want small
-
-    Reject:
-    - how much is small
-    - show menu
-    - checkout
-    - add burger
-    """
     if not normalized_user_text:
         return False
 
@@ -280,16 +258,18 @@ class WaitingForSizeHandler(BaseHandler):
         )
 
         for candidate in candidate_texts:
-            matched = choices_by_normalized_name.get(candidate)
-            if matched is not None:
-                return matched
+            match = choices_by_normalized_name.get(candidate)
+            if match:
+                return match
 
         for candidate in candidate_texts:
-            if len(candidate) < 3:
-                continue
+            for name, choice in choices_by_normalized_name.items():
+                if is_strong_token_match(candidate, name):
+                    return choice
 
-            for choice_name, choice in choices_by_normalized_name.items():
-                if candidate in choice_name or choice_name in candidate:
+        for candidate in candidate_texts:
+            for name, choice in choices_by_normalized_name.items():
+                if is_controlled_partial_match(candidate, name):
                     return choice
 
         return None

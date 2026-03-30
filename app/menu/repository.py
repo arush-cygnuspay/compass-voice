@@ -1,4 +1,3 @@
-# app/menu/repository.py
 from __future__ import annotations
 
 from app.menu.models import ItemResolution, MenuItem
@@ -21,6 +20,161 @@ class MenuRepository:
 
     def __init__(self, store: MenuStore):
         self.store = store
+
+    # ======================================================
+    # INTERNAL HELPERS
+    # ======================================================
+
+    def _score_item_labels(self, normalized_text: str, item: MenuItem) -> float:
+        return max(
+            score_item_normalized(normalized_text, item.normalized_name),
+            max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
+            max((score_item(normalized_text, label) for label in item.voice_labels), default=0.0),
+        )
+
+    def _candidate_items_from_text(self, normalized_text: str) -> list[MenuItem]:
+        entity_candidates = self.store.find_entity(normalized_text, allowed_types={"item"})
+        candidate_ids = {
+            entry.get("item_id")
+            for entry in entity_candidates
+            if entry.get("item_id")
+        }
+
+        exact_item = self.store.find_item_exact(normalized_text)
+        if exact_item is not None:
+            candidate_ids.add(exact_item.item_id)
+
+        for item_id in self.store.find_item_ids_by_alias(normalized_text):
+            candidate_ids.add(item_id)
+
+        for item_id in self.store.find_item_ids_by_voice_label(normalized_text):
+            candidate_ids.add(item_id)
+
+        if candidate_ids:
+            return [
+                self.store.get_item(item_id)
+                for item_id in candidate_ids
+                if item_id in self.store.items
+            ]
+
+        return list(self.store.items.values())
+
+    # ======================================================
+    # CANDIDATE-LOCAL RESOLUTION
+    # ======================================================
+
+    def resolve_item_within_candidates_normalized(
+        self,
+        *,
+        normalized_text: str,
+        candidate_item_ids: list[str] | tuple[str, ...],
+    ) -> MenuItem | None:
+        if not normalized_text or not candidate_item_ids:
+            return None
+
+        candidates: list[MenuItem] = []
+        for item_id in candidate_item_ids:
+            if item_id in self.store.items:
+                candidates.append(self.store.get_item(item_id))
+
+        if not candidates:
+            return None
+
+        # 1. exact / alias / voice-label deterministic hit
+        exact_hits: list[MenuItem] = []
+        for item in candidates:
+            if normalized_text == item.normalized_name:
+                exact_hits.append(item)
+                continue
+            if normalized_text in item.normalized_aliases:
+                exact_hits.append(item)
+                continue
+            if normalized_text in item.voice_labels:
+                exact_hits.append(item)
+
+        if len(exact_hits) == 1:
+            return exact_hits[0]
+
+        # 2. scoring only inside shortlist
+        scored: list[tuple[float, MenuItem]] = []
+        for item in candidates:
+            score = self._score_item_labels(normalized_text, item)
+            if score > 0:
+                scored.append((score, item))
+
+        if not scored:
+            return None
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        best_score, best_item = scored[0]
+        second_score = scored[1][0] if len(scored) > 1 else 0.0
+
+        if best_score >= 6.0 and (
+            second_score == 0.0
+            or best_score - second_score >= 0.9
+            or best_score >= second_score * 1.15
+        ):
+            return best_item
+
+        return None
+
+    def resolve_side_choice_within_group_normalized(
+        self,
+        *,
+        normalized_text: str,
+        group_id: str,
+        candidate_names_by_id: dict[str, tuple[str, ...]],
+    ) -> list[str]:
+        if not normalized_text or not group_id:
+            return []
+
+        exact_ids = self.store.find_side_ids_for_group_by_label(group_id, normalized_text)
+        if exact_ids:
+            return exact_ids
+
+        scored: list[tuple[float, str]] = []
+        for item_id, labels in candidate_names_by_id.items():
+            best = max((score_item(normalized_text, label) for label in labels), default=0.0)
+            if best > 0:
+                scored.append((best, item_id))
+
+        if not scored:
+            return []
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        best_score = scored[0][0]
+        winners = [item_id for score, item_id in scored if score >= best_score * 0.90]
+
+        return winners
+
+    def resolve_modifier_choice_within_group_normalized(
+        self,
+        *,
+        normalized_text: str,
+        group_id: str,
+        candidate_names_by_id: dict[str, tuple[str, ...]],
+    ) -> list[str]:
+        if not normalized_text or not group_id:
+            return []
+
+        exact_ids = self.store.find_modifier_ids_for_group_by_label(group_id, normalized_text)
+        if exact_ids:
+            return exact_ids
+
+        scored: list[tuple[float, str]] = []
+        for modifier_id, labels in candidate_names_by_id.items():
+            best = max((score_item(normalized_text, label) for label in labels), default=0.0)
+            if best > 0:
+                scored.append((best, modifier_id))
+
+        if not scored:
+            return []
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        best_score = scored[0][0]
+        winners = [modifier_id for score, modifier_id in scored if score >= best_score * 0.90]
+
+        return winners
 
     # ======================================================
     # CATEGORY RESOLUTION
@@ -213,49 +367,14 @@ class MenuRepository:
         if not normalized_text:
             return None
 
-        entity_candidates = self.store.find_entity(normalized_text, allowed_types={"item"})
-        unique_item_ids: list[str] = []
-        seen_ids: set[str] = set()
-
-        for entry in entity_candidates:
-            item_id = entry.get("item_id")
-            if not item_id or item_id in seen_ids or item_id not in self.store.items:
-                continue
-            seen_ids.add(item_id)
-            unique_item_ids.append(item_id)
-
-        for item_id in self.store.find_item_ids_by_alias(normalized_text):
-            if item_id in seen_ids or item_id not in self.store.items:
-                continue
-            seen_ids.add(item_id)
-            unique_item_ids.append(item_id)
-
-        exact_item = self.store.find_item_exact(normalized_text)
-        if exact_item is not None and exact_item.item_id not in seen_ids:
-            unique_item_ids.insert(0, exact_item.item_id)
-            seen_ids.add(exact_item.item_id)
-
-        if len(unique_item_ids) == 1:
-            return MenuQueryResult(
-                type=MenuQueryType.ITEM,
-                item=self.store.get_item(unique_item_ids[0]),
-            )
-
-        candidates = (
-            [self.store.get_item(item_id) for item_id in unique_item_ids]
-            if unique_item_ids
-            else list(self.store.items.values())
-        )
+        candidates = self._candidate_items_from_text(normalized_text)
 
         scored_items: list[tuple[float, MenuItem]] = []
         for item in candidates:
             if not item.available:
                 continue
 
-            score = max(
-                score_item_normalized(normalized_text, item.normalized_name),
-                max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
-            )
+            score = self._score_item_labels(normalized_text, item)
             if score > 0:
                 scored_items.append((score, item))
 
@@ -346,39 +465,14 @@ class MenuRepository:
         if category_result is not None:
             return category_result
 
-        entity_candidates = self.store.find_entity(normalized_text, allowed_types={"item"})
-        candidate_ids = {
-            entry.get("item_id")
-            for entry in entity_candidates
-            if entry.get("item_id")
-        }
-
-        exact_item = self.store.find_item_exact(normalized_text)
-        if exact_item is not None:
-            candidate_ids.add(exact_item.item_id)
-
-        for item_id in self.store.find_item_ids_by_alias(normalized_text):
-            candidate_ids.add(item_id)
-
-        candidates = (
-            [
-                self.store.get_item(item_id)
-                for item_id in candidate_ids
-                if item_id in self.store.items
-            ]
-            if candidate_ids
-            else list(self.store.items.values())
-        )
+        candidates = self._candidate_items_from_text(normalized_text)
 
         scored_items: list[tuple[float, MenuItem]] = []
         for item in candidates:
             if not item.available:
                 continue
 
-            score = max(
-                score_item_normalized(normalized_text, item.normalized_name),
-                max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
-            )
+            score = self._score_item_labels(normalized_text, item)
             if score > 0:
                 scored_items.append((score, item))
 
@@ -442,40 +536,13 @@ class MenuRepository:
         if not normalized_text:
             return None
 
-        candidates: dict[str, MenuItem] = {}
-
-        entity_candidates = self.store.find_entity(normalized_text, allowed_types={"item"})
-        for entry in entity_candidates:
-            item_id = entry.get("item_id")
-            if not item_id:
-                continue
-
-            try:
-                item = self.store.get_item(item_id)
-            except KeyError:
-                continue
-
-            candidates[item.item_id] = item
-
-        exact = self.store.find_item_exact(normalized_text)
-        if exact is not None:
-            candidates[exact.item_id] = exact
-
-        for item_id in self.store.find_item_ids_by_alias(normalized_text):
-            if item_id in self.store.items:
-                candidates[item_id] = self.store.get_item(item_id)
-
-        if not candidates:
-            candidates = self.store.items.copy()
+        candidates = self._candidate_items_from_text(normalized_text)
 
         best_item: MenuItem | None = None
         best_score = 0.0
 
-        for item in candidates.values():
-            score = max(
-                score_item_normalized(normalized_text, item.normalized_name),
-                max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
-            )
+        for item in candidates:
+            score = self._score_item_labels(normalized_text, item)
             if score > best_score:
                 best_score = score
                 best_item = item
@@ -521,29 +588,7 @@ class MenuRepository:
         if not normalized_text:
             return []
 
-        entity_candidates = self.store.find_entity(normalized_text, allowed_types={"item"})
-        candidate_ids = {
-            entry.get("item_id")
-            for entry in entity_candidates
-            if entry.get("item_id")
-        }
-
-        exact_item = self.store.find_item_exact(normalized_text)
-        if exact_item is not None:
-            candidate_ids.add(exact_item.item_id)
-
-        for item_id in self.store.find_item_ids_by_alias(normalized_text):
-            candidate_ids.add(item_id)
-
-        candidates = (
-            [
-                self.store.get_item(item_id)
-                for item_id in candidate_ids
-                if item_id in self.store.items
-            ]
-            if candidate_ids
-            else list(self.store.items.values())
-        )
+        candidates = self._candidate_items_from_text(normalized_text)
 
         scored: list[tuple[float, MenuItem]] = []
         seen_ids: set[str] = set()
@@ -552,10 +597,7 @@ class MenuRepository:
             if not item.available:
                 continue
 
-            score = max(
-                score_item_normalized(normalized_text, item.normalized_name),
-                max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
-            )
+            score = self._score_item_labels(normalized_text, item)
 
             if score < 4.8 or item.item_id in seen_ids:
                 continue
@@ -612,10 +654,10 @@ class MenuRepository:
         return [category for _, _, _, category in ranked]
 
     def resolve_idle_availability_query_normalized(
-            self,
-            normalized_text: str,
-            *,
-            limit: int = 5,
+        self,
+        normalized_text: str,
+        *,
+        limit: int = 5,
     ) -> MenuQueryResult:
         if not normalized_text:
             similar_items, categories = self.build_not_found_recovery_normalized(
@@ -648,6 +690,10 @@ class MenuRepository:
             if self.store.is_discoverable_item(item_id):
                 candidate_ids.add(item_id)
 
+        for item_id in self.store.find_item_ids_by_voice_label(normalized_text):
+            if self.store.is_discoverable_item(item_id):
+                candidate_ids.add(item_id)
+
         candidates = (
             [self.store.get_item(item_id) for item_id in candidate_ids if item_id in self.store.items]
             if candidate_ids
@@ -659,10 +705,7 @@ class MenuRepository:
             if not item.available:
                 continue
 
-            score = max(
-                score_item_normalized(normalized_text, item.normalized_name),
-                max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
-            )
+            score = self._score_item_labels(normalized_text, item)
             if score > 0:
                 scored_items.append((score, item))
 
@@ -721,10 +764,10 @@ class MenuRepository:
         )
 
     def resolve_modifier_availability_for_item_normalized(
-            self,
-            *,
-            normalized_text: str,
-            item_id: str,
+        self,
+        *,
+        normalized_text: str,
+        item_id: str,
     ) -> dict | None:
         if not normalized_text or not item_id or item_id not in self.store.items:
             return None
@@ -732,22 +775,18 @@ class MenuRepository:
         item = self.store.get_item(item_id)
 
         for group in item.modifier_groups:
-            for choice in group.choices:
-                choice_name = choice.normalized_name
-                if not choice_name:
-                    continue
-
-                if normalized_text == choice_name:
-                    return {
-                        "match_type": "modifier",
-                        "group_name": group.name,
-                        "modifier_name": choice.name,
-                        "price_cents": choice.price_cents,
-                    }
-
-                if len(normalized_text) >= 3 and (
-                        normalized_text in choice_name or choice_name in normalized_text
-                ):
+            label_map = {
+                choice.modifier_id: choice.voice_labels
+                for choice in group.choices
+            }
+            matched_ids = self.resolve_modifier_choice_within_group_normalized(
+                normalized_text=normalized_text,
+                group_id=group.group_id,
+                candidate_names_by_id=label_map,
+            )
+            if len(matched_ids) == 1:
+                choice = next((c for c in group.choices if c.modifier_id == matched_ids[0]), None)
+                if choice is not None:
                     return {
                         "match_type": "modifier",
                         "group_name": group.name,
@@ -756,21 +795,18 @@ class MenuRepository:
                     }
 
         for group in item.side_groups:
-            for choice in group.choices:
-                choice_name = choice.normalized_name
-                if not choice_name:
-                    continue
-
-                if normalized_text == choice_name:
-                    return {
-                        "match_type": "side",
-                        "group_name": group.name,
-                        "item_name": choice.name,
-                    }
-
-                if len(normalized_text) >= 3 and (
-                        normalized_text in choice_name or choice_name in normalized_text
-                ):
+            label_map = {
+                choice.item_id: choice.voice_labels
+                for choice in group.choices
+            }
+            matched_ids = self.resolve_side_choice_within_group_normalized(
+                normalized_text=normalized_text,
+                group_id=group.group_id,
+                candidate_names_by_id=label_map,
+            )
+            if len(matched_ids) == 1:
+                choice = next((c for c in group.choices if c.item_id == matched_ids[0]), None)
+                if choice is not None:
                     return {
                         "match_type": "side",
                         "group_name": group.name,

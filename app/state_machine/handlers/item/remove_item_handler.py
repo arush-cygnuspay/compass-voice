@@ -1,4 +1,5 @@
 # app/state_machine/handlers/item/remove_item_handler.py
+from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
@@ -99,7 +100,7 @@ class RemoveItemHandler(BaseHandler):
             menu_item = self.menu_repo.get_item(cart_item.item_id)
             
             # Use the same scoring function as item matching
-            score = score_item(user_text, menu_item.name)
+            score = score_item(normalize_text(user_text), normalize_text(menu_item.name))
 
             if score > best_score:
                 best_score = score

@@ -1,4 +1,3 @@
-# app/state_machine/handlers/info/ask_menu_info_handler.py
 from __future__ import annotations
 
 from app.menu.query_result import MenuQueryType
@@ -6,9 +5,9 @@ from app.menu.repository import MenuRepository
 from app.menu.slot_helpers import first_slot_value
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
-from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
+from app.state_machine.handlers.base_handler import BaseHandler
 
 
 class AskMenuInfoHandler(BaseHandler):
@@ -59,6 +58,13 @@ class AskMenuInfoHandler(BaseHandler):
                 return self._show_category_from_dict(category)
 
             result = self.menu_repo.resolve_menu_query(normalized_text, limit=5)
+            fallback = self._fallback_to_recent_category_options(
+                session=session,
+                result=result,
+            )
+            if fallback is not None:
+                return fallback
+
             return self._menu_result_to_handler_result(intent=intent, result=result)
 
         if intent == Intent.AVAILABILITY_QUERY:
@@ -99,12 +105,20 @@ class AskMenuInfoHandler(BaseHandler):
                         response_payload={"modifier_name": user_text},
                     )
 
+            fallback = self._fallback_to_recent_category_options(
+                session=session,
+                result=result,
+            )
+            if fallback is not None:
+                return fallback
+
             return self._menu_result_to_handler_result(intent=intent, result=result)
 
         if intent in {
             Intent.ASK_ITEM_INFO,
             Intent.ASK_MENU_INFO,
             Intent.RECOMMENDATION_QUERY,
+            Intent.UNKNOWN,
         }:
             category_slot_value = first_slot_value(slots, "CATEGORY", "MENU_CATEGORY")
             if category_slot_value:
@@ -119,9 +133,23 @@ class AskMenuInfoHandler(BaseHandler):
                     )
 
             result = self.menu_repo.resolve_menu_query(normalized_text, limit=5)
+            fallback = self._fallback_to_recent_category_options(
+                session=session,
+                result=result,
+            )
+            if fallback is not None:
+                return fallback
+
             return self._menu_result_to_handler_result(intent=intent, result=result)
 
         result = self.menu_repo.resolve_menu_query(normalized_text, limit=5)
+        fallback = self._fallback_to_recent_category_options(
+            session=session,
+            result=result,
+        )
+        if fallback is not None:
+            return fallback
+
         return self._menu_result_to_handler_result(intent=intent, result=result)
 
     def _show_browse_categories(self) -> HandlerResult:
@@ -194,6 +222,43 @@ class AskMenuInfoHandler(BaseHandler):
                 return self.menu_repo.store.categories.get(category_result.category_id)
 
         return None
+
+    def _fallback_to_recent_category_options(
+        self,
+        *,
+        session,
+        result,
+    ) -> HandlerResult | None:
+        """
+        When a follow-up after a category listing cannot be resolved
+        (often due to STT distortion), re-offer the last shown options
+        instead of failing generically.
+        """
+        if session is None:
+            return None
+
+        if result.type != MenuQueryType.NOT_FOUND:
+            return None
+
+        last_key = getattr(session, "last_response_key", None) or ""
+        last_payload = getattr(session, "last_response_payload", None) or {}
+
+        if last_key not in {"show_category", "menu_ambiguity"}:
+            return None
+
+        options = [
+            option
+            for option in (last_payload.get("items") or last_payload.get("options") or [])
+            if isinstance(option, str) and option.strip()
+        ]
+        if not options:
+            return None
+
+        return HandlerResult(
+            next_state=ConversationState.IDLE,
+            response_key="menu_ambiguity",
+            response_payload={"options": options[:5]},
+        )
 
     def _menu_result_to_handler_result(
         self,

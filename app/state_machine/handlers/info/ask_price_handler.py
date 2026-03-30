@@ -14,8 +14,7 @@ from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.conversation_context import ConversationContext
 from app.state_machine.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
-
-
+from app.utils.token_matcher import is_strong_token_match, is_controlled_partial_match
 
 SIZE_WORDS = (
     "extra large",
@@ -160,21 +159,28 @@ class AskPriceHandler(BaseHandler):
 
         return None
 
-    def _match_variant_label(self, requested_size: str, variants) -> object | None:
-        requested_size = normalize_text(requested_size)
+    def _match_variant_label(
+            self,
+            *,
+            requested_size: str,
+            pending_variants,
+    ) -> object | None:
         if not requested_size:
             return None
 
-        for variant in variants:
-            label = normalize_text(getattr(variant, "label", "") or "")
-            if label == requested_size:
+        # 1. exact
+        for variant in pending_variants:
+            if variant.normalized_name == requested_size:
                 return variant
 
-        for variant in variants:
-            label = normalize_text(getattr(variant, "label", "") or "")
-            if requested_size and label and (
-                requested_size in label or label in requested_size
-            ):
+        # 2. token match
+        for variant in pending_variants:
+            if is_strong_token_match(requested_size, variant.normalized_name):
+                return variant
+
+        # 3. controlled partial
+        for variant in pending_variants:
+            if is_controlled_partial_match(requested_size, variant.normalized_name):
                 return variant
 
         return None
