@@ -169,42 +169,27 @@ class TurnEngine:
 
         intent_result, shortcut_output = self._apply_idle_shortcuts(session, intent_result)
         if shortcut_output is not None:
-            context_snapshot = (
-                self._snapshot_context_for_logging(session)
-                if self.nlu_logger.enabled
-                else {}
+            self._apply_session_response(
+                session=session,
+                intent=intent_result.intent,
+                response_key=shortcut_output.response_key,
+                response_payload=shortcut_output.response_payload,
             )
 
-            session.last_intent = intent_result.intent
-            session.last_response_key = shortcut_output.response_key
-            session.last_response_payload = shortcut_output.response_payload
-            session.turn_count += 1
-
-            if self.nlu_logger.enabled:
-                self._log_nlu_and_turn(
-                    session=session,
-                    state_before=state_before,
-                    context_snapshot=context_snapshot,
-                    nlu=nlu,
-                    result=None,
-                    response_key=shortcut_output.response_key,
-                )
+            self._log_if_enabled(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                result=None,
+                response_key=shortcut_output.response_key,
+            )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self._trace_finalize(
+            self._finalize_trace_and_timing(
                 trace=trace,
                 session=session,
                 response_key=shortcut_output.response_key,
                 total_start_monotonic=t_total_start,
-                total_ms=total_ms,
-                preprocess_ms=t_preprocess * 1000.0,
-                nlu_ms=t_nlu * 1000.0,
-                flow_ms=0.0,
-                route_ms=0.0,
-                handler_ms=0.0,
-            )
-
-            self._maybe_print_timing(
                 total_ms=total_ms,
                 preprocess_ms=t_preprocess * 1000.0,
                 nlu_ms=t_nlu * 1000.0,
@@ -224,32 +209,28 @@ class TurnEngine:
 
         if flow.action == FlowAction.BLOCK:
             payload = dict(flow.response_payload or {})
-            context_snapshot = (
-                self._snapshot_context_for_logging(session)
-                if self.nlu_logger.enabled
-                else {}
+            response_key = flow.response_key or "flow_blocked"
+
+            self._apply_session_response(
+                session=session,
+                intent=intent_result.intent,
+                response_key=response_key,
+                response_payload=payload,
             )
 
-            session.last_intent = intent_result.intent
-            session.last_response_key = flow.response_key or "flow_blocked"
-            session.last_response_payload = payload
-            session.turn_count += 1
-
-            if self.nlu_logger.enabled:
-                self._log_nlu_and_turn(
-                    session=session,
-                    state_before=state_before,
-                    context_snapshot=context_snapshot,
-                    nlu=nlu,
-                    result=None,
-                    response_key=flow.response_key or "flow_blocked",
-                )
+            self._log_if_enabled(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                result=None,
+                response_key=response_key,
+            )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self._trace_finalize(
+            self._finalize_trace_and_timing(
                 trace=trace,
                 session=session,
-                response_key=flow.response_key or "flow_blocked",
+                response_key=response_key,
                 total_start_monotonic=t_total_start,
                 total_ms=total_ms,
                 preprocess_ms=t_preprocess * 1000.0,
@@ -258,52 +239,40 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-
-            self._maybe_print_timing(
-                total_ms=total_ms,
-                preprocess_ms=t_preprocess * 1000.0,
-                nlu_ms=t_nlu * 1000.0,
-                flow_ms=t_flow * 1000.0,
-                route_ms=0.0,
-                handler_ms=0.0,
-            )
             return TurnOutput(
-                response_key=flow.response_key or "flow_blocked",
+                response_key=response_key,
                 response_payload=payload,
             )
 
         if flow.action == FlowAction.CANCEL:
-            context_snapshot = (
-                self._snapshot_context_for_logging(session)
-                if self.nlu_logger.enabled
-                else {}
-            )
-
             ctx.awaiting_flow_confirmation = True
             ctx.return_state = session.conversation_state
             ctx.interrupt_proposal = None
 
             session.conversation_state = ConversationState.CANCELLATION_CONFIRMATION
-            session.last_intent = intent_result.intent
-            session.last_response_key = flow.response_key or "flow_guard_confirm_cancel"
-            session.last_response_payload = dict(flow.response_payload or {})
-            session.turn_count += 1
+            response_key = flow.response_key or "flow_guard_confirm_cancel"
+            response_payload = dict(flow.response_payload or {})
 
-            if self.nlu_logger.enabled:
-                self._log_nlu_and_turn(
-                    session=session,
-                    state_before=state_before,
-                    context_snapshot=context_snapshot,
-                    nlu=nlu,
-                    result=None,
-                    response_key=flow.response_key or "flow_guard_confirm_cancel",
-                )
+            self._apply_session_response(
+                session=session,
+                intent=intent_result.intent,
+                response_key=response_key,
+                response_payload=response_payload,
+            )
+
+            self._log_if_enabled(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                result=None,
+                response_key=response_key,
+            )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self._trace_finalize(
+            self._finalize_trace_and_timing(
                 trace=trace,
                 session=session,
-                response_key=flow.response_key or "flow_guard_confirm_cancel",
+                response_key=response_key,
                 total_start_monotonic=t_total_start,
                 total_ms=total_ms,
                 preprocess_ms=t_preprocess * 1000.0,
@@ -312,18 +281,9 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-
-            self._maybe_print_timing(
-                total_ms=total_ms,
-                preprocess_ms=t_preprocess * 1000.0,
-                nlu_ms=t_nlu * 1000.0,
-                flow_ms=t_flow * 1000.0,
-                route_ms=0.0,
-                handler_ms=0.0,
-            )
             return TurnOutput(
-                response_key=flow.response_key or "flow_guard_confirm_cancel",
-                response_payload=dict(flow.response_payload or {}),
+                response_key=response_key,
+                response_payload=response_payload,
             )
 
         if flow.action == FlowAction.HANDLE_READONLY_INTERRUPT:
@@ -336,20 +296,11 @@ class TurnEngine:
             )
             if readonly_output is not None:
                 total_ms = (time.perf_counter() - t_total_start) * 1000.0
-                self._trace_finalize(
+                self._finalize_trace_and_timing(
                     trace=trace,
                     session=session,
                     response_key=readonly_output.response_key,
                     total_start_monotonic=t_total_start,
-                    total_ms=total_ms,
-                    preprocess_ms=t_preprocess * 1000.0,
-                    nlu_ms=t_nlu * 1000.0,
-                    flow_ms=t_flow * 1000.0,
-                    route_ms=0.0,
-                    handler_ms=0.0,
-                )
-
-                self._maybe_print_timing(
                     total_ms=total_ms,
                     preprocess_ms=t_preprocess * 1000.0,
                     nlu_ms=t_nlu * 1000.0,
@@ -385,42 +336,28 @@ class TurnEngine:
                 "state": session.conversation_state.value,
                 "intent": intent_result.intent.value,
             }
-            context_snapshot = (
-                self._snapshot_context_for_logging(session)
-                if self.nlu_logger.enabled
-                else {}
+
+            self._apply_session_response(
+                session=session,
+                intent=intent_result.intent,
+                response_key="intent_not_allowed",
+                response_payload=payload,
             )
 
-            session.last_intent = intent_result.intent
-            session.last_response_key = "intent_not_allowed"
-            session.last_response_payload = payload
-            session.turn_count += 1
-
-            if self.nlu_logger.enabled:
-                self._log_nlu_and_turn(
-                    session=session,
-                    state_before=state_before,
-                    context_snapshot=context_snapshot,
-                    nlu=nlu,
-                    result=None,
-                    response_key="intent_not_allowed",
-                )
+            self._log_if_enabled(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                result=None,
+                response_key="intent_not_allowed",
+            )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self._trace_finalize(
+            self._finalize_trace_and_timing(
                 trace=trace,
                 session=session,
                 response_key="intent_not_allowed",
                 total_start_monotonic=t_total_start,
-                total_ms=total_ms,
-                preprocess_ms=t_preprocess * 1000.0,
-                nlu_ms=t_nlu * 1000.0,
-                flow_ms=t_flow * 1000.0,
-                route_ms=t_route * 1000.0,
-                handler_ms=0.0,
-            )
-
-            self._maybe_print_timing(
                 total_ms=total_ms,
                 preprocess_ms=t_preprocess * 1000.0,
                 nlu_ms=t_nlu * 1000.0,
@@ -436,12 +373,6 @@ class TurnEngine:
         handler = self.handlers.get(route.handler_name)
         if handler is None:
             raise KeyError(f"Handler not registered: {route.handler_name}")
-
-        context_snapshot = (
-            self._snapshot_context_for_logging(session)
-            if self.nlu_logger.enabled
-            else {}
-        )
 
         t0 = time.perf_counter()
         result: HandlerResult = handler.handle(
@@ -459,23 +390,23 @@ class TurnEngine:
             ctx.reset()
 
         session.conversation_state = result.next_state
-        session.last_intent = intent_result.intent
-        session.last_response_key = result.response_key
-        session.last_response_payload = result.response_payload
-        session.turn_count += 1
+        self._apply_session_response(
+            session=session,
+            intent=intent_result.intent,
+            response_key=result.response_key,
+            response_payload=result.response_payload,
+        )
 
-        if self.nlu_logger.enabled:
-            self._log_nlu_and_turn(
-                session=session,
-                state_before=state_before,
-                context_snapshot=context_snapshot,
-                nlu=nlu,
-                result=result,
-                response_key=result.response_key,
-            )
+        self._log_if_enabled(
+            session=session,
+            state_before=state_before,
+            nlu=nlu,
+            result=result,
+            response_key=result.response_key,
+        )
 
         total_ms = (time.perf_counter() - t_total_start) * 1000.0
-        self._trace_finalize(
+        self._finalize_trace_and_timing(
             trace=trace,
             session=session,
             response_key=result.response_key,
@@ -489,20 +420,84 @@ class TurnEngine:
             command=result.command,
         )
 
-        self._maybe_print_timing(
-            total_ms=total_ms,
-            preprocess_ms=t_preprocess * 1000.0,
-            nlu_ms=t_nlu * 1000.0,
-            flow_ms=t_flow * 1000.0,
-            route_ms=t_route * 1000.0,
-            handler_ms=t_handler * 1000.0,
-        )
-
         return TurnOutput(
             response_key=result.response_key,
             response_payload=result.response_payload,
             internal_response_text=getattr(result, "internal_response_text", None),
             spoken_response_text=getattr(result, "spoken_response_text", None),
+        )
+
+    def _apply_session_response(
+        self,
+        *,
+        session: Session,
+        intent: Intent,
+        response_key: str,
+        response_payload: dict[str, Any] | None,
+    ) -> None:
+        session.last_intent = intent
+        session.last_response_key = response_key
+        session.last_response_payload = response_payload
+        session.turn_count += 1
+
+    def _log_if_enabled(
+        self,
+        *,
+        session: Session,
+        state_before: ConversationState,
+        nlu: Any,
+        result: HandlerResult | None,
+        response_key: str,
+    ) -> None:
+        if not self.nlu_logger.enabled:
+            return
+
+        context_snapshot = self._snapshot_context_for_logging(session)
+        self._log_nlu_and_turn(
+            session=session,
+            state_before=state_before,
+            context_snapshot=context_snapshot,
+            nlu=nlu,
+            result=result,
+            response_key=response_key,
+        )
+
+    def _finalize_trace_and_timing(
+        self,
+        *,
+        trace: Any | None,
+        session: Session,
+        response_key: str,
+        total_start_monotonic: float,
+        total_ms: float,
+        preprocess_ms: float,
+        nlu_ms: float,
+        flow_ms: float,
+        route_ms: float,
+        handler_ms: float,
+        command: dict[str, Any] | None = None,
+    ) -> None:
+        self._trace_finalize(
+            trace=trace,
+            session=session,
+            response_key=response_key,
+            total_start_monotonic=total_start_monotonic,
+            total_ms=total_ms,
+            preprocess_ms=preprocess_ms,
+            nlu_ms=nlu_ms,
+            flow_ms=flow_ms,
+            route_ms=route_ms,
+            handler_ms=handler_ms,
+            command=command,
+        )
+
+        self._maybe_print_timing(
+            total_ms=total_ms,
+            preprocess_ms=preprocess_ms,
+            nlu_ms=nlu_ms,
+            flow_ms=flow_ms,
+            route_ms=route_ms,
+            handler_ms=handler_ms,
         )
 
     def _maybe_print_timing(
@@ -631,6 +626,7 @@ class TurnEngine:
     def _readonly_interrupt_handler_name(self, intent: Intent) -> str | None:
         if intent == Intent.ASK_PRICE:
             return "ask_price_handler"
+
         if intent in {
             Intent.ASK_ITEM_INFO,
             Intent.ASK_MENU_INFO,
@@ -642,8 +638,10 @@ class TurnEngine:
             Intent.SHOW_MENU,
         }:
             return "ask_menu_info_handler"
+
         if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
             return "cart_handler"
+
         return None
 
     def _apply_command(self, session: Session, command: dict[str, Any]) -> None:

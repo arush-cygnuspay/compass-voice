@@ -33,7 +33,29 @@ class DeepgramSTTConfig:
     utterance_end_ms: int = 1000
     keepalive_interval_seconds: float = 4.0
 
+    def _is_flux_model(self) -> bool:
+        return self.model.startswith("flux")
+
     def websocket_url(self) -> str:
+        """
+        Build the correct Deepgram streaming websocket URL.
+
+        Deepgram currently uses:
+        - v1/listen for Nova-3
+        - v2/listen for Flux
+        """
+        if self._is_flux_model():
+            params = {
+                "model": self.model,
+                "encoding": self.encoding,
+                "sample_rate": str(self.sample_rate),
+            }
+
+            if self.language:
+                params["language"] = self.language
+
+            return f"wss://api.deepgram.com/v2/listen?{urlencode(params)}"
+
         params = {
             "model": self.model,
             "language": self.language,
@@ -59,12 +81,12 @@ class DeepgramSTTCallbacks:
 
 class DeepgramSTTClient:
     """
-    Direct WebSocket client for Deepgram Nova streaming STT.
+    Direct WebSocket client for Deepgram streaming STT.
 
     Why direct WS here:
     - avoids SDK version/signature issues
-    - uses documented /v1/listen query params directly
-    - easier to debug 400 errors and raw server responses
+    - uses documented listen endpoints directly
+    - easier to debug 400 handshake errors and raw server responses
     """
 
     def __init__(
@@ -86,28 +108,37 @@ class DeepgramSTTClient:
             return
 
         load_dotenv()
-        api_key = os.getenv("DEEPGRAM_API_KEY", "416dca8bd948ca8dcb5d81a5cb6b52d160cfd4bf").strip()
+        api_key = os.getenv(
+            "DEEPGRAM_API_KEY",
+            "416dca8bd948ca8dcb5d81a5cb6b52d160cfd4bf",
+        ).strip()
         if not api_key:
             raise RuntimeError("DEEPGRAM_API_KEY is not set in environment or .env file.")
 
         ws_url = self.config.websocket_url()
 
-        self._ws = await connect(
-            ws_url,
-            additional_headers={
-                "Authorization": f"Token {api_key}",
-            },
-            max_size=None,
-        )
+        try:
+            self._ws = await connect(
+                ws_url,
+                additional_headers={
+                    "Authorization": f"Token {api_key}",
+                },
+                max_size=None,
+            )
+        except Exception as exc:
+            raise RuntimeError(
+                "Failed to connect to Deepgram STT websocket. "
+                f"url={ws_url} error={type(exc).__name__}: {exc}"
+            ) from exc
 
         self._started = True
         self._closed = False
         self._last_audio_at = time.monotonic()
 
-        self._recv_task = asyncio.create_task(self._recv_loop(), name="deepgram-recv")
+        self._recv_task = asyncio.create_task(self._recv_loop(), name="deepgram-stt-recv")
         self._keepalive_task = asyncio.create_task(
             self._keepalive_loop(),
-            name="deepgram-keepalive",
+            name="deepgram-stt-keepalive",
         )
 
     async def _emit_event(self, name: str, payload: dict) -> None:
@@ -143,7 +174,6 @@ class DeepgramSTTClient:
                 transcript = ""
                 is_final = False
 
-                # Nova /v1/listen Results shape
                 if msg_type == "Results":
                     channel = payload.get("channel", {})
                     alternatives = channel.get("alternatives", [])
@@ -175,7 +205,6 @@ class DeepgramSTTClient:
             idle_for = time.monotonic() - self._last_audio_at
             if idle_for >= self.config.keepalive_interval_seconds:
                 try:
-                    # Deepgram expects KeepAlive as a TEXT frame containing JSON.
                     await self._ws.send(json.dumps({"type": "KeepAlive"}))
                 except Exception:
                     return
@@ -184,8 +213,14 @@ class DeepgramSTTClient:
         if not audio_bytes or self._ws is None or self._closed:
             return
 
-        await self._ws.send(audio_bytes)
-        self._last_audio_at = time.monotonic()
+        try:
+            await self._ws.send(audio_bytes)
+            self._last_audio_at = time.monotonic()
+        except Exception as exc:
+            await self._emit_error(
+                "send_audio_exception",
+                {"error": f"{type(exc).__name__}: {exc}"},
+            )
 
     async def finalize(self) -> None:
         if self._ws is None or self._closed:

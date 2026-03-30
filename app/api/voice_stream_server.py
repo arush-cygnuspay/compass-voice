@@ -5,14 +5,16 @@ import asyncio
 import base64
 import json
 import os
+import re
 import time
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, AsyncGenerator, Callable
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from twilio.twiml.voice_response import Connect, VoiceResponse
 
 from app.api.chat_demo import router as test_chat_router
@@ -48,8 +50,14 @@ TWILIO_BURST_BYTES = TWILIO_MULAW_FRAME_BYTES * TWILIO_BURST_FRAMES
 TWILIO_BURST_PACING_SECONDS = TWILIO_FRAME_DURATION_SECONDS * TWILIO_BURST_FRAMES
 
 VOICE_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_DEBUG_ENABLED", "0") == "1"
-VOICE_TRANSCRIPT_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_TRANSCRIPT_DEBUG_ENABLED", "0") == "1"
-VOICE_MEDIA_PROGRESS_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_MEDIA_PROGRESS_DEBUG_ENABLED", "0") == "1"
+VOICE_TRANSCRIPT_DEBUG_ENABLED = os.getenv(
+    "COMPASS_VOICE_TRANSCRIPT_DEBUG_ENABLED",
+    "0",
+) == "1"
+VOICE_MEDIA_PROGRESS_DEBUG_ENABLED = os.getenv(
+    "COMPASS_VOICE_MEDIA_PROGRESS_DEBUG_ENABLED",
+    "0",
+) == "1"
 
 
 def _debug_log(event: str, payload: dict[str, Any]) -> None:
@@ -68,6 +76,36 @@ def _debug_media_log(event: str, payload: dict[str, Any]) -> None:
     if not VOICE_MEDIA_PROGRESS_DEBUG_ENABLED:
         return
     print(event, payload)
+
+
+def _normalize_response_text(text: str | None) -> str:
+    return " ".join((text or "").split()).strip()
+
+
+def _split_for_progressive_tts(text: str) -> list[str]:
+    """
+    Split spoken text into natural chunks for progressive TTS.
+    Prefer sentence or clause boundaries.
+    """
+    cleaned = _normalize_response_text(text)
+    if not cleaned:
+        return []
+
+    sentence_parts = re.split(r"(?<=[.!?])\s+", cleaned)
+    sentence_parts = [part.strip() for part in sentence_parts if part.strip()]
+    if len(sentence_parts) > 1:
+        return sentence_parts
+
+    clause_parts = re.split(
+        r"(?<=,)\s+|\s+(?=but\s|and\s|then\s|so\s)",
+        cleaned,
+        flags=re.IGNORECASE,
+    )
+    clause_parts = [part.strip() for part in clause_parts if part.strip()]
+    if len(clause_parts) > 1:
+        return clause_parts
+
+    return [cleaned]
 
 
 @dataclass(slots=True)
@@ -110,7 +148,11 @@ def _safe_session_id(session: Session | None) -> str:
     return ""
 
 
-def _trace_set_attr(trace: RealtimeTurnTrace | None, attr_name: str, value: Any) -> None:
+def _trace_set_attr(
+    trace: RealtimeTurnTrace | None,
+    attr_name: str,
+    value: Any,
+) -> None:
     if trace is None:
         return
     try:
@@ -166,6 +208,7 @@ def _finalize_active_trace(
     app: FastAPI,
     stream_session: StreamSession,
     extra_notes: dict[str, Any] | None = None,
+    reset_utterance_tracking: bool = True,
 ) -> None:
     trace = stream_session.active_trace
     if trace is None:
@@ -188,7 +231,8 @@ def _finalize_active_trace(
     finally:
         stream_session.active_trace = None
         stream_session.active_trace_mark_name = None
-        _reset_utterance_tracking(stream_session)
+        if reset_utterance_tracking:
+            _reset_utterance_tracking(stream_session)
 
 
 @asynccontextmanager
@@ -229,6 +273,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(lifespan=lifespan)
+app.mount("/static", StaticFiles(directory="app/static", check_dir=False), name="static")
 
 app.include_router(test_chat_router)
 app.include_router(ui_router)
@@ -261,6 +306,41 @@ def _build_stream_url(request: Request) -> str:
     return f"wss://{host}/ws/twilio-media"
 
 
+def _build_public_http_base_url(request: Request) -> str:
+    explicit_public_base = os.getenv("PUBLIC_HTTP_BASE_URL", "").strip()
+    if explicit_public_base:
+        return explicit_public_base.rstrip("/")
+
+    explicit_wss_base = os.getenv("PUBLIC_WSS_BASE_URL", "").strip()
+    if explicit_wss_base:
+        base = explicit_wss_base.rstrip("/")
+        if base.startswith("wss://"):
+            return "https://" + base[len("wss://") :]
+        if base.startswith("ws://"):
+            return "http://" + base[len("ws://") :]
+        if base.startswith(("https://", "http://")):
+            return base
+
+    host = request.headers.get("host", "").strip()
+    if not host:
+        raise ValueError("Missing Host header; cannot build public HTTP base URL.")
+
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").strip().lower()
+    if forwarded_proto == "http":
+        return f"http://{host}"
+
+    return f"https://{host}"
+
+
+def _build_welcome_audio_url(request: Request) -> str:
+    explicit_audio_url = os.getenv("COMPASS_WELCOME_AUDIO_URL", "").strip()
+    if explicit_audio_url:
+        return explicit_audio_url
+
+    public_base = _build_public_http_base_url(request)
+    return f"{public_base}/static/audio/compass_welcome_ulaw_8k_1x.wav"
+
+
 @app.post("/voice")
 async def voice(request: Request):
     form = await request.form()
@@ -269,6 +349,7 @@ async def voice(request: Request):
     to_number = form.get("To", "")
 
     stream_url = _build_stream_url(request)
+    welcome_audio_url = _build_welcome_audio_url(request)
 
     print(
         "[CALL START]",
@@ -277,17 +358,15 @@ async def voice(request: Request):
             "from": from_number,
             "to": to_number,
             "stream_url": stream_url,
+            "welcome_audio_url": welcome_audio_url,
         },
     )
 
     vr = VoiceResponse()
-    vr.say("Thank you for calling Compass. What would you like to order today?")
+    vr.play(welcome_audio_url)
 
     connect = Connect()
-    connect.stream(
-        url=stream_url,
-        name="compass-voice-stream",
-    )
+    connect.stream(url=stream_url, name="compass-voice-stream")
     vr.append(connect)
 
     return Response(content=str(vr), media_type="application/xml")
@@ -314,8 +393,9 @@ async def twilio_media_ws(websocket: WebSocket):
     mark_counter = 0
 
     bot_playback_started_at: float | None = None
-    bot_barge_in_guard_seconds = 1.0
-    disable_barge_in = True
+    bot_barge_in_guard_seconds = 0.35
+    disable_barge_in = False
+    playback_generation = 0
 
     async def send_twilio_media(
         audio_bytes: bytes,
@@ -328,9 +408,7 @@ async def twilio_media_ws(websocket: WebSocket):
         message = {
             "event": "media",
             "streamSid": stream_session.stream_sid,
-            "media": {
-                "payload": payload_b64,
-            },
+            "media": {"payload": payload_b64},
         }
         await websocket.send_text(json.dumps(message))
 
@@ -377,6 +455,50 @@ async def twilio_media_ws(websocket: WebSocket):
         }
         await websocket.send_text(json.dumps(message))
 
+    async def _interrupt_bot_playback(reason: str) -> None:
+        nonlocal phase, active_mark_name, bot_playback_started_at, playback_generation
+
+        if phase != RealtimePhase.SPEAKING:
+            return
+
+        _debug_log(
+            "[BOT PLAYBACK INTERRUPT]",
+            {
+                "stream_sid": stream_session.stream_sid,
+                "reason": reason,
+                "active_mark_name": active_mark_name,
+            },
+        )
+
+        playback_generation += 1
+
+        await send_twilio_clear()
+
+        try:
+            await dg_tts_client.clear()
+        except Exception as exc:
+            _debug_log(
+                "[DEEPGRAM TTS CLEAR ERROR]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+
+        if stream_session.active_trace is not None:
+            _trace_add_note(stream_session.active_trace, "barge_in", True)
+            _trace_add_note(stream_session.active_trace, "barge_in_reason", reason)
+            _trace_add_note(
+                stream_session.active_trace,
+                "barge_in_active_mark_name",
+                active_mark_name,
+            )
+
+        active_mark_name = None
+        stream_session.active_trace_mark_name = None
+        bot_playback_started_at = None
+        phase = RealtimePhase.LISTENING
+
     async def _send_burst_frames(
         burst_bytes: bytes,
         trace: RealtimeTurnTrace | None = None,
@@ -393,13 +515,18 @@ async def twilio_media_ws(websocket: WebSocket):
         return sent
 
     async def stream_audio_to_twilio(
-        audio_chunk_stream,
+        audio_chunk_stream: AsyncGenerator[bytes, None],
         trace: RealtimeTurnTrace | None = None,
+        should_abort: Callable[[], bool] | None = None,
     ) -> int:
         buffered = bytearray()
         total_bytes_sent = 0
 
         async for tts_chunk in audio_chunk_stream:
+            if should_abort and should_abort():
+                buffered.clear()
+                break
+
             if not tts_chunk:
                 continue
 
@@ -412,11 +539,18 @@ async def twilio_media_ws(websocket: WebSocket):
             buffered.extend(tts_chunk)
 
             while len(buffered) >= TWILIO_BURST_BYTES:
+                if should_abort and should_abort():
+                    buffered.clear()
+                    return total_bytes_sent
+
                 burst = bytes(buffered[:TWILIO_BURST_BYTES])
                 del buffered[:TWILIO_BURST_BYTES]
 
                 total_bytes_sent += await _send_burst_frames(burst, trace=trace)
                 await asyncio.sleep(TWILIO_BURST_PACING_SECONDS)
+
+        if should_abort and should_abort():
+            return total_bytes_sent
 
         remaining_full_frame_bytes = (
             len(buffered) // TWILIO_MULAW_FRAME_BYTES
@@ -436,9 +570,44 @@ async def twilio_media_ws(websocket: WebSocket):
 
         return total_bytes_sent
 
+    async def _stream_progressive_tts_text(
+        spoken_text: str,
+        trace: RealtimeTurnTrace | None = None,
+        generation: int = 0,
+    ) -> int:
+        """
+        Send text to Deepgram in progressive chunks, flush once at end,
+        and stream resulting audio to Twilio as it arrives.
+        """
+        chunks = _split_for_progressive_tts(spoken_text)
+        if not chunks:
+            return 0
 
-    def _normalize_response_text(text: str | None) -> str:
-        return " ".join((text or "").split()).strip()
+        if trace is not None:
+            _trace_add_note(trace, "tts_progressive_chunks", chunks)
+            _trace_add_note(trace, "tts_progressive_chunk_count", len(chunks))
+
+        async def audio_stream() -> AsyncGenerator[bytes, None]:
+            for chunk in chunks:
+                if generation != playback_generation:
+                    return
+                await dg_tts_client.send_text(chunk)
+
+            if generation != playback_generation:
+                return
+
+            await dg_tts_client.flush()
+
+            async for audio in dg_tts_client.iter_audio_until_flushed():
+                if generation != playback_generation:
+                    return
+                yield audio
+
+        return await stream_audio_to_twilio(
+            audio_stream(),
+            trace=trace,
+            should_abort=lambda: generation != playback_generation,
+        )
 
     def _compact_spoken_response(response_key: str, text: str) -> str:
         compact_map = {
@@ -482,7 +651,7 @@ async def twilio_media_ws(websocket: WebSocket):
         spoken_text: str,
         trace: RealtimeTurnTrace | None = None,
     ) -> None:
-        nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at
+        nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at, playback_generation
 
         cleaned = _normalize_response_text(spoken_text)
         if not cleaned:
@@ -491,16 +660,29 @@ async def twilio_media_ws(websocket: WebSocket):
 
         phase = RealtimePhase.SPEAKING
         bot_playback_started_at = time.monotonic()
+        playback_generation += 1
+        generation = playback_generation
 
         if trace is not None:
             _trace_set_attr(trace, "spoken_response_text", cleaned)
             _trace_set_attr(trace, "tts_text_chars", len(cleaned))
             _trace_set_attr(trace, "tts_request_start_monotonic", time.perf_counter())
 
-        streamed_bytes = await stream_audio_to_twilio(
-            dg_tts_client.stream_mulaw_8k(cleaned),
+        streamed_bytes = await _stream_progressive_tts_text(
+            cleaned,
             trace=trace,
+            generation=generation,
         )
+
+        if generation != playback_generation:
+            _debug_log(
+                "[TTS PLAYBACK ABORTED]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "generation": generation,
+                },
+            )
+            return
 
         if streamed_bytes <= 0:
             print(
@@ -535,6 +717,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 "mark_name": active_mark_name,
                 "barge_in_disabled": disable_barge_in,
                 "burst_frames": TWILIO_BURST_FRAMES,
+                "generation": generation,
             },
         )
 
@@ -562,6 +745,14 @@ async def twilio_media_ws(websocket: WebSocket):
         async with processing_lock:
             phase = RealtimePhase.PROCESSING
             stream_session.turn_index += 1
+
+            if stream_session.active_trace is not None:
+                _finalize_active_trace(
+                    app=app,
+                    stream_session=stream_session,
+                    extra_notes={"interrupted_before_mark": True},
+                    reset_utterance_tracking=False,
+                )
 
             trace = _build_turn_trace(
                 stream_session=stream_session,
@@ -635,7 +826,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 await process_committed_turn(committed.text)
 
     async def on_dg_event(name: str, payload: dict) -> None:
-        nonlocal phase, active_mark_name, bot_playback_started_at
+        nonlocal phase, bot_playback_started_at
 
         _debug_log(
             "[DEEPGRAM EVENT]",
@@ -661,7 +852,7 @@ async def twilio_media_ws(websocket: WebSocket):
                         "[BARGE_IN IGNORED]",
                         {
                             "stream_sid": stream_session.stream_sid,
-                            "reason": "disabled_for_playback_verification",
+                            "reason": "disabled",
                         },
                     )
                     return
@@ -684,27 +875,7 @@ async def twilio_media_ws(websocket: WebSocket):
                     )
                     return
 
-                _debug_log(
-                    "[BARGE_IN]",
-                    {
-                        "stream_sid": stream_session.stream_sid,
-                        "active_mark_name": active_mark_name,
-                    },
-                )
-                await send_twilio_clear()
-
-                if stream_session.active_trace is not None:
-                    _trace_add_note(stream_session.active_trace, "barge_in", True)
-                    _trace_add_note(
-                        stream_session.active_trace,
-                        "barge_in_active_mark_name",
-                        active_mark_name,
-                    )
-
-                active_mark_name = None
-                stream_session.active_trace_mark_name = None
-                bot_playback_started_at = None
-                phase = RealtimePhase.LISTENING
+                await _interrupt_bot_playback(reason="user_speech_started")
 
             elif phase == RealtimePhase.PROCESSING:
                 _debug_log(
@@ -730,8 +901,16 @@ async def twilio_media_ws(websocket: WebSocket):
         )
 
         if stream_session.active_trace is not None:
-            _trace_add_note(stream_session.active_trace, "deepgram_error_event", name)
-            _trace_add_note(stream_session.active_trace, "deepgram_error_payload", payload)
+            _trace_add_note(
+                trace=stream_session.active_trace,
+                key="deepgram_error_event",
+                value=name,
+            )
+            _trace_add_note(
+                trace=stream_session.active_trace,
+                key="deepgram_error_payload",
+                value=payload,
+            )
 
     print("[WS OPEN] Twilio media WebSocket connected")
 
@@ -775,8 +954,8 @@ async def twilio_media_ws(websocket: WebSocket):
                         smart_format=True,
                         punctuate=True,
                         vad_events=True,
-                        endpointing=300,
-                        utterance_end_ms=1000,
+                        endpointing=160,
+                        # utterance_end_ms=550,
                         keepalive_interval_seconds=4.0,
                     ),
                     callbacks=DeepgramSTTCallbacks(
@@ -786,16 +965,41 @@ async def twilio_media_ws(websocket: WebSocket):
                     ),
                 )
 
-                await dg_stt_client.start()
-                dg_stt_started = True
+                try:
+                    await dg_stt_client.start()
+                    dg_stt_started = True
 
-                print(
-                    "[DEEPGRAM CONNECTED]",
-                    {
-                        "stream_sid": stream_session.stream_sid,
-                        "url": dg_stt_client.config.websocket_url(),
-                    },
-                )
+                    print(
+                        "[DEEPGRAM STT CONNECTED]",
+                        {
+                            "stream_sid": stream_session.stream_sid,
+                        },
+                    )
+                except Exception as exc:
+                    print(
+                        "[DEEPGRAM STT CONNECT FAILED]",
+                        {
+                            "stream_sid": stream_session.stream_sid,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        },
+                    )
+
+                try:
+                    await dg_tts_client.connect()
+                    print(
+                        "[DEEPGRAM TTS CONNECTED]",
+                        {
+                            "stream_sid": stream_session.stream_sid,
+                        },
+                    )
+                except Exception as exc:
+                    print(
+                        "[DEEPGRAM TTS CONNECT FAILED]",
+                        {
+                            "stream_sid": stream_session.stream_sid,
+                            "error": f"{type(exc).__name__}: {exc}",
+                        },
+                    )
 
             elif event == "media":
                 media = raw_message.get("media", {})
@@ -950,6 +1154,7 @@ async def twilio_media_ws(websocket: WebSocket):
     finally:
         if dg_stt_client is not None:
             await dg_stt_client.close()
+        await dg_tts_client.close()
 
 
 if __name__ == "__main__":

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
-from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
 from app.state_machine.conversation_context import (
@@ -75,6 +74,21 @@ def _looks_like_pure_size_answer(
     normalized_user_text: str,
     normalized_choice_names: tuple[str, ...],
 ) -> bool:
+    """
+    Conservative direct-answer detector for size selection.
+
+    Accept:
+    - small
+    - large please
+    - make it medium
+    - i want small
+
+    Reject:
+    - how much is small
+    - show menu
+    - checkout
+    - add burger
+    """
     if not normalized_user_text:
         return False
 
@@ -98,6 +112,13 @@ def _looks_like_pure_size_answer(
         "to",
         "have",
         "my",
+        "um",
+        "uh",
+        "okay",
+        "ok",
+        "ill",
+        "get",
+        "take",
     }
     blocked_phrases = {
         "how much",
@@ -116,6 +137,12 @@ def _looks_like_pure_size_answer(
         "finish order",
         "pay now",
         "payment",
+        "add another",
+        "add item",
+        "remove",
+        "change",
+        "modify",
+        "instead",
     }
 
     if any(phrase in normalized_user_text for phrase in blocked_phrases):
@@ -143,7 +170,7 @@ class WaitingForSizeHandler(BaseHandler):
     Important:
     - waiting state owns the turn
     - size resolution is slot-first, then direct-text fallback
-    - accepts short natural answers like 'small' and mixed answers like 'add small coke'
+    - accepts short natural answers like 'small' and mixed answers like 'make it large'
     """
 
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
@@ -171,21 +198,6 @@ class WaitingForSizeHandler(BaseHandler):
         available_sizes = list(pending.item_variant_names)
         choices_by_normalized_name = pending.item_variants_by_normalized_name
         normalized_choice_names = tuple(choices_by_normalized_name.keys())
-
-        print(
-            "[WAITING_FOR_SIZE_DEBUG]",
-            {
-                "user_text": user_text,
-                "normalized_user_text": normalized_user_text,
-                "last_slots": [
-                    {"name": str(slot.name), "value": slot.value}
-                    for slot in (context.last_slots or ())
-                ],
-                "variant_names": list(pending.item_variant_names),
-                "variant_keys": list(pending.item_variants_by_normalized_name.keys()),
-                "selected_variant_id_before": context.selected_variant_id,
-            },
-        )
 
         if intent == Intent.DENY:
             return HandlerResult(
@@ -267,13 +279,11 @@ class WaitingForSizeHandler(BaseHandler):
             allow_split=True,
         )
 
-        # exact first
         for candidate in candidate_texts:
             matched = choices_by_normalized_name.get(candidate)
             if matched is not None:
                 return matched
 
-        # then short containment fallback
         for candidate in candidate_texts:
             if len(candidate) < 3:
                 continue

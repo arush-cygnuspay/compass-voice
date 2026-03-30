@@ -3,13 +3,11 @@ from __future__ import annotations
 
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
-from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
 from app.state_machine.conversation_context import (
     ConversationContext,
     InterruptProposal,
-    PendingSideChoice,
     PendingVariantChoice,
 )
 from app.state_machine.conversation_state import ConversationState
@@ -41,7 +39,13 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
 }
 
 
-def _first_size_slot_normalized(slots: list[SlotValue] | tuple[SlotValue, ...]) -> str | None:
+def _first_size_slot_normalized(slots) -> str | None:
+    """
+    Extract the first normalized size slot value.
+
+    Keep this tolerant because slot models may emit slightly different
+    slot structures across runs.
+    """
     for slot in slots:
         if str(slot.name).lower() != "size":
             continue
@@ -63,13 +67,40 @@ def _match_variant_value_normalized(
 ) -> PendingVariantChoice | None:
     if not normalized_value:
         return None
-    return choices_by_normalized_name.get(normalized_value)
+
+    exact = choices_by_normalized_name.get(normalized_value)
+    if exact is not None:
+        return exact
+
+    if len(normalized_value) < 3:
+        return None
+
+    for choice_name, choice in choices_by_normalized_name.items():
+        if normalized_value in choice_name or choice_name in normalized_value:
+            return choice
+
+    return None
 
 
 def _looks_like_pure_size_answer(
     normalized_user_text: str,
     normalized_choice_names: tuple[str, ...],
 ) -> bool:
+    """
+    Conservative direct-answer detector for side size selection.
+
+    Accept:
+    - small
+    - medium please
+    - i want large
+    - make it small
+
+    Reject:
+    - how much is small
+    - add fries
+    - show menu
+    - checkout
+    """
     if not normalized_user_text:
         return False
 
@@ -84,6 +115,22 @@ def _looks_like_pure_size_answer(
         "thanks",
         "thank",
         "you",
+        "um",
+        "uh",
+        "okay",
+        "ok",
+        "ill",
+        "i",
+        "want",
+        "would",
+        "like",
+        "to",
+        "have",
+        "my",
+        "make",
+        "it",
+        "get",
+        "take",
     }
     blocked_phrases = {
         "how much",
@@ -93,11 +140,13 @@ def _looks_like_pure_size_answer(
         "show",
         "menu",
         "checkout",
+        "check out",
         "cart",
         "total",
         "remove",
         "change",
         "modify",
+        "instead",
     }
 
     if any(phrase in normalized_user_text for phrase in blocked_phrases):
@@ -108,14 +157,26 @@ def _looks_like_pure_size_answer(
     if not compact:
         return False
 
+    if compact in normalized_choice_names:
+        return True
+
     for choice_name in normalized_choice_names:
-        if choice_name == compact:
+        if len(compact) >= 3 and (compact in choice_name or choice_name in compact):
             return True
 
     return False
 
 
 class WaitingForSideSizeHandler(BaseHandler):
+    """
+    Resolve the size / variant for the currently selected side item.
+
+    Important:
+    - waiting state owns the turn
+    - size resolution is slot-first, then direct-text fallback
+    - only sizes for the active pending side item may match
+    """
+
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
         self.menu_repo = menu_repo
 
@@ -144,20 +205,13 @@ class WaitingForSideSizeHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        if side_choice.pricing_mode != "variant":
-            self._clear_pending_side_size(context)
-            step = determine_next_add_item_step(context)
-            return self._step_to_result(context, step)
-
-        if not side_choice.variants:
+        if side_choice.pricing_mode != "variant" or not side_choice.variants:
             self._clear_pending_side_size(context)
             step = determine_next_add_item_step(context)
             return self._step_to_result(context, step)
 
         available_sizes = list(side_choice.variant_names)
-        normalized_choice_names = tuple(
-            side_choice.variants_by_normalized_name.keys()
-        )
+        normalized_choice_names = tuple(side_choice.variants_by_normalized_name.keys())
 
         if intent == Intent.DENY:
             return HandlerResult(
@@ -190,6 +244,7 @@ class WaitingForSideSizeHandler(BaseHandler):
             if matched is not None:
                 context.selected_side_variants[side_choice.item_id] = matched.variant_id
                 self._clear_pending_side_size(context)
+
                 step = determine_next_add_item_step(context)
                 return self._step_to_result(context, step)
 
@@ -215,6 +270,7 @@ class WaitingForSideSizeHandler(BaseHandler):
             if matched is not None:
                 context.selected_side_variants[side_choice.item_id] = matched.variant_id
                 self._clear_pending_side_size(context)
+
                 step = determine_next_add_item_step(context)
                 return self._step_to_result(context, step)
 
@@ -232,6 +288,13 @@ class WaitingForSideSizeHandler(BaseHandler):
         context.pending_side_item_id = None
         context.pending_side_item_name = None
         context.pending_side_group_id = None
+
+        if context.current_prompt_field == "side_size":
+            context.current_prompt_field = None
+
+        if context.available_choices_kind == "side_size":
+            context.available_choices_kind = None
+            context.available_choices_values = ()
 
     def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
         pending = context.pending_add_item
