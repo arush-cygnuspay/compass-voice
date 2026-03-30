@@ -1,11 +1,12 @@
+# app/state_machine/handlers/common/waiting_for_quantity_handler.py
 from __future__ import annotations
 
-from app.session.session import Session
-from app.state_machine.handlers.base_handler import BaseHandler
-from app.state_machine.handler_result import HandlerResult
-from app.state_machine.conversation_state import ConversationState
-from app.state_machine.conversation_context import ConversationContext, InterruptProposal
 from app.nlu.intent_resolution.intent import Intent
+from app.session.session import Session
+from app.state_machine.conversation_context import ConversationContext, InterruptProposal
+from app.state_machine.conversation_state import ConversationState
+from app.state_machine.handler_result import HandlerResult
+from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,
@@ -34,14 +35,15 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
 
 class WaitingForQuantityHandler(BaseHandler):
     """
-    Global quantity handler.
+    Resolve quantity while the add-item flow is waiting for it.
 
     Rules:
-    - in WAITING_FOR_QUANTITY, prefer the already-resolved QUANTITY slot
+    - prefer the already-resolved QUANTITY slot when available
     - fallback to text-based quantity detection
-    - quantity answers like "2" / "3" should be accepted even if the model intent
-      is UNKNOWN or something noisy like change_quantity
-    - after quantity is set, continue canonical add-item flow
+    - accept short direct answers like "2" or "three"
+    - if quantity is resolved, continue canonical add-item flow immediately
+    - if quantity is not resolved and the user tries a different flow-level action,
+      route through cancellation confirmation
     """
 
     def handle(
@@ -59,9 +61,8 @@ class WaitingForQuantityHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        # --------------------------------------------------
-        # 1) Explicit cancel
-        # --------------------------------------------------
+        normalized_user_text = (user_text or "").strip()
+
         if intent == Intent.CANCEL:
             context.reset()
             return HandlerResult(
@@ -69,9 +70,6 @@ class WaitingForQuantityHandler(BaseHandler):
                 response_key="item_cancelled_successfully",
             )
 
-        # --------------------------------------------------
-        # 2) Ask options is not meaningful for quantity
-        # --------------------------------------------------
         if intent == Intent.ASK_OPTIONS:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_QUANTITY,
@@ -79,13 +77,9 @@ class WaitingForQuantityHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        # --------------------------------------------------
-        # 3) New off-flow request while waiting for quantity
-        #    Only do this if we failed to extract a valid quantity below.
-        # --------------------------------------------------
         extracted_quantity = self._extract_quantity_from_context_or_text(
             context=context,
-            user_text=user_text,
+            user_text=normalized_user_text,
         )
 
         if extracted_quantity is not None:
@@ -98,6 +92,13 @@ class WaitingForQuantityHandler(BaseHandler):
 
             context.quantity = extracted_quantity
 
+            if context.current_prompt_field == "quantity":
+                context.current_prompt_field = None
+
+            if context.available_choices_kind == "quantity":
+                context.available_choices_kind = None
+                context.available_choices_values = ()
+
             step = determine_next_add_item_step(context)
             return self._step_to_result(context, step)
 
@@ -105,7 +106,7 @@ class WaitingForQuantityHandler(BaseHandler):
             context.awaiting_flow_confirmation = True
             context.return_state = ConversationState.WAITING_FOR_QUANTITY
             context.interrupt_proposal = InterruptProposal(
-                text=user_text,
+                text=normalized_user_text,
                 predicted_main_intent=None,
                 predicted_sub_intent=intent.value,
             )
@@ -116,9 +117,6 @@ class WaitingForQuantityHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        # --------------------------------------------------
-        # 4) Still unresolved
-        # --------------------------------------------------
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_QUANTITY,
             response_key="invalid_quantity_option",
@@ -131,7 +129,6 @@ class WaitingForQuantityHandler(BaseHandler):
         context: ConversationContext,
         user_text: str,
     ) -> int | None:
-        # 1) Prefer NLU slot already resolved for this waiting state
         slots = getattr(context, "last_slots", ()) or ()
         for slot in slots:
             slot_name = str(getattr(slot, "name", "")).upper()
@@ -144,11 +141,10 @@ class WaitingForQuantityHandler(BaseHandler):
                 return value
 
             if isinstance(value, str):
-                value = value.strip()
-                if value.isdigit():
-                    return int(value)
+                stripped = value.strip()
+                if stripped.isdigit():
+                    return int(stripped)
 
-        # 2) Fallback to text parser
         quantity_info = detect_quantity(user_text)
         if not quantity_info:
             return None

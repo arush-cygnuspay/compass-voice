@@ -3,12 +3,12 @@
 
 def render_cart_summary(payload: dict) -> str:
     items = payload.get("items", [])
+    total = payload.get("total")
 
     if not items:
         return "Your cart is empty."
 
     count = len(items)
-    total = payload.get("total")
 
     if count == 1:
         item = items[0]
@@ -16,12 +16,11 @@ def render_cart_summary(payload: dict) -> str:
         name = item.get("name", "item")
 
         if total:
-            return f"You have {quantity} {name}. Total {total}. Add more or check out?"
-
-        return f"You have {quantity} {name}. Add more or check out?"
+            return f"You have {quantity} {name}. Total {total}. Would you like to add more or check out?"
+        return f"You have {quantity} {name}. Would you like to add more or check out?"
 
     if total:
-        return f"You have {count} items. Total {total}. Add more or check out?"
+        return f"You have {count} items. Total {total}. Would you like to add more or check out?"
 
     return f"You have {count} items. What would you like next?"
 

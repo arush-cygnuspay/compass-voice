@@ -70,7 +70,7 @@ def _looks_like_pure_side_answer(
     normalized_choice_names: tuple[str, ...],
 ) -> bool:
     """
-    Conservative detector for direct side answers only.
+    Conservative direct-answer detector for side selection.
 
     Accept:
     - fries
@@ -100,6 +100,18 @@ def _looks_like_pure_side_answer(
         "thank",
         "you",
         "and",
+        "um",
+        "uh",
+        "okay",
+        "ok",
+        "ill",
+        "i",
+        "want",
+        "take",
+        "have",
+        "get",
+        "like",
+        "would",
     }
 
     blocked_phrases = {
@@ -115,6 +127,7 @@ def _looks_like_pure_side_answer(
         "remove",
         "change",
         "modify",
+        "instead",
     }
 
     if any(phrase in normalized_user_text for phrase in blocked_phrases):
@@ -171,8 +184,6 @@ class WaitingForSideHandler(BaseHandler):
             return self._step_to_result(context, step)
 
         group = groups[idx]
-        choices = group.choices
-        normalized_choice_names = group.normalized_choice_names
 
         if intent == Intent.ASK_OPTIONS:
             return HandlerResult(
@@ -206,7 +217,6 @@ class WaitingForSideHandler(BaseHandler):
                     context=context,
                     pending_item_name=pending.item_name,
                     group=group,
-                    choices=choices,
                     matched_ids=matched_ids,
                 )
 
@@ -225,7 +235,7 @@ class WaitingForSideHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        if _looks_like_pure_side_answer(normalized_user_text, normalized_choice_names):
+        if _looks_like_pure_side_answer(normalized_user_text, group.normalized_choice_names):
             matched_ids = self._match_side_choices_from_values(
                 normalized_values=[normalized_user_text],
                 group=group,
@@ -235,7 +245,6 @@ class WaitingForSideHandler(BaseHandler):
                     context=context,
                     pending_item_name=pending.item_name,
                     group=group,
-                    choices=choices,
                     matched_ids=matched_ids,
                 )
 
@@ -254,7 +263,6 @@ class WaitingForSideHandler(BaseHandler):
         context: ConversationContext,
         pending_item_name: str,
         group: PendingSideGroup,
-        choices: list[PendingSideChoice],
         matched_ids: list[str],
     ) -> HandlerResult:
         existing_ids = list(context.selected_side_groups.get(group.group_id, []))

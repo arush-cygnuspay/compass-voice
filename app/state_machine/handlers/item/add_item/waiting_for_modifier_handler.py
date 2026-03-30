@@ -8,7 +8,6 @@ from app.session.session import Session
 from app.state_machine.conversation_context import (
     ConversationContext,
     InterruptProposal,
-    PendingModifierChoice,
     PendingModifierGroup,
 )
 from app.state_machine.conversation_state import ConversationState
@@ -69,6 +68,21 @@ def _looks_like_pure_modifier_answer(
     normalized_user_text: str,
     normalized_choice_names: tuple[str, ...],
 ) -> bool:
+    """
+    Conservative direct-answer detector for modifier selection.
+
+    Accept:
+    - cheese
+    - extra cheese
+    - sausage please
+    - i want bacon
+
+    Reject:
+    - how much is cheese
+    - add fries
+    - show menu
+    - checkout
+    """
     if not normalized_user_text:
         return False
 
@@ -90,6 +104,12 @@ def _looks_like_pure_modifier_answer(
         "finish order",
         "pay now",
         "payment",
+        "add another",
+        "add item",
+        "remove",
+        "change",
+        "modify",
+        "instead",
     }
     if any(phrase in normalized_user_text for phrase in blocked_phrases):
         return False
@@ -108,6 +128,18 @@ def _looks_like_pure_modifier_answer(
         "extra",
         "only",
         "just",
+        "um",
+        "uh",
+        "okay",
+        "ok",
+        "ill",
+        "i",
+        "want",
+        "take",
+        "have",
+        "get",
+        "like",
+        "would",
     }
 
     tokens = [token for token in normalized_user_text.split() if token not in filler_words]
@@ -125,6 +157,16 @@ def _looks_like_pure_modifier_answer(
 
 
 class WaitingForModifierHandler(BaseHandler):
+    """
+    Resolve modifier selections strictly from the active pending item snapshot.
+
+    Important:
+    - no broad menu resolution during waiting state
+    - only choices from the current active modifier group can match
+    - interruption is considered before broader free-text matching
+    - only explicit slot values or short direct answers may satisfy the modifier step
+    """
+
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
         self.menu_repo = menu_repo
 
@@ -151,8 +193,6 @@ class WaitingForModifierHandler(BaseHandler):
             return self._step_to_result(context, step)
 
         group = groups[idx]
-        choices = group.choices
-        normalized_choice_names = group.normalized_choice_names
 
         if intent == Intent.DENY:
             if group.is_required:
@@ -164,6 +204,7 @@ class WaitingForModifierHandler(BaseHandler):
 
             context.skipped_modifier_groups.add(group.group_id)
             context.current_modifier_group_index += 1
+
             step = determine_next_add_item_step(context)
             return self._step_to_result(context, step)
 
@@ -201,7 +242,7 @@ class WaitingForModifierHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        if _looks_like_pure_modifier_answer(normalized_user_text, normalized_choice_names):
+        if _looks_like_pure_modifier_answer(normalized_user_text, group.normalized_choice_names):
             matched_ids = self._match_modifier_choices_from_values(
                 group=group,
                 normalized_values=[normalized_user_text],
