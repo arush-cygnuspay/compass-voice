@@ -306,41 +306,6 @@ def _build_stream_url(request: Request) -> str:
     return f"wss://{host}/ws/twilio-media"
 
 
-def _build_public_http_base_url(request: Request) -> str:
-    explicit_public_base = os.getenv("PUBLIC_HTTP_BASE_URL", "").strip()
-    if explicit_public_base:
-        return explicit_public_base.rstrip("/")
-
-    explicit_wss_base = os.getenv("PUBLIC_WSS_BASE_URL", "").strip()
-    if explicit_wss_base:
-        base = explicit_wss_base.rstrip("/")
-        if base.startswith("wss://"):
-            return "https://" + base[len("wss://") :]
-        if base.startswith("ws://"):
-            return "http://" + base[len("ws://") :]
-        if base.startswith(("https://", "http://")):
-            return base
-
-    host = request.headers.get("host", "").strip()
-    if not host:
-        raise ValueError("Missing Host header; cannot build public HTTP base URL.")
-
-    forwarded_proto = request.headers.get("x-forwarded-proto", "").strip().lower()
-    if forwarded_proto == "http":
-        return f"http://{host}"
-
-    return f"https://{host}"
-
-
-def _build_welcome_audio_url(request: Request) -> str:
-    explicit_audio_url = os.getenv("COMPASS_WELCOME_AUDIO_URL", "").strip()
-    if explicit_audio_url:
-        return explicit_audio_url
-
-    public_base = _build_public_http_base_url(request)
-    return f"{public_base}/static/audio/compass_welcome_ulaw_8k_1x.wav"
-
-
 @app.post("/voice")
 async def voice(request: Request):
     form = await request.form()
@@ -349,7 +314,6 @@ async def voice(request: Request):
     to_number = form.get("To", "")
 
     stream_url = _build_stream_url(request)
-    welcome_audio_url = _build_welcome_audio_url(request)
 
     print(
         "[CALL START]",
@@ -358,13 +322,10 @@ async def voice(request: Request):
             "from": from_number,
             "to": to_number,
             "stream_url": stream_url,
-            "welcome_audio_url": welcome_audio_url,
         },
     )
 
     vr = VoiceResponse()
-    vr.play(welcome_audio_url)
-
     connect = Connect()
     connect.stream(url=stream_url, name="compass-voice-stream")
     vr.append(connect)
@@ -394,8 +355,9 @@ async def twilio_media_ws(websocket: WebSocket):
 
     bot_playback_started_at: float | None = None
     bot_barge_in_guard_seconds = 0.35
-    disable_barge_in = False
+    disable_barge_in = True
     playback_generation = 0
+    welcome_sent = False
 
     async def send_twilio_media(
         audio_bytes: bytes,
@@ -575,10 +537,6 @@ async def twilio_media_ws(websocket: WebSocket):
         trace: RealtimeTurnTrace | None = None,
         generation: int = 0,
     ) -> int:
-        """
-        Send text to Deepgram in progressive chunks, flush once at end,
-        and stream resulting audio to Twilio as it arrives.
-        """
         chunks = _split_for_progressive_tts(spoken_text)
         if not chunks:
             return 0
@@ -805,7 +763,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 await process_committed_turn(buffered)
 
     async def on_dg_transcript(transcript: str, is_final: bool, payload: dict) -> None:
-        controller.on_transcript(transcript, is_final)
+        committed = controller.on_transcript(transcript, is_final)
 
         _debug_transcript_log(
             "[DEEPGRAM TRANSCRIPT]",
@@ -818,6 +776,10 @@ async def twilio_media_ws(websocket: WebSocket):
 
         if is_final:
             stream_session.last_dg_final_transcript_monotonic = time.perf_counter()
+
+        if committed is not None:
+            await process_committed_turn(committed.text)
+            return
 
         speech_final = bool(payload.get("speech_final", False))
         if speech_final:
@@ -955,7 +917,6 @@ async def twilio_media_ws(websocket: WebSocket):
                         punctuate=True,
                         vad_events=True,
                         endpointing=160,
-                        # utterance_end_ms=550,
                         keepalive_interval_seconds=4.0,
                     ),
                     callbacks=DeepgramSTTCallbacks(
@@ -968,7 +929,6 @@ async def twilio_media_ws(websocket: WebSocket):
                 try:
                     await dg_stt_client.start()
                     dg_stt_started = True
-
                     print(
                         "[DEEPGRAM STT CONNECTED]",
                         {
@@ -1000,6 +960,24 @@ async def twilio_media_ws(websocket: WebSocket):
                             "error": f"{type(exc).__name__}: {exc}",
                         },
                     )
+
+                if not welcome_sent:
+                    try:
+                        await speak_response_text(
+                            "Thank you for calling Compass. What would you like to order today?"
+                        )
+                        welcome_sent = True
+                        disable_barge_in = False
+                    except Exception as exc:
+                        print(
+                            "[WELCOME TTS FAILED]",
+                            {
+                                "stream_sid": stream_session.stream_sid,
+                                "error": f"{type(exc).__name__}: {exc}",
+                            },
+                        )
+                        phase = RealtimePhase.LISTENING
+                        disable_barge_in = False
 
             elif event == "media":
                 media = raw_message.get("media", {})
