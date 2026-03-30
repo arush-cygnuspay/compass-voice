@@ -36,6 +36,7 @@ class DeepgramTTSClient:
 
         self._api_key = api_key
         self._model = os.getenv("DEEPGRAM_TTS_MODEL", "aura-2-thalia-en").strip()
+        self._speed = os.getenv("DEEPGRAM_TTS_SPEED", "0.9").strip()
         self._encoding = "mulaw"
         self._sample_rate = 8000
         self._container = "none"
@@ -58,6 +59,7 @@ class DeepgramTTSClient:
     def _websocket_url(self) -> str:
         params = {
             "model": self._model,
+            "speed": self._speed,
             "encoding": self._encoding,
             "sample_rate": str(self._sample_rate),
             "container": self._container,
