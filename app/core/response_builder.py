@@ -128,6 +128,11 @@ class ResponseBuilder:
             "no_active_payment": lambda *_: "There’s no payment in progress.",
             "payment_not_started": lambda *_: "Payment has not started. Say checkout when ready.",
             "order_cancelled": lambda *_: "Okay, checkout cancelled. Your cart is still here.",
+            "confirm_side_choice_guess": lambda c, m,
+                                                p: f"Did you mean {p.get('choice_name', 'that side')}? Yes or no.",
+            "confirm_modifier_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that modifier')}? Yes or no.",
+            "confirm_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')}? Yes or no.",
+            "confirm_side_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')} for {p.get('side_item_name', 'that side')}? Yes or no.",
         }
 
     def _intent_not_allowed(

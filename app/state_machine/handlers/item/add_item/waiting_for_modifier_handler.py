@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from app.menu.repository import MenuRepository
@@ -19,7 +20,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     determine_next_add_item_step,
 )
 from app.utils.candidate_texts import build_candidate_texts_normalized
-from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
+from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match, tokenize
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
@@ -39,6 +40,17 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.PAYMENT_REQUEST,
     Intent.CANCEL_ORDER,
 }
+
+AUTO_ACCEPT_THRESHOLD = 0.80
+CONFIRM_THRESHOLD = 0.60
+MIN_CONFIRM_GAP = 0.08
+
+
+@dataclass(frozen=True, slots=True)
+class _ScoredModifierChoice:
+    modifier_id: str
+    choice_name: str
+    confidence: float
 
 
 def _extract_modifier_slot_values_normalized(context: ConversationContext) -> list[str]:
@@ -209,6 +221,7 @@ class WaitingForModifierHandler(BaseHandler):
     - interruption is considered before broader free-text matching
     - supports optional-group skip phrases like 'no sauce' / 'without onions'
     - uses scoped repository resolution first, then local fallback rescue
+    - if best fuzzy match is medium confidence, ask yes/no confirmation
     """
 
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
@@ -237,6 +250,37 @@ class WaitingForModifierHandler(BaseHandler):
             return self._step_to_result(context, step)
 
         group = groups[idx]
+
+        modifier_confirmation = self._get_pending_modifier_confirmation(context, group)
+        if modifier_confirmation is not None:
+            if intent == Intent.CONFIRM:
+                return self._apply_modifier_selection(
+                    context=context,
+                    group=group,
+                    matched_ids=[modifier_confirmation["modifier_id"]],
+                    clear_pending_confirmation=True,
+                )
+
+            if intent == Intent.DENY:
+                self._clear_pending_modifier_confirmation(context)
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="repeat_modifier_options",
+                    response_payload={
+                        **self._choice_payload(group),
+                        "repeat_reason": "invalid",
+                    },
+                )
+
+            if intent == Intent.ASK_OPTIONS:
+                self._clear_pending_modifier_confirmation(context)
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="list_modifier_options",
+                    response_payload=self._choice_payload(group),
+                )
+
+            self._clear_pending_modifier_confirmation(context)
 
         if intent == Intent.DENY or _looks_like_skip_modifier_answer(normalized_user_text, group):
             if group.is_required:
@@ -274,45 +318,55 @@ class WaitingForModifierHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        matched_ids: list[str] = []
+        scored_match: _ScoredModifierChoice | None = None
 
         normalized_slot_values = _extract_modifier_slot_values_normalized(context)
         if normalized_slot_values:
-            matched_ids = self._match_modifier_choices_from_values(
+            scored_match = self._resolve_best_modifier_choice_from_values(
                 group=group,
                 normalized_values=normalized_slot_values,
             )
 
-        if not matched_ids and normalized_user_text:
-            matched_ids = self._match_modifier_choices_from_values(
+        if scored_match is None and normalized_user_text:
+            scored_match = self._resolve_best_modifier_choice_from_values(
                 group=group,
                 normalized_values=[normalized_user_text],
             )
 
-        if not matched_ids and _looks_like_pure_modifier_answer(
+        if scored_match is None and _looks_like_pure_modifier_answer(
             normalized_user_text,
             group.normalized_choice_names,
         ):
-            matched_ids = self._match_modifier_choices_from_values(
+            scored_match = self._resolve_best_modifier_choice_from_values(
                 group=group,
                 normalized_values=[_remove_leading_filler(normalized_user_text)],
             )
 
-        if matched_ids:
-            unique_ids = list(dict.fromkeys(matched_ids))
-
-            if len(unique_ids) > group.max_selector:
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_MODIFIER,
-                    response_key="too_many_modifier_choices",
-                    response_payload=self._choice_payload(group),
+        if scored_match is not None:
+            if scored_match.confidence >= AUTO_ACCEPT_THRESHOLD:
+                return self._apply_modifier_selection(
+                    context=context,
+                    group=group,
+                    matched_ids=[scored_match.modifier_id],
+                    clear_pending_confirmation=True,
                 )
 
-            return self._apply_modifier_selection(
-                context=context,
-                group=group,
-                matched_ids=unique_ids,
-            )
+            if scored_match.confidence >= CONFIRM_THRESHOLD:
+                self._set_pending_modifier_confirmation(
+                    context=context,
+                    group=group,
+                    modifier_id=scored_match.modifier_id,
+                    choice_name=scored_match.choice_name,
+                    confidence=scored_match.confidence,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="confirm_modifier_choice_guess",
+                    response_payload={
+                        "group_name": group.name,
+                        "choice_name": scored_match.choice_name,
+                    },
+                )
 
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_MODIFIER,
@@ -329,7 +383,11 @@ class WaitingForModifierHandler(BaseHandler):
         context: ConversationContext,
         group: PendingModifierGroup,
         matched_ids: list[str],
+        clear_pending_confirmation: bool = False,
     ) -> HandlerResult:
+        if clear_pending_confirmation:
+            self._clear_pending_modifier_confirmation(context)
+
         existing_ids = list(context.selected_modifier_groups.get(group.group_id, []))
         proposed_ids = list(existing_ids)
 
@@ -378,81 +436,48 @@ class WaitingForModifierHandler(BaseHandler):
         labels.extend([label for label in voice_labels if label])
         return list(dict.fromkeys(labels))
 
-    def _best_fuzzy_match(self, candidate: str, group: PendingModifierGroup) -> list[str]:
-        best_modifier_id: str | None = None
-        best_score = 0.0
-        second_score = 0.0
+    def _similarity_ratio(self, a: str, b: str) -> float:
+        return SequenceMatcher(None, a, b).ratio()
 
-        for choice in group.choices:
-            labels = self._candidate_labels_for_choice(choice)
-            local_best = 0.0
+    def _choice_confidence(self, candidate: str, choice) -> float:
+        labels = self._candidate_labels_for_choice(choice)
+        if not labels:
+            return 0.0
 
-            for label in labels:
-                if not label:
-                    continue
-                score = SequenceMatcher(None, candidate, label).ratio()
-                if score > local_best:
-                    local_best = score
+        best = 0.0
+        candidate_tokens = set(tokenize(candidate))
 
-            if local_best > best_score:
-                second_score = best_score
-                best_score = local_best
-                best_modifier_id = choice.modifier_id
-            elif local_best > second_score:
-                second_score = local_best
+        for label in labels:
+            if not label:
+                continue
 
-        if best_modifier_id is None:
-            return []
+            if candidate == label:
+                return 1.0
 
-        if best_score >= 0.84 and (best_score - second_score) >= 0.08:
-            return [best_modifier_id]
+            label_tokens = set(tokenize(label))
+            overlap = len(candidate_tokens & label_tokens)
+            if candidate_tokens and label_tokens:
+                coverage = overlap / len(label_tokens)
+                candidate_coverage = overlap / len(candidate_tokens)
+                token_score = max(coverage, candidate_coverage)
+                best = max(best, token_score)
 
-        return []
+            if is_strong_token_match(candidate, label):
+                best = max(best, 0.92)
 
-    def _match_single_candidate(self, candidate: str, group: PendingModifierGroup) -> list[str]:
-        if self.menu_repo is not None:
-            label_map = {
-                choice.modifier_id: tuple(self._candidate_labels_for_choice(choice))
-                for choice in group.choices
-            }
-            repo_matches = self.menu_repo.resolve_modifier_choice_within_group_normalized(
-                normalized_text=candidate,
-                group_id=group.group_id,
-                candidate_names_by_id=label_map,
-            )
-            if repo_matches:
-                return list(dict.fromkeys(repo_matches))
+            if is_controlled_partial_match(candidate, label):
+                best = max(best, 0.82)
 
-        exact_choices = group.choices_by_normalized_name.get(candidate, ())
-        if exact_choices:
-            return [choice.modifier_id for choice in exact_choices]
+            best = max(best, self._similarity_ratio(candidate, label))
 
-        token_matches: list[str] = []
-        for choice in group.choices:
-            for label in self._candidate_labels_for_choice(choice):
-                if is_strong_token_match(candidate, label):
-                    token_matches.append(choice.modifier_id)
-                    break
-        if token_matches:
-            return list(dict.fromkeys(token_matches))
+        return best
 
-        partial_matches: list[str] = []
-        for choice in group.choices:
-            for label in self._candidate_labels_for_choice(choice):
-                if is_controlled_partial_match(candidate, label):
-                    partial_matches.append(choice.modifier_id)
-                    break
-        if partial_matches:
-            return list(dict.fromkeys(partial_matches))
-
-        return self._best_fuzzy_match(candidate, group)
-
-    def _match_modifier_choices_from_values(
+    def _resolve_best_modifier_choice_from_values(
         self,
         *,
         group: PendingModifierGroup,
         normalized_values: list[str],
-    ) -> list[str]:
+    ) -> _ScoredModifierChoice | None:
         def _dedupe_keep_order(values: list[str]) -> list[str]:
             seen: set[str] = set()
             result: list[str] = []
@@ -477,38 +502,84 @@ class WaitingForModifierHandler(BaseHandler):
         )
         split_candidates = [candidate for candidate in split_candidates if candidate not in full_candidates]
 
-        full_matches: list[str] = []
-        seen_full: set[str] = set()
+        all_candidates = full_candidates + split_candidates
+        if not all_candidates:
+            return None
 
-        for candidate in full_candidates:
-            matched_ids = self._match_single_candidate(candidate, group)
+        best_choice = None
+        best_confidence = 0.0
+        second_confidence = 0.0
 
-            if len(matched_ids) == 1:
-                return matched_ids
+        for choice in group.choices:
+            choice_best = 0.0
+            for candidate in all_candidates:
+                confidence = self._choice_confidence(candidate, choice)
+                if confidence > choice_best:
+                    choice_best = confidence
 
-            for modifier_id in matched_ids:
-                if modifier_id not in seen_full:
-                    seen_full.add(modifier_id)
-                    full_matches.append(modifier_id)
+            if choice_best > best_confidence:
+                second_confidence = best_confidence
+                best_confidence = choice_best
+                best_choice = choice
+            elif choice_best > second_confidence:
+                second_confidence = choice_best
 
-        if full_matches:
-            return full_matches
+        if best_choice is None:
+            return None
 
-        split_matches: list[str] = []
-        seen_split: set[str] = set()
+        if best_confidence < CONFIRM_THRESHOLD:
+            return None
 
-        for candidate in split_candidates:
-            matched_ids = self._match_single_candidate(candidate, group)
+        if (
+            best_confidence < AUTO_ACCEPT_THRESHOLD
+            and (best_confidence - second_confidence) < MIN_CONFIRM_GAP
+        ):
+            return None
 
-            for modifier_id in matched_ids:
-                if modifier_id not in seen_split:
-                    seen_split.add(modifier_id)
-                    split_matches.append(modifier_id)
+        return _ScoredModifierChoice(
+            modifier_id=best_choice.modifier_id,
+            choice_name=best_choice.name,
+            confidence=best_confidence,
+        )
 
-            if len(split_matches) > 1:
-                break
+    def _get_pending_modifier_confirmation(
+        self,
+        context: ConversationContext,
+        group: PendingModifierGroup,
+    ) -> dict | None:
+        confirmation = getattr(context, "awaiting_confirmation_for", None)
+        if not isinstance(confirmation, dict):
+            return None
 
-        return split_matches
+        if confirmation.get("type") != "modifier_choice_guess":
+            return None
+
+        if confirmation.get("group_id") != group.group_id:
+            return None
+
+        return confirmation
+
+    def _set_pending_modifier_confirmation(
+        self,
+        *,
+        context: ConversationContext,
+        group: PendingModifierGroup,
+        modifier_id: str,
+        choice_name: str,
+        confidence: float,
+    ) -> None:
+        context.awaiting_confirmation_for = {
+            "type": "modifier_choice_guess",
+            "group_id": group.group_id,
+            "modifier_id": modifier_id,
+            "choice_name": choice_name,
+            "confidence": confidence,
+        }
+
+    def _clear_pending_modifier_confirmation(self, context: ConversationContext) -> None:
+        confirmation = getattr(context, "awaiting_confirmation_for", None)
+        if isinstance(confirmation, dict) and confirmation.get("type") == "modifier_choice_guess":
+            context.awaiting_confirmation_for = None
 
     def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
         pending = context.pending_add_item
