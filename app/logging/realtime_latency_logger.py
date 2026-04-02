@@ -138,15 +138,24 @@ class RealtimeTurnTrace:
 
         engine_ms = self.engine_total_ms
         if engine_ms is None:
-            engine_ms = ms_between(self.engine_start_monotonic, self.engine_end_monotonic)
+            engine_ms = ms_between(
+                self.engine_start_monotonic,
+                self.engine_end_monotonic,
+            )
 
         stt_ms = None
-        if self.dg_speech_started_monotonic is not None and self.dg_final_transcript_monotonic is not None:
+        if (
+            self.dg_speech_started_monotonic is not None
+            and self.dg_final_transcript_monotonic is not None
+        ):
             stt_ms = ms_between(
                 self.dg_speech_started_monotonic,
                 self.dg_final_transcript_monotonic,
             )
-        elif self.first_inbound_media_monotonic is not None and self.dg_final_transcript_monotonic is not None:
+        elif (
+            self.first_inbound_media_monotonic is not None
+            and self.dg_final_transcript_monotonic is not None
+        ):
             stt_ms = ms_between(
                 self.first_inbound_media_monotonic,
                 self.dg_final_transcript_monotonic,
@@ -165,7 +174,10 @@ class RealtimeTurnTrace:
             ):
                 if value is not None:
                     subtract += value
-            estimated_non_audio_overhead_ms = round(backend_observed_e2e_ms - subtract, 3)
+            estimated_non_audio_overhead_ms = round(
+                backend_observed_e2e_ms - subtract,
+                3,
+            )
 
         payload = asdict(self)
         payload.update(
@@ -196,10 +208,6 @@ class RealtimeTurnTrace:
 class RealtimeLatencyLogger:
     CSV_COLUMNS = [
         "turn_index",
-        "turn_id",
-        "call_sid",
-        "stream_sid",
-        "session_id",
         "turn_started_at_utc",
         "turn_committed_at_utc",
         "response_first_audio_sent_at_utc",
@@ -207,12 +215,13 @@ class RealtimeLatencyLogger:
         "text",
         "normalized_text",
         "response_text",
+        "response_key",
+        "state_before",
+        "state_after",
         "intent_main",
         "intent_sub_intent",
         "intent_effective",
         "intent_confidence",
-        "state_before",
-        "state_after",
         "time_total_ms",
         "time_stt_ms",
         "time_stt_to_commit_ms",
@@ -235,11 +244,14 @@ class RealtimeLatencyLogger:
         "outbound_audio_duration_ms",
         "tts_text_chars",
         "stt_final_text_chars",
-        "response_key",
         "slot_names",
         "slot_values",
         "command",
         "notes",
+        "turn_id",
+        "call_sid",
+        "stream_sid",
+        "session_id",
     ]
 
     def __init__(
@@ -249,6 +261,8 @@ class RealtimeLatencyLogger:
         csv_file_path: str | None = None,
         write_csv: bool = True,
         queue_maxsize: int | None = None,
+        sync_write_immediately: bool | None = None,
+        fsync_on_write: bool | None = None,
     ) -> None:
         self.enabled = enabled
         self.write_csv = write_csv
@@ -259,6 +273,17 @@ class RealtimeLatencyLogger:
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self.csv_file_path.parent.mkdir(parents=True, exist_ok=True)
 
+        self.sync_write_immediately = (
+            sync_write_immediately
+            if sync_write_immediately is not None
+            else os.getenv("COMPASS_REALTIME_LATENCY_SYNC_WRITE", "1") == "1"
+        )
+        self.fsync_on_write = (
+            fsync_on_write
+            if fsync_on_write is not None
+            else os.getenv("COMPASS_REALTIME_LATENCY_FSYNC", "1") == "1"
+        )
+
         self.queue_maxsize = queue_maxsize or int(
             os.getenv("COMPASS_REALTIME_LATENCY_QUEUE_MAXSIZE", "5000")
         )
@@ -268,7 +293,7 @@ class RealtimeLatencyLogger:
         self._writer_lock = threading.Lock()
         self._dropped_logs = 0
 
-        if self.enabled:
+        if self.enabled and not self.sync_write_immediately:
             self._start_writer()
 
     def _start_writer(self) -> None:
@@ -290,10 +315,7 @@ class RealtimeLatencyLogger:
                 continue
 
             try:
-                with self._writer_lock:
-                    self._write_jsonl(payload)
-                    if self.write_csv:
-                        self._write_csv_row(payload)
+                self._write_payload(payload)
             except Exception as exc:
                 print(f"[REALTIME_LATENCY_WRITE_ERROR] {type(exc).__name__}: {exc}")
             finally:
@@ -301,6 +323,8 @@ class RealtimeLatencyLogger:
 
     def flush(self) -> None:
         if not self.enabled:
+            return
+        if self.sync_write_immediately:
             return
         self._queue.join()
 
@@ -317,6 +341,14 @@ class RealtimeLatencyLogger:
             return
 
         payload = trace.finalize_metrics()
+
+        if self.sync_write_immediately:
+            try:
+                self._write_payload(payload)
+            except Exception as exc:
+                print(f"[REALTIME_LATENCY_WRITE_ERROR] {type(exc).__name__}: {exc}")
+            return
+
         try:
             self._queue.put_nowait(payload)
         except queue.Full:
@@ -327,18 +359,47 @@ class RealtimeLatencyLogger:
                     {"dropped_logs": self._dropped_logs},
                 )
 
+    def _write_payload(self, payload: dict[str, Any]) -> None:
+        with self._writer_lock:
+            self._write_jsonl(payload)
+            if self.write_csv:
+                self._write_csv_row(payload)
+
     def _write_jsonl(self, payload: dict[str, Any]) -> None:
         line = json.dumps(payload, ensure_ascii=False)
         with self.file_path.open("a", encoding="utf-8") as f:
             f.write(line + "\n")
+            f.flush()
+            if self.fsync_on_write:
+                os.fsync(f.fileno())
 
-    def _write_csv_row(self, payload: dict[str, Any]) -> None:
-        row = {
+    def _header_matches(self) -> bool:
+        if not self.csv_file_path.exists() or self.csv_file_path.stat().st_size == 0:
+            return False
+
+        try:
+            with self.csv_file_path.open("r", encoding="utf-8", newline="") as f:
+                reader = csv.reader(f)
+                first_row = next(reader, None)
+                return first_row == self.CSV_COLUMNS
+        except Exception:
+            return False
+
+    def _write_csv_header_only(self) -> None:
+        with self.csv_file_path.open("w", encoding="utf-8", newline="") as f:
+            writer = csv.DictWriter(
+                f,
+                fieldnames=self.CSV_COLUMNS,
+                extrasaction="ignore",
+            )
+            writer.writeheader()
+            f.flush()
+            if self.fsync_on_write:
+                os.fsync(f.fileno())
+
+    def _build_csv_row(self, payload: dict[str, Any]) -> dict[str, Any]:
+        return {
             "turn_index": payload.get("turn_index", ""),
-            "turn_id": payload.get("turn_id", ""),
-            "call_sid": payload.get("call_sid", ""),
-            "stream_sid": payload.get("stream_sid", ""),
-            "session_id": payload.get("session_id", ""),
             "turn_started_at_utc": payload.get("turn_started_at_utc", ""),
             "turn_committed_at_utc": payload.get("turn_committed_at_utc", ""),
             "response_first_audio_sent_at_utc": payload.get("response_first_audio_sent_at_utc", ""),
@@ -346,12 +407,13 @@ class RealtimeLatencyLogger:
             "text": payload.get("user_text", ""),
             "normalized_text": payload.get("normalized_text", ""),
             "response_text": payload.get("response_text", ""),
+            "response_key": payload.get("response_key", ""),
+            "state_before": payload.get("state_before", ""),
+            "state_after": payload.get("state_after", ""),
             "intent_main": payload.get("pred_main_intent", ""),
             "intent_sub_intent": payload.get("intent_sub_intent", ""),
             "intent_effective": payload.get("pred_intent", ""),
             "intent_confidence": payload.get("pred_intent_confidence", ""),
-            "state_before": payload.get("state_before", ""),
-            "state_after": payload.get("state_after", ""),
             "time_total_ms": payload.get("time_total_ms", ""),
             "time_stt_ms": payload.get("stt_ms", ""),
             "time_stt_to_commit_ms": payload.get("stt_to_commit_ms", ""),
@@ -374,18 +436,46 @@ class RealtimeLatencyLogger:
             "outbound_audio_duration_ms": payload.get("outbound_audio_duration_ms", ""),
             "tts_text_chars": payload.get("tts_text_chars", ""),
             "stt_final_text_chars": payload.get("stt_final_text_chars", ""),
-            "response_key": payload.get("response_key", ""),
             "slot_names": payload.get("slot_names_csv", ""),
             "slot_values": payload.get("slot_values_csv", ""),
             "command": _safe_json(payload.get("command")),
             "notes": _safe_json(payload.get("notes")),
+            "turn_id": payload.get("turn_id", ""),
+            "call_sid": payload.get("call_sid", ""),
+            "stream_sid": payload.get("stream_sid", ""),
+            "session_id": payload.get("session_id", ""),
         }
 
-        file_exists = self.csv_file_path.exists()
-        write_header = (not file_exists) or self.csv_file_path.stat().st_size == 0
+    def _ensure_csv_header(self) -> None:
+        if self._header_matches():
+            return
+
+        backup_path = self.csv_file_path.with_suffix(".csv.bak")
+        if self.csv_file_path.exists() and self.csv_file_path.stat().st_size > 0:
+            try:
+                if backup_path.exists():
+                    backup_path.unlink()
+            except Exception:
+                pass
+
+            try:
+                self.csv_file_path.replace(backup_path)
+            except Exception:
+                pass
+
+        self._write_csv_header_only()
+
+    def _write_csv_row(self, payload: dict[str, Any]) -> None:
+        row = self._build_csv_row(payload)
+        self._ensure_csv_header()
 
         with self.csv_file_path.open("a", encoding="utf-8", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=self.CSV_COLUMNS)
-            if write_header:
-                writer.writeheader()
+            writer = csv.DictWriter(
+                f,
+                fieldnames=self.CSV_COLUMNS,
+                extrasaction="ignore",
+            )
             writer.writerow(row)
+            f.flush()
+            if self.fsync_on_write:
+                os.fsync(f.fileno())

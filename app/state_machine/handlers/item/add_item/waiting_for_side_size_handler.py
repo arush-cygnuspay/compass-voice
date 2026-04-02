@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
@@ -16,7 +19,8 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,
 )
-from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
+from app.utils.candidate_texts import build_candidate_texts_normalized
+from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match, tokenize
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
@@ -37,6 +41,17 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.CANCEL_ORDER,
 }
 
+AUTO_ACCEPT_THRESHOLD = 0.80
+CONFIRM_THRESHOLD = 0.60
+MIN_CONFIRM_GAP = 0.08
+
+
+@dataclass(frozen=True, slots=True)
+class _ScoredVariantChoice:
+    variant_id: str
+    choice_name: str
+    confidence: float
+
 
 def _first_size_slot_normalized(slots) -> str | None:
     for slot in slots:
@@ -50,28 +65,6 @@ def _first_size_slot_normalized(slots) -> str | None:
         normalized = normalize_text(value)
         if normalized:
             return normalized
-
-    return None
-
-
-def _match_variant_value_normalized(
-    normalized_value: str,
-    choices_by_normalized_name: dict[str, PendingVariantChoice],
-) -> PendingVariantChoice | None:
-    if not normalized_value:
-        return None
-
-    exact = choices_by_normalized_name.get(normalized_value)
-    if exact:
-        return exact
-
-    for name, choice in choices_by_normalized_name.items():
-        if is_strong_token_match(normalized_value, name):
-            return choice
-
-    for name, choice in choices_by_normalized_name.items():
-        if is_controlled_partial_match(normalized_value, name):
-            return choice
 
     return None
 
@@ -154,6 +147,7 @@ class WaitingForSideSizeHandler(BaseHandler):
     - waiting state owns the turn
     - size resolution is slot-first, then direct-text fallback
     - only sizes for the active pending side item may match
+    - medium-confidence best guess asks for yes/no confirmation
     """
 
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
@@ -192,6 +186,57 @@ class WaitingForSideSizeHandler(BaseHandler):
         available_sizes = list(side_choice.variant_names)
         normalized_choice_names = tuple(side_choice.variants_by_normalized_name.keys())
 
+        pending_confirmation = self._get_pending_side_size_confirmation(
+            context=context,
+            side_item_id=side_choice.item_id,
+        )
+        if pending_confirmation is not None:
+            if intent == Intent.CONFIRM:
+                context.selected_side_variants[side_choice.item_id] = pending_confirmation["variant_id"]
+                self._clear_pending_side_size(context)
+                self._clear_pending_side_size_confirmation(
+                    context=context,
+                    side_item_id=side_choice.item_id,
+                )
+
+                step = determine_next_add_item_step(context)
+                return self._step_to_result(context, step)
+
+            if intent == Intent.DENY:
+                self._clear_pending_side_size_confirmation(
+                    context=context,
+                    side_item_id=side_choice.item_id,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
+                    response_key="repeat_side_size_options",
+                    response_payload={
+                        "item_name": pending.item_name,
+                        "side_item_name": side_choice.name,
+                        "available_sizes": available_sizes,
+                    },
+                )
+
+            if intent == Intent.ASK_OPTIONS:
+                self._clear_pending_side_size_confirmation(
+                    context=context,
+                    side_item_id=side_choice.item_id,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
+                    response_key="repeat_side_size_options",
+                    response_payload={
+                        "item_name": pending.item_name,
+                        "side_item_name": side_choice.name,
+                        "available_sizes": available_sizes,
+                    },
+                )
+
+            self._clear_pending_side_size_confirmation(
+                context=context,
+                side_item_id=side_choice.item_id,
+            )
+
         if intent == Intent.DENY:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
@@ -214,20 +259,16 @@ class WaitingForSideSizeHandler(BaseHandler):
                 },
             )
 
+        scored_match: _ScoredVariantChoice | None = None
+
         slot_value = _first_size_slot_normalized(context.last_slots or ())
         if slot_value:
-            matched = _match_variant_value_normalized(
-                slot_value,
-                side_choice.variants_by_normalized_name,
+            scored_match = self._resolve_best_variant_from_values(
+                normalized_values=[slot_value],
+                choices_by_normalized_name=side_choice.variants_by_normalized_name,
             )
-            if matched is not None:
-                context.selected_side_variants[side_choice.item_id] = matched.variant_id
-                self._clear_pending_side_size(context)
 
-                step = determine_next_add_item_step(context)
-                return self._step_to_result(context, step)
-
-        if intent in SOFT_SWITCH_INTENTS:
+        if scored_match is None and intent in SOFT_SWITCH_INTENTS:
             context.awaiting_flow_confirmation = True
             context.return_state = ConversationState.WAITING_FOR_SIDE_SIZE
             context.interrupt_proposal = InterruptProposal(
@@ -241,17 +282,44 @@ class WaitingForSideSizeHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        if _looks_like_pure_size_answer(normalized_user_text, normalized_choice_names):
-            matched = _match_variant_value_normalized(
-                normalized_user_text,
-                side_choice.variants_by_normalized_name,
+        if scored_match is None and _looks_like_pure_size_answer(
+            normalized_user_text,
+            normalized_choice_names,
+        ):
+            scored_match = self._resolve_best_variant_from_values(
+                normalized_values=[normalized_user_text],
+                choices_by_normalized_name=side_choice.variants_by_normalized_name,
             )
-            if matched is not None:
-                context.selected_side_variants[side_choice.item_id] = matched.variant_id
+
+        if scored_match is not None:
+            if scored_match.confidence >= AUTO_ACCEPT_THRESHOLD:
+                context.selected_side_variants[side_choice.item_id] = scored_match.variant_id
                 self._clear_pending_side_size(context)
+                self._clear_pending_side_size_confirmation(
+                    context=context,
+                    side_item_id=side_choice.item_id,
+                )
 
                 step = determine_next_add_item_step(context)
                 return self._step_to_result(context, step)
+
+            if scored_match.confidence >= CONFIRM_THRESHOLD:
+                self._set_pending_side_size_confirmation(
+                    context=context,
+                    side_item_id=side_choice.item_id,
+                    variant_id=scored_match.variant_id,
+                    choice_name=scored_match.choice_name,
+                    confidence=scored_match.confidence,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
+                    response_key="confirm_side_size_choice_guess",
+                    response_payload={
+                        "item_name": pending.item_name,
+                        "side_item_name": side_choice.name,
+                        "choice_name": scored_match.choice_name,
+                    },
+                )
 
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
@@ -262,6 +330,133 @@ class WaitingForSideSizeHandler(BaseHandler):
                 "available_sizes": available_sizes,
             },
         )
+
+    def _choice_confidence(
+        self,
+        candidate: str,
+        choice_name: str,
+    ) -> float:
+        if not candidate or not choice_name:
+            return 0.0
+
+        if candidate == choice_name:
+            return 1.0
+
+        best = 0.0
+        candidate_tokens = set(tokenize(candidate))
+        choice_tokens = set(tokenize(choice_name))
+
+        if candidate_tokens and choice_tokens:
+            overlap = len(candidate_tokens & choice_tokens)
+            coverage = overlap / len(choice_tokens)
+            candidate_coverage = overlap / len(candidate_tokens)
+            token_score = max(coverage, candidate_coverage)
+            best = max(best, token_score)
+
+        if is_strong_token_match(candidate, choice_name):
+            best = max(best, 0.92)
+
+        if is_controlled_partial_match(candidate, choice_name):
+            best = max(best, 0.82)
+
+        best = max(best, SequenceMatcher(None, candidate, choice_name).ratio())
+        return best
+
+    def _resolve_best_variant_from_values(
+        self,
+        *,
+        normalized_values: list[str],
+        choices_by_normalized_name: dict[str, PendingVariantChoice],
+    ) -> _ScoredVariantChoice | None:
+        candidate_texts = build_candidate_texts_normalized(
+            normalized_user_text="",
+            normalized_slot_values=normalized_values,
+            allow_split=True,
+        )
+        if not candidate_texts:
+            return None
+
+        best_choice: PendingVariantChoice | None = None
+        best_confidence = 0.0
+        second_confidence = 0.0
+
+        for choice in choices_by_normalized_name.values():
+            choice_best = 0.0
+            for candidate in candidate_texts:
+                confidence = self._choice_confidence(candidate, choice.normalized_name)
+                if confidence > choice_best:
+                    choice_best = confidence
+
+            if choice_best > best_confidence:
+                second_confidence = best_confidence
+                best_confidence = choice_best
+                best_choice = choice
+            elif choice_best > second_confidence:
+                second_confidence = choice_best
+
+        if best_choice is None:
+            return None
+
+        if best_confidence < CONFIRM_THRESHOLD:
+            return None
+
+        if (
+            best_confidence < AUTO_ACCEPT_THRESHOLD
+            and (best_confidence - second_confidence) < MIN_CONFIRM_GAP
+        ):
+            return None
+
+        return _ScoredVariantChoice(
+            variant_id=best_choice.variant_id,
+            choice_name=best_choice.name,
+            confidence=best_confidence,
+        )
+
+    def _set_pending_side_size_confirmation(
+        self,
+        *,
+        context: ConversationContext,
+        side_item_id: str,
+        variant_id: str,
+        choice_name: str,
+        confidence: float,
+    ) -> None:
+        context.awaiting_confirmation_for = {
+            "type": "side_size_choice_guess",
+            "side_item_id": side_item_id,
+            "variant_id": variant_id,
+            "choice_name": choice_name,
+            "confidence": confidence,
+        }
+
+    def _get_pending_side_size_confirmation(
+        self,
+        *,
+        context: ConversationContext,
+        side_item_id: str,
+    ) -> dict | None:
+        confirmation = getattr(context, "awaiting_confirmation_for", None)
+        if not isinstance(confirmation, dict):
+            return None
+        if confirmation.get("type") != "side_size_choice_guess":
+            return None
+        if confirmation.get("side_item_id") != side_item_id:
+            return None
+        return confirmation
+
+    def _clear_pending_side_size_confirmation(
+        self,
+        *,
+        context: ConversationContext,
+        side_item_id: str,
+    ) -> None:
+        confirmation = getattr(context, "awaiting_confirmation_for", None)
+        if (
+            isinstance(confirmation, dict)
+            and confirmation.get("type") == "side_size_choice_guess"
+            and confirmation.get("side_item_id") == side_item_id
+        ):
+            context.awaiting_confirmation_for = None
 
     def _clear_pending_side_size(self, context: ConversationContext) -> None:
         context.pending_side_item_id = None

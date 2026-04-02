@@ -44,8 +44,11 @@ load_dotenv()
 TWILIO_MULAW_FRAME_BYTES = 160
 TWILIO_FRAME_DURATION_SECONDS = 0.02
 
-TWILIO_BURST_FRAMES = 5
-TWILIO_BURST_BYTES = TWILIO_MULAW_FRAME_BYTES * TWILIO_BURST_FRAMES
+TWILIO_BURST_FRAMES = int(float(os.getenv("TWILIO_BURST_FRAMES", "5")))
+if TWILIO_BURST_FRAMES <= 0:
+    TWILIO_BURST_FRAMES = 5
+
+TWILIO_BURST_BYTES = int(TWILIO_MULAW_FRAME_BYTES * TWILIO_BURST_FRAMES)
 TWILIO_BURST_PACING_SECONDS = TWILIO_FRAME_DURATION_SECONDS * TWILIO_BURST_FRAMES
 
 WELCOME_AUDIO_WAV_PATH = os.getenv(
@@ -556,18 +559,20 @@ async def twilio_media_ws(websocket: WebSocket):
         phase = RealtimePhase.LISTENING
 
     async def _send_burst_frames(
-        burst_bytes: bytes,
-        trace: RealtimeTurnTrace | None = None,
+            burst_bytes: bytes,
+            trace: RealtimeTurnTrace | None = None,
     ) -> int:
         sent = 0
 
         for offset in range(0, len(burst_bytes), TWILIO_MULAW_FRAME_BYTES):
-            frame = burst_bytes[offset : offset + TWILIO_MULAW_FRAME_BYTES]
+            frame = burst_bytes[offset: offset + TWILIO_MULAW_FRAME_BYTES]
             if not frame:
                 continue
             await send_twilio_media(frame, trace=trace)
             sent += len(frame)
 
+        # pace one burst = 100 ms when TWILIO_BURST_FRAMES = 5
+        await asyncio.sleep(TWILIO_BURST_PACING_SECONDS)
         return sent
 
     async def stream_audio_to_twilio(
@@ -603,7 +608,6 @@ async def twilio_media_ws(websocket: WebSocket):
                 del buffered[:TWILIO_BURST_BYTES]
 
                 total_bytes_sent += await _send_burst_frames(burst, trace=trace)
-                await asyncio.sleep(TWILIO_BURST_PACING_SECONDS)
 
         if should_abort and should_abort():
             return total_bytes_sent

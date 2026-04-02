@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from difflib import SequenceMatcher
 
 from app.menu.repository import MenuRepository
@@ -19,7 +20,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     determine_next_add_item_step,
 )
 from app.utils.candidate_texts import build_candidate_texts_normalized
-from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
+from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match, tokenize
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
@@ -39,6 +40,17 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.PAYMENT_REQUEST,
     Intent.CANCEL_ORDER,
 }
+
+AUTO_ACCEPT_THRESHOLD = 0.80
+CONFIRM_THRESHOLD = 0.60
+MIN_CONFIRM_GAP = 0.08
+
+
+@dataclass(frozen=True, slots=True)
+class _ScoredSideChoice:
+    item_id: str
+    choice_name: str
+    confidence: float
 
 
 def _extract_side_slot_values_normalized(context: ConversationContext) -> list[str]:
@@ -197,6 +209,7 @@ class WaitingForSideHandler(BaseHandler):
     - interruption is considered before broad free-text matching
     - supports optional-group skip phrases like 'no bun' / 'without bun'
     - uses scoped repository resolution first, then local fallback rescue
+    - if best fuzzy match is medium confidence, ask yes/no confirmation
     """
 
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
@@ -225,6 +238,41 @@ class WaitingForSideHandler(BaseHandler):
             return self._step_to_result(context, step)
 
         group = groups[idx]
+
+        # Handle outstanding medium-confidence side confirmation first.
+        side_confirmation = self._get_pending_side_confirmation(context, group)
+        if side_confirmation is not None:
+            if intent == Intent.CONFIRM:
+                return self._apply_side_selection(
+                    context=context,
+                    pending_item_name=pending.item_name,
+                    group=group,
+                    matched_ids=[side_confirmation["item_id"]],
+                    clear_pending_confirmation=True,
+                )
+
+            if intent == Intent.DENY:
+                self._clear_pending_side_confirmation(context)
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE,
+                    response_key="repeat_side_options",
+                    response_payload={
+                        **self._choice_payload(group),
+                        "repeat_reason": "invalid",
+                    },
+                )
+
+            if intent == Intent.ASK_OPTIONS:
+                self._clear_pending_side_confirmation(context)
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE,
+                    response_key="list_side_options",
+                    response_payload=self._choice_payload(group),
+                )
+
+            # If user gives another side-like phrase instead of yes/no, discard prior suggestion
+            # and score the new utterance fresh.
+            self._clear_pending_side_confirmation(context)
 
         if intent == Intent.ASK_OPTIONS:
             return HandlerResult(
@@ -262,46 +310,56 @@ class WaitingForSideHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
-        matched_ids: list[str] = []
+        scored_match: _ScoredSideChoice | None = None
 
         normalized_slot_values = _extract_side_slot_values_normalized(context)
         if normalized_slot_values:
-            matched_ids = self._match_side_choices_from_values(
+            scored_match = self._resolve_best_side_choice_from_values(
                 normalized_values=normalized_slot_values,
                 group=group,
             )
 
-        if not matched_ids and normalized_user_text:
-            matched_ids = self._match_side_choices_from_values(
+        if scored_match is None and normalized_user_text:
+            scored_match = self._resolve_best_side_choice_from_values(
                 normalized_values=[normalized_user_text],
                 group=group,
             )
 
-        if not matched_ids and _looks_like_pure_side_answer(
+        if scored_match is None and _looks_like_pure_side_answer(
             normalized_user_text,
             group.normalized_choice_names,
         ):
-            matched_ids = self._match_side_choices_from_values(
+            scored_match = self._resolve_best_side_choice_from_values(
                 normalized_values=[_remove_leading_filler(normalized_user_text)],
                 group=group,
             )
 
-        if matched_ids:
-            unique_ids = list(dict.fromkeys(matched_ids))
-
-            if len(unique_ids) > group.max_selector:
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_SIDE,
-                    response_key="too_many_side_choices",
-                    response_payload=self._choice_payload(group),
+        if scored_match is not None:
+            if scored_match.confidence >= AUTO_ACCEPT_THRESHOLD:
+                return self._apply_side_selection(
+                    context=context,
+                    pending_item_name=pending.item_name,
+                    group=group,
+                    matched_ids=[scored_match.item_id],
+                    clear_pending_confirmation=True,
                 )
 
-            return self._apply_side_selection(
-                context=context,
-                pending_item_name=pending.item_name,
-                group=group,
-                matched_ids=unique_ids,
-            )
+            if scored_match.confidence >= CONFIRM_THRESHOLD:
+                self._set_pending_side_confirmation(
+                    context=context,
+                    group=group,
+                    item_id=scored_match.item_id,
+                    choice_name=scored_match.choice_name,
+                    confidence=scored_match.confidence,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE,
+                    response_key="confirm_side_choice_guess",
+                    response_payload={
+                        "group_name": group.name,
+                        "choice_name": scored_match.choice_name,
+                    },
+                )
 
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_SIDE,
@@ -319,7 +377,11 @@ class WaitingForSideHandler(BaseHandler):
         pending_item_name: str,
         group: PendingSideGroup,
         matched_ids: list[str],
+        clear_pending_confirmation: bool = False,
     ) -> HandlerResult:
+        if clear_pending_confirmation:
+            self._clear_pending_side_confirmation(context)
+
         existing_ids = list(context.selected_side_groups.get(group.group_id, []))
         proposed_ids = list(existing_ids)
 
@@ -389,81 +451,48 @@ class WaitingForSideHandler(BaseHandler):
         labels.extend([label for label in voice_labels if label])
         return list(dict.fromkeys(labels))
 
-    def _best_fuzzy_match(self, candidate: str, group: PendingSideGroup) -> list[str]:
-        best_item_id: str | None = None
-        best_score = 0.0
-        second_score = 0.0
+    def _similarity_ratio(self, a: str, b: str) -> float:
+        return SequenceMatcher(None, a, b).ratio()
 
-        for choice in group.choices:
-            labels = self._candidate_labels_for_choice(choice)
-            local_best = 0.0
+    def _choice_confidence(self, candidate: str, choice) -> float:
+        labels = self._candidate_labels_for_choice(choice)
+        if not labels:
+            return 0.0
 
-            for label in labels:
-                if not label:
-                    continue
-                score = SequenceMatcher(None, candidate, label).ratio()
-                if score > local_best:
-                    local_best = score
+        best = 0.0
+        candidate_tokens = set(tokenize(candidate))
 
-            if local_best > best_score:
-                second_score = best_score
-                best_score = local_best
-                best_item_id = choice.item_id
-            elif local_best > second_score:
-                second_score = local_best
+        for label in labels:
+            if not label:
+                continue
 
-        if best_item_id is None:
-            return []
+            if candidate == label:
+                return 1.0
 
-        if best_score >= 0.84 and (best_score - second_score) >= 0.08:
-            return [best_item_id]
+            label_tokens = set(tokenize(label))
+            overlap = len(candidate_tokens & label_tokens)
+            if candidate_tokens and label_tokens:
+                coverage = overlap / len(label_tokens)
+                candidate_coverage = overlap / len(candidate_tokens)
+                token_score = max(coverage, candidate_coverage)
+                best = max(best, token_score)
 
-        return []
+            if is_strong_token_match(candidate, label):
+                best = max(best, 0.92)
 
-    def _match_single_candidate(self, candidate: str, group: PendingSideGroup) -> list[str]:
-        if self.menu_repo is not None:
-            label_map = {
-                choice.item_id: tuple(self._candidate_labels_for_choice(choice))
-                for choice in group.choices
-            }
-            repo_matches = self.menu_repo.resolve_side_choice_within_group_normalized(
-                normalized_text=candidate,
-                group_id=group.group_id,
-                candidate_names_by_id=label_map,
-            )
-            if repo_matches:
-                return list(dict.fromkeys(repo_matches))
+            if is_controlled_partial_match(candidate, label):
+                best = max(best, 0.82)
 
-        exact_choices = group.choices_by_normalized_name.get(candidate, ())
-        if exact_choices:
-            return [choice.item_id for choice in exact_choices]
+            best = max(best, self._similarity_ratio(candidate, label))
 
-        token_matches: list[str] = []
-        for choice in group.choices:
-            for label in self._candidate_labels_for_choice(choice):
-                if is_strong_token_match(candidate, label):
-                    token_matches.append(choice.item_id)
-                    break
-        if token_matches:
-            return list(dict.fromkeys(token_matches))
+        return best
 
-        partial_matches: list[str] = []
-        for choice in group.choices:
-            for label in self._candidate_labels_for_choice(choice):
-                if is_controlled_partial_match(candidate, label):
-                    partial_matches.append(choice.item_id)
-                    break
-        if partial_matches:
-            return list(dict.fromkeys(partial_matches))
-
-        return self._best_fuzzy_match(candidate, group)
-
-    def _match_side_choices_from_values(
+    def _resolve_best_side_choice_from_values(
         self,
         *,
         normalized_values: list[str],
         group: PendingSideGroup,
-    ) -> list[str]:
+    ) -> _ScoredSideChoice | None:
         def _dedupe_keep_order(values: list[str]) -> list[str]:
             seen: set[str] = set()
             result: list[str] = []
@@ -488,38 +517,84 @@ class WaitingForSideHandler(BaseHandler):
         )
         split_candidates = [candidate for candidate in split_candidates if candidate not in full_candidates]
 
-        full_matches: list[str] = []
-        seen_full: set[str] = set()
+        all_candidates = full_candidates + split_candidates
+        if not all_candidates:
+            return None
 
-        for candidate in full_candidates:
-            matched_ids = self._match_single_candidate(candidate, group)
+        best_choice = None
+        best_confidence = 0.0
+        second_confidence = 0.0
 
-            if len(matched_ids) == 1:
-                return matched_ids
+        for choice in group.choices:
+            choice_best = 0.0
+            for candidate in all_candidates:
+                confidence = self._choice_confidence(candidate, choice)
+                if confidence > choice_best:
+                    choice_best = confidence
 
-            for item_id in matched_ids:
-                if item_id not in seen_full:
-                    seen_full.add(item_id)
-                    full_matches.append(item_id)
+            if choice_best > best_confidence:
+                second_confidence = best_confidence
+                best_confidence = choice_best
+                best_choice = choice
+            elif choice_best > second_confidence:
+                second_confidence = choice_best
 
-        if full_matches:
-            return full_matches
+        if best_choice is None:
+            return None
 
-        split_matches: list[str] = []
-        seen_split: set[str] = set()
+        if best_confidence < CONFIRM_THRESHOLD:
+            return None
 
-        for candidate in split_candidates:
-            matched_ids = self._match_single_candidate(candidate, group)
+        if (
+            best_confidence < AUTO_ACCEPT_THRESHOLD
+            and (best_confidence - second_confidence) < MIN_CONFIRM_GAP
+        ):
+            return None
 
-            for item_id in matched_ids:
-                if item_id not in seen_split:
-                    seen_split.add(item_id)
-                    split_matches.append(item_id)
+        return _ScoredSideChoice(
+            item_id=best_choice.item_id,
+            choice_name=best_choice.name,
+            confidence=best_confidence,
+        )
 
-            if len(split_matches) > 1:
-                break
+    def _get_pending_side_confirmation(
+        self,
+        context: ConversationContext,
+        group: PendingSideGroup,
+    ) -> dict | None:
+        confirmation = getattr(context, "awaiting_confirmation_for", None)
+        if not isinstance(confirmation, dict):
+            return None
 
-        return split_matches
+        if confirmation.get("type") != "side_choice_guess":
+            return None
+
+        if confirmation.get("group_id") != group.group_id:
+            return None
+
+        return confirmation
+
+    def _set_pending_side_confirmation(
+        self,
+        *,
+        context: ConversationContext,
+        group: PendingSideGroup,
+        item_id: str,
+        choice_name: str,
+        confidence: float,
+    ) -> None:
+        context.awaiting_confirmation_for = {
+            "type": "side_choice_guess",
+            "group_id": group.group_id,
+            "item_id": item_id,
+            "choice_name": choice_name,
+            "confidence": confidence,
+        }
+
+    def _clear_pending_side_confirmation(self, context: ConversationContext) -> None:
+        confirmation = getattr(context, "awaiting_confirmation_for", None)
+        if isinstance(confirmation, dict) and confirmation.get("type") == "side_choice_guess":
+            context.awaiting_confirmation_for = None
 
     def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
         pending = context.pending_add_item

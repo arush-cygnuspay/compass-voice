@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Sequence
 
 from app.core.pending_action import PendingAction
@@ -22,6 +23,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
 from app.state_machine.handlers.item.add_item.pending_add_item_factory import (
     build_pending_add_item,
 )
+from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match, tokenize
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
@@ -70,7 +72,7 @@ FILLER_PREFIXES: tuple[str, ...] = (
 @dataclass(frozen=True, slots=True)
 class _CandidateMatch:
     item: MenuItem
-    match_type: str  # exact | scoped_repo
+    match_type: str  # exact | scoped_repo | local_shortlist
 
 
 class ConfirmingHandler(BaseHandler):
@@ -114,9 +116,6 @@ class ConfirmingHandler(BaseHandler):
 
         reason = confirmation.get("reason")
 
-        # -------------------------------------------------
-        # Stage A: unresolved ambiguous/category item prompt
-        # -------------------------------------------------
         if reason in {"multiple_matches", "category_detected"}:
             if intent == Intent.DENY:
                 context.awaiting_confirmation_for = None
@@ -129,8 +128,6 @@ class ConfirmingHandler(BaseHandler):
                     response_key="item_cancelled_successfully",
                 )
 
-            # During ambiguous/category clarification, do not immediately soft-switch
-            # because users are often just restating the item.
             matched = self._resolve_candidate_item_from_confirmation(
                 context=context,
                 user_text=user_text,
@@ -155,9 +152,6 @@ class ConfirmingHandler(BaseHandler):
                 response_payload=dict(confirmation),
             )
 
-        # -------------------------------------------------
-        # Stage B: explicit yes/no for a concrete selected item
-        # -------------------------------------------------
         if reason == "candidate_selected":
             if intent == Intent.CONFIRM:
                 candidate_item_id = confirmation.get("value_id")
@@ -218,7 +212,6 @@ class ConfirmingHandler(BaseHandler):
                     response_payload={"item_name": item_name},
                 )
 
-            # User may repeat the selected item instead of saying "yes".
             matched_selected = self._resolve_selected_candidate_reaffirmation(
                 confirmation=confirmation,
                 user_text=user_text,
@@ -264,7 +257,101 @@ class ConfirmingHandler(BaseHandler):
         if matched_item is not None:
             return _CandidateMatch(item=matched_item, match_type="scoped_repo")
 
+        fallback_item = self._resolve_candidate_item_with_local_shortlist_fallback(
+            utterance=utterance,
+            candidate_item_ids=list(candidate_item_ids),
+        )
+        if fallback_item is not None:
+            return _CandidateMatch(item=fallback_item, match_type="local_shortlist")
+
         return None
+
+    def _resolve_candidate_item_with_local_shortlist_fallback(
+        self,
+        *,
+        utterance: str,
+        candidate_item_ids: list[str],
+    ) -> MenuItem | None:
+        candidates: list[MenuItem] = []
+        for item_id in candidate_item_ids:
+            try:
+                candidates.append(self.menu_repo.get_item(item_id))
+            except KeyError:
+                continue
+
+        if not candidates or not utterance:
+            return None
+
+        # 1) exact / alias / voice-label
+        exact_hits: list[MenuItem] = []
+        for item in candidates:
+            labels = [item.normalized_name, *item.normalized_aliases, *item.voice_labels]
+            if utterance in labels:
+                exact_hits.append(item)
+
+        if len(exact_hits) == 1:
+            return exact_hits[0]
+
+        # 2) token/partial scoring within shortlist only
+        scored: list[tuple[float, MenuItem]] = []
+        for item in candidates:
+            score = self._local_candidate_score(utterance, item)
+            if score > 0:
+                scored.append((score, item))
+
+        if not scored:
+            return None
+
+        scored.sort(key=lambda pair: pair[0], reverse=True)
+        best_score, best_item = scored[0]
+        second_score = scored[1][0] if len(scored) > 1 else 0.0
+
+        if best_score >= 8.0 and (
+            second_score == 0.0
+            or best_score - second_score >= 1.2
+            or best_score >= second_score * 1.15
+        ):
+            return best_item
+
+        return None
+
+    def _local_candidate_score(self, utterance: str, item: MenuItem) -> float:
+        utterance_tokens = set(tokenize(utterance))
+        if not utterance_tokens:
+            return 0.0
+
+        best = 0.0
+        labels = [item.normalized_name, *item.normalized_aliases, *item.voice_labels]
+
+        for label in labels:
+            if not label:
+                continue
+
+            if utterance == label:
+                return 20.0
+
+            label_tokens = set(tokenize(label))
+            if not label_tokens:
+                continue
+
+            overlap = len(utterance_tokens & label_tokens)
+            if overlap > 0:
+                coverage = overlap / max(len(label_tokens), 1)
+                utterance_coverage = overlap / max(len(utterance_tokens), 1)
+                score = (coverage * 6.0) + (utterance_coverage * 6.0) + overlap
+                best = max(best, score)
+
+            if is_strong_token_match(utterance, label):
+                best = max(best, 12.0)
+
+            if is_controlled_partial_match(utterance, label):
+                best = max(best, 9.0)
+
+            fuzzy = SequenceMatcher(None, utterance, label).ratio()
+            if fuzzy >= 0.84:
+                best = max(best, fuzzy * 10.0)
+
+        return best
 
     def _resolve_selected_candidate_reaffirmation(
         self,
@@ -284,7 +371,14 @@ class ConfirmingHandler(BaseHandler):
             normalized_text=utterance,
             candidate_item_ids=[str(selected_item_id)],
         )
-        return matched_item is not None
+        if matched_item is not None:
+            return True
+
+        fallback_item = self._resolve_candidate_item_with_local_shortlist_fallback(
+            utterance=utterance,
+            candidate_item_ids=[str(selected_item_id)],
+        )
+        return fallback_item is not None
 
     def _normalize_candidate_utterance(self, text: str) -> str:
         normalized = normalize_text(text)

@@ -169,6 +169,7 @@ class DeepgramTTSClient:
         async with self._write_lock:
             assert self._ws is not None
             try:
+                # wrapped = f'<prosody rate="1.15">{cleaned}</prosody>'
                 await self._ws.send(json.dumps({"type": "Speak", "text": cleaned}))
             except Exception as exc:
                 self._connected = False

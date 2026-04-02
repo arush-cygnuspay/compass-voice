@@ -1,4 +1,3 @@
-# app/state_machine/handlers/common/waiting_for_quantity_handler.py
 from __future__ import annotations
 
 from app.nlu.intent_resolution.intent import Intent
@@ -11,7 +10,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,
 )
-from app.utils.quantity_detection import detect_quantity
+from app.utils.quantity_detection import detect_quantity, normalize_quantity
 
 
 SOFT_SWITCH_INTENTS: set[Intent] = {
@@ -44,6 +43,8 @@ class WaitingForQuantityHandler(BaseHandler):
     - if quantity is resolved, continue canonical add-item flow immediately
     - if quantity is not resolved and the user tries a different flow-level action,
       route through cancellation confirmation
+    - do not aggressively scold with invalid quantity for simple item restatements;
+      softly re-ask first
     """
 
     def handle(
@@ -117,9 +118,19 @@ class WaitingForQuantityHandler(BaseHandler):
                 response_payload={"item_name": pending.item_name},
             )
 
+        if self._looks_like_item_restatement(
+            user_text=normalized_user_text,
+            item_name=pending.item_name,
+        ):
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_QUANTITY,
+                response_key="ask_for_quantity",
+                response_payload={"item_name": pending.item_name},
+            )
+
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_QUANTITY,
-            response_key="invalid_quantity_option",
+            response_key="ask_for_quantity",
             response_payload={"item_name": pending.item_name},
         )
 
@@ -145,6 +156,12 @@ class WaitingForQuantityHandler(BaseHandler):
                 if stripped.isdigit():
                     return int(stripped)
 
+        # First use the deterministic normalizer because detect_quantity may be
+        # conservative or stubbed depending on environment.
+        normalized_quantity = normalize_quantity(user_text)
+        if isinstance(normalized_quantity, int):
+            return normalized_quantity
+
         quantity_info = detect_quantity(user_text)
         if not quantity_info:
             return None
@@ -157,6 +174,52 @@ class WaitingForQuantityHandler(BaseHandler):
             return value
 
         return None
+
+    def _looks_like_item_restatement(
+        self,
+        *,
+        user_text: str,
+        item_name: str,
+    ) -> bool:
+        text = (user_text or "").strip().lower()
+        item = (item_name or "").strip().lower()
+
+        if not text or not item:
+            return False
+
+        filler_prefixes = (
+            "i want ",
+            "i want a ",
+            "i want an ",
+            "i would like ",
+            "i would like a ",
+            "i would like an ",
+            "i will take ",
+            "ill take ",
+            "add ",
+            "give me ",
+            "get me ",
+            "make it ",
+            "and ",
+        )
+
+        normalized = text
+        changed = True
+        while changed and normalized:
+            changed = False
+            for prefix in filler_prefixes:
+                if normalized.startswith(prefix):
+                    normalized = normalized[len(prefix):].strip()
+                    changed = True
+                    break
+
+        if not normalized:
+            return False
+
+        if normalized == item:
+            return True
+
+        return normalized in item or item in normalized
 
     def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
         pending = context.pending_add_item

@@ -16,11 +16,19 @@ class TurnCommitController:
     Aggregates streaming transcript events into a single committed user turn.
 
     Strategy:
-    - keep the existing speech_final / utterance_end commit path as the safe fallback
-    - add an early-commit path for short, obviously complete final transcripts
-      so replies like "yes", "no", "coke", "sprite", "small", "i'm done",
-      "add one coke" do not wait unnecessarily for later end-of-utterance events
-    - avoid duplicate commits for the same utterance and for repeated text
+    - keep speech_final / utterance_end as the primary safe commit path
+    - allow early commit only for a very small whitelist of obviously complete replies
+    - avoid duplicate commits for the same utterance and repeated text
+
+    Important:
+    This controller is intentionally conservative for voice ordering flows.
+    We do NOT early-commit generic single-word answers like:
+      - cheese
+      - fries
+      - coke
+      - large
+      - medium
+    because those often arrive before the user is actually done speaking.
     """
 
     final_segments: List[str] = field(default_factory=list)
@@ -93,12 +101,16 @@ class TurnCommitController:
 
     def _should_commit_early(self) -> bool:
         """
-        Early-commit only when the current final transcript looks safely complete.
+        Early-commit only when the current final transcript is extremely likely
+        to be a fully complete reply.
 
-        This is intentionally conservative:
-        - always commit if the built text ends with terminal punctuation
-        - commit short command-like replies without waiting for speech_final
-        - do not early-commit obviously incomplete prefixes
+        Conservative rules:
+        - terminal punctuation => safe
+        - exact whitelist of confirmation/control replies => safe
+        - otherwise wait for speech_final / utterance_end
+
+        This avoids cutting off users who are still speaking option answers
+        inside add-item flows.
         """
         if self.committed_in_current_utterance:
             return False
@@ -110,81 +122,36 @@ class TurnCommitController:
         if built == self.last_committed_text:
             return False
 
+        normalized = built.lower().strip()
+
         if built[-1:] in {".", "!", "?"}:
             return True
 
-        words = built.lower().split()
-        word_count = len(words)
-        if word_count == 0:
-            return False
-
-        # Single-word replies are usually complete in this domain.
-        if word_count == 1:
-            return True
-
-        # Two-word replies like "i'm done", "add coke", "no thanks" are also safe.
-        if word_count == 2 and not self._ends_in_incomplete_token(words):
-            return True
-
-        # Small command-like replies can be committed early if they don't look truncated.
-        if word_count <= 4 and not self._looks_incomplete_prefix(words):
-            return True
-
-        return False
-
-    @staticmethod
-    def _ends_in_incomplete_token(words: List[str]) -> bool:
-        last = words[-1]
-        return last in {
-            "a",
-            "an",
-            "the",
-            "and",
-            "or",
-            "to",
-            "for",
-            "of",
-            "with",
-            "plus",
+        safe_exact_replies = {
+            "yes",
+            "yeah",
+            "yep",
+            "yup",
+            "correct",
+            "right",
+            "ok",
+            "okay",
+            "no",
+            "nope",
+            "nah",
+            "cancel",
+            "stop",
+            "done",
+            "that's all",
+            "thats all",
+            "i'm done",
+            "im done",
+            "finished",
+            "checkout",
+            "check out",
         }
 
-    def _looks_incomplete_prefix(self, words: List[str]) -> bool:
-        text = " ".join(words)
-
-        if self._ends_in_incomplete_token(words):
-            return True
-
-        incomplete_prefixes = {
-            "i want",
-            "i would",
-            "i would like",
-            "can i",
-            "could i",
-            "let me",
-            "show me",
-            "tell me",
-            "how much",
-            "what is",
-            "what's",
-            "which",
-        }
-        if text in incomplete_prefixes:
-            return True
-
-        incomplete_exact = {
-            "i want a",
-            "i want an",
-            "i want the",
-            "add a",
-            "add an",
-            "add the",
-            "give me",
-            "make it",
-            "with a",
-            "with an",
-            "with the",
-        }
-        return text in incomplete_exact
+        return normalized in safe_exact_replies
 
     @staticmethod
     def _clean(text: str) -> str:
