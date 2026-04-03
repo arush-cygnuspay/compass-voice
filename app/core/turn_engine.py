@@ -908,9 +908,14 @@ class TurnEngine:
         state_before: ConversationState,
         engine_start_monotonic: float,
     ) -> None:
+        ctx = session.conversation_context
         self._trace_set_attr(trace, "session_id", self._safe_session_id(session))
         self._trace_set_attr(trace, "user_text", user_text)
         self._trace_set_attr(trace, "state_before", state_before.value)
+        self._trace_set_attr(trace, "pending_action", self._safe_pending_action_from_context(ctx))
+        self._trace_set_attr(trace, "current_prompt_field", self._safe_current_prompt_field_from_context(ctx))
+        self._trace_set_attr(trace, "current_item_id", self._safe_current_item_id_from_context(ctx))
+        self._trace_set_attr(trace, "current_item_name", self._safe_current_item_name_from_context(ctx))
         self._trace_set_attr(trace, "engine_start_monotonic", engine_start_monotonic)
 
     def _trace_set_nlu_fields(self, *, trace: Any | None, nlu: Any) -> None:
@@ -963,8 +968,14 @@ class TurnEngine:
     ) -> None:
         engine_end = time.perf_counter()
 
+        ctx = session.conversation_context
+
         self._trace_set_attr(trace, "response_key", response_key)
         self._trace_set_attr(trace, "state_after", session.conversation_state.value)
+        self._trace_set_attr(trace, "pending_action", self._safe_pending_action_from_context(ctx))
+        self._trace_set_attr(trace, "current_prompt_field", self._safe_current_prompt_field_from_context(ctx))
+        self._trace_set_attr(trace, "current_item_id", self._safe_current_item_id_from_context(ctx))
+        self._trace_set_attr(trace, "current_item_name", self._safe_current_item_name_from_context(ctx))
         self._trace_set_attr(trace, "engine_end_monotonic", engine_end)
         self._trace_set_attr(trace, "turn_total_ms", round(total_ms, 3))
         self._trace_set_attr(trace, "preprocess_ms", round(preprocess_ms, 3))

@@ -68,10 +68,15 @@ class RealtimeTurnTrace:
 
     state_before: str = ""
     state_after: str = ""
+    pending_action: str = ""
+    current_prompt_field: str = ""
+    current_item_id: str = ""
+    current_item_name: str = ""
     user_text: str = ""
     cleaned_text: str = ""
     normalized_text: str = ""
     response_text: str = ""
+    spoken_response_text: str = ""
     response_key: str = ""
 
     pred_main_intent: str = ""
@@ -171,12 +176,52 @@ class RealtimeTurnTrace:
             self.twilio_mark_sent_monotonic,
             self.twilio_mark_received_monotonic,
         )
+        latency_first_audio_sent_to_playback_ack_ms = ms_between(
+            self.twilio_first_outbound_media_monotonic,
+            self.twilio_mark_received_monotonic,
+        )
         latency_first_inbound_audio_to_playback_ack_ms = ms_between(
             self.first_inbound_media_monotonic,
             self.twilio_mark_received_monotonic,
         )
 
-        # This is a residual bucket, not true "network" only
+        # Executive-facing timings
+        # 1) Reply started
+        latency_customer_wait_for_first_audio_ms = latency_stt_final_to_first_audio_sent_ms
+
+        # 2) Full turn completed (preferred total turn latency for leadership)
+        latency_customer_wait_until_playback_complete_ms = ms_between(
+            self.dg_final_transcript_monotonic,
+            self.twilio_mark_received_monotonic,
+        )
+
+        # 3) Backend+telephony completion after commit
+        latency_turn_commit_to_playback_complete_ms = ms_between(
+            self.turn_commit_monotonic,
+            self.twilio_mark_received_monotonic,
+        )
+
+        # Twilio playback / transport estimation
+        twilio_estimated_playback_ms = self.outbound_audio_duration_ms
+        twilio_estimated_transport_and_ack_overhead_ms = None
+        twilio_estimated_one_way_start_ms = None
+        if (
+            latency_first_audio_sent_to_playback_ack_ms is not None
+            and twilio_estimated_playback_ms is not None
+        ):
+            twilio_estimated_transport_and_ack_overhead_ms = round(
+                max(
+                    latency_first_audio_sent_to_playback_ack_ms - twilio_estimated_playback_ms,
+                    0.0,
+                ),
+                3,
+            )
+            twilio_estimated_one_way_start_ms = round(
+                twilio_estimated_transport_and_ack_overhead_ms / 2.0,
+                3,
+            )
+
+        # Residual bucket, not true network-only
         latency_estimated_unattributed_ms = None
         if latency_first_inbound_audio_to_playback_ack_ms is not None:
             subtract = 0.0
@@ -213,7 +258,14 @@ class RealtimeTurnTrace:
                 "latency_tts_first_chunk_to_first_audio_sent_ms": latency_tts_first_chunk_to_first_audio_sent_ms,
                 "latency_first_audio_sent_to_last_audio_sent_ms": latency_first_audio_sent_to_last_audio_sent_ms,
                 "latency_mark_sent_to_mark_received_ms": latency_mark_sent_to_mark_received_ms,
+                "latency_first_audio_sent_to_playback_ack_ms": latency_first_audio_sent_to_playback_ack_ms,
                 "latency_first_inbound_audio_to_playback_ack_ms": latency_first_inbound_audio_to_playback_ack_ms,
+                "latency_customer_wait_for_first_audio_ms": latency_customer_wait_for_first_audio_ms,
+                "latency_customer_wait_until_playback_complete_ms": latency_customer_wait_until_playback_complete_ms,
+                "latency_turn_commit_to_playback_complete_ms": latency_turn_commit_to_playback_complete_ms,
+                "twilio_estimated_playback_ms": twilio_estimated_playback_ms,
+                "twilio_estimated_transport_and_ack_overhead_ms": twilio_estimated_transport_and_ack_overhead_ms,
+                "twilio_estimated_one_way_start_ms": twilio_estimated_one_way_start_ms,
                 "latency_estimated_unattributed_ms": latency_estimated_unattributed_ms,
                 "slot_names_csv": _stringify_list(self.slot_names),
                 "slot_values_csv": _stringify_list(self.slot_values),
@@ -224,41 +276,67 @@ class RealtimeTurnTrace:
 
 class RealtimeLatencyLogger:
     CSV_COLUMNS = [
+        # Identifiers / timestamps
         "turn_index",
+        "turn_id",
+        "call_sid",
+        "stream_sid",
+        "session_id",
         "turn_started_at_utc",
         "turn_committed_at_utc",
         "response_first_audio_sent_at_utc",
         "playback_completed_at_utc",
-        "text",
+
+        # User / bot / flow context
+        "customer_said",
+        "cleaned_text",
         "normalized_text",
-        "response_text",
+        "bot_internal_response_text",
+        "bot_spoken_response_text",
         "response_key",
         "state_before",
         "state_after",
+        "pending_action",
+        "current_prompt_field",
+        "current_item_id",
+        "current_item_name",
         "intent_main",
         "intent_sub_intent",
         "intent_effective",
         "intent_confidence",
+        "slot_names",
+        "slot_values",
 
-        # Steve-facing / primary latency view
-        "latency_stt_final_to_first_audio_sent_ms",
-        "latency_turn_commit_to_first_audio_sent_ms",
-        "latency_engine_processing_ms",
-        "latency_tts_request_to_first_audio_chunk_ms",
+        # Executive-facing
+        "customer_wait_for_first_audio_ms",
+        "customer_wait_until_playback_complete_ms",
+        "turn_commit_to_playback_complete_ms",
+
+        # Main breakdown
+        "stt_final_to_turn_commit_ms",
+        "engine_processing_ms",
+        "response_render_ms",
+        "tts_request_to_first_audio_chunk_ms",
+        "turn_commit_to_first_audio_sent_ms",
+        "stt_final_to_first_audio_sent_ms",
+        "engine_end_to_first_audio_sent_ms",
+        "tts_first_chunk_to_first_audio_sent_ms",
+        "tts_request_to_last_audio_chunk_ms",
+        "first_audio_sent_to_last_audio_sent_ms",
+        "first_audio_sent_to_playback_ack_ms",
+        "mark_sent_to_mark_received_ms",
+
+        # Twilio estimate columns
+        "twilio_estimated_playback_ms",
+        "twilio_estimated_transport_and_ack_overhead_ms",
+        "twilio_estimated_one_way_start_ms",
 
         # Supporting latency details
-        "latency_response_render_ms",
-        "latency_engine_end_to_first_audio_sent_ms",
-        "latency_tts_first_chunk_to_first_audio_sent_ms",
-        "latency_tts_request_to_last_audio_chunk_ms",
-        "latency_first_audio_sent_to_last_audio_sent_ms",
-        "latency_mark_sent_to_mark_received_ms",
-        "latency_first_inbound_audio_to_playback_ack_ms",
-        "latency_stt_final_to_turn_commit_ms",
-        "latency_first_inbound_audio_to_turn_commit_ms",
-        "latency_user_speech_start_to_stt_final_ms",
-        "latency_first_inbound_audio_to_stt_final_ms",
-        "latency_estimated_unattributed_ms",
+        "first_inbound_audio_to_playback_ack_ms",
+        "first_inbound_audio_to_turn_commit_ms",
+        "user_speech_start_to_stt_final_ms",
+        "first_inbound_audio_to_stt_final_ms",
+        "estimated_unattributed_ms",
 
         # Existing model timings
         "time_preprocess_ms",
@@ -275,16 +353,8 @@ class RealtimeLatencyLogger:
         "outbound_audio_duration_ms",
         "tts_text_chars",
         "stt_final_text_chars",
-        "slot_names",
-        "slot_values",
         "command",
         "notes",
-
-        # IDs
-        "turn_id",
-        "call_sid",
-        "stream_sid",
-        "session_id",
     ]
 
     def __init__(
@@ -433,38 +503,60 @@ class RealtimeLatencyLogger:
     def _build_csv_row(self, payload: dict[str, Any]) -> dict[str, Any]:
         return {
             "turn_index": payload.get("turn_index", ""),
+            "turn_id": payload.get("turn_id", ""),
+            "call_sid": payload.get("call_sid", ""),
+            "stream_sid": payload.get("stream_sid", ""),
+            "session_id": payload.get("session_id", ""),
             "turn_started_at_utc": payload.get("turn_started_at_utc", ""),
             "turn_committed_at_utc": payload.get("turn_committed_at_utc", ""),
             "response_first_audio_sent_at_utc": payload.get("response_first_audio_sent_at_utc", ""),
             "playback_completed_at_utc": payload.get("playback_completed_at_utc", ""),
-            "text": payload.get("user_text", ""),
+
+            "customer_said": payload.get("user_text", ""),
+            "cleaned_text": payload.get("cleaned_text", ""),
             "normalized_text": payload.get("normalized_text", ""),
-            "response_text": payload.get("response_text", ""),
+            "bot_internal_response_text": payload.get("response_text", ""),
+            "bot_spoken_response_text": payload.get("spoken_response_text", ""),
             "response_key": payload.get("response_key", ""),
             "state_before": payload.get("state_before", ""),
             "state_after": payload.get("state_after", ""),
+            "pending_action": payload.get("pending_action", ""),
+            "current_prompt_field": payload.get("current_prompt_field", ""),
+            "current_item_id": payload.get("current_item_id", ""),
+            "current_item_name": payload.get("current_item_name", ""),
             "intent_main": payload.get("pred_main_intent", ""),
             "intent_sub_intent": payload.get("pred_sub_intent", ""),
             "intent_effective": payload.get("pred_intent", ""),
             "intent_confidence": payload.get("pred_intent_confidence", ""),
+            "slot_names": payload.get("slot_names_csv", ""),
+            "slot_values": payload.get("slot_values_csv", ""),
 
-            "latency_stt_final_to_first_audio_sent_ms": payload.get("latency_stt_final_to_first_audio_sent_ms", ""),
-            "latency_turn_commit_to_first_audio_sent_ms": payload.get("latency_turn_commit_to_first_audio_sent_ms", ""),
-            "latency_engine_processing_ms": payload.get("latency_engine_processing_ms", ""),
-            "latency_tts_request_to_first_audio_chunk_ms": payload.get("latency_tts_request_to_first_audio_chunk_ms", ""),
+            "customer_wait_for_first_audio_ms": payload.get("latency_customer_wait_for_first_audio_ms", ""),
+            "customer_wait_until_playback_complete_ms": payload.get("latency_customer_wait_until_playback_complete_ms", ""),
+            "turn_commit_to_playback_complete_ms": payload.get("latency_turn_commit_to_playback_complete_ms", ""),
 
-            "latency_response_render_ms": payload.get("latency_response_render_ms", ""),
-            "latency_engine_end_to_first_audio_sent_ms": payload.get("latency_engine_end_to_first_audio_sent_ms", ""),
-            "latency_tts_first_chunk_to_first_audio_sent_ms": payload.get("latency_tts_first_chunk_to_first_audio_sent_ms", ""),
-            "latency_tts_request_to_last_audio_chunk_ms": payload.get("latency_tts_request_to_last_audio_chunk_ms", ""),
-            "latency_first_audio_sent_to_last_audio_sent_ms": payload.get("latency_first_audio_sent_to_last_audio_sent_ms", ""),
-            "latency_mark_sent_to_mark_received_ms": payload.get("latency_mark_sent_to_mark_received_ms", ""),
-            "latency_first_inbound_audio_to_playback_ack_ms": payload.get("latency_first_inbound_audio_to_playback_ack_ms", ""),
-            "latency_stt_final_to_turn_commit_ms": payload.get("latency_stt_final_to_turn_commit_ms", ""),
-            "latency_first_inbound_audio_to_turn_commit_ms": payload.get("latency_first_inbound_audio_to_turn_commit_ms", ""),
-            "latency_user_speech_start_to_stt_final_ms": payload.get("latency_user_speech_start_to_stt_final_ms", ""),
-            "latency_first_inbound_audio_to_stt_final_ms": payload.get("latency_first_inbound_audio_to_stt_final_ms", ""),
-            "latency_estimated_unattributed_ms": payload.get("latency_estimated_unattributed_ms", ""),
+            "stt_final_to_turn_commit_ms": payload.get("latency_stt_final_to_turn_commit_ms", ""),
+            "engine_processing_ms": payload.get("latency_engine_processing_ms", ""),
+            "response_render_ms": payload.get("latency_response_render_ms", ""),
+            "tts_request_to_first_audio_chunk_ms": payload.get("latency_tts_request_to_first_audio_chunk_ms", ""),
+            "turn_commit_to_first_audio_sent_ms": payload.get("latency_turn_commit_to_first_audio_sent_ms", ""),
+            "stt_final_to_first_audio_sent_ms": payload.get("latency_stt_final_to_first_audio_sent_ms", ""),
+            "engine_end_to_first_audio_sent_ms": payload.get("latency_engine_end_to_first_audio_sent_ms", ""),
+            "tts_first_chunk_to_first_audio_sent_ms": payload.get("latency_tts_first_chunk_to_first_audio_sent_ms", ""),
+            "tts_request_to_last_audio_chunk_ms": payload.get("latency_tts_request_to_last_audio_chunk_ms", ""),
+            "first_audio_sent_to_last_audio_sent_ms": payload.get("latency_first_audio_sent_to_last_audio_sent_ms", ""),
+            "first_audio_sent_to_playback_ack_ms": payload.get("latency_first_audio_sent_to_playback_ack_ms", ""),
+            "mark_sent_to_mark_received_ms": payload.get("latency_mark_sent_to_mark_received_ms", ""),
+
+            "twilio_estimated_playback_ms": payload.get("twilio_estimated_playback_ms", ""),
+            "twilio_estimated_transport_and_ack_overhead_ms": payload.get("twilio_estimated_transport_and_ack_overhead_ms", ""),
+            "twilio_estimated_one_way_start_ms": payload.get("twilio_estimated_one_way_start_ms", ""),
+
+            "first_inbound_audio_to_playback_ack_ms": payload.get("latency_first_inbound_audio_to_playback_ack_ms", ""),
+            "first_inbound_audio_to_turn_commit_ms": payload.get("latency_first_inbound_audio_to_turn_commit_ms", ""),
+            "user_speech_start_to_stt_final_ms": payload.get("latency_user_speech_start_to_stt_final_ms", ""),
+            "first_inbound_audio_to_stt_final_ms": payload.get("latency_first_inbound_audio_to_stt_final_ms", ""),
+            "estimated_unattributed_ms": payload.get("latency_estimated_unattributed_ms", ""),
 
             "time_preprocess_ms": payload.get("preprocess_ms", ""),
             "time_nlu_ms": payload.get("nlu_ms", ""),
@@ -479,15 +571,8 @@ class RealtimeLatencyLogger:
             "outbound_audio_duration_ms": payload.get("outbound_audio_duration_ms", ""),
             "tts_text_chars": payload.get("tts_text_chars", ""),
             "stt_final_text_chars": payload.get("stt_final_text_chars", ""),
-            "slot_names": payload.get("slot_names_csv", ""),
-            "slot_values": payload.get("slot_values_csv", ""),
             "command": _safe_json(payload.get("command")),
             "notes": _safe_json(payload.get("notes")),
-
-            "turn_id": payload.get("turn_id", ""),
-            "call_sid": payload.get("call_sid", ""),
-            "stream_sid": payload.get("stream_sid", ""),
-            "session_id": payload.get("session_id", ""),
         }
 
     def _ensure_csv_header(self) -> None:
