@@ -26,6 +26,21 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
     if side_variant_step is not None:
         return side_variant_step
 
+    if pending.item_variants and not _has_valid_variant_selected(context, pending):
+        context.size_target = {"type": "item"}
+        context.current_prompt_field = "size"
+        context.available_choices_kind = "size"
+        context.available_choices_values = pending.item_variant_names
+
+        return AddItemNextStep(
+            next_state=ConversationState.WAITING_FOR_SIZE,
+            response_key="ask_for_size",
+            response_payload={
+                "item_name": pending.item_name,
+                "available_sizes": list(pending.item_variant_names),
+            },
+        )
+
     next_side_index = _find_next_unresolved_side_group_index(context, pending)
     if next_side_index is not None:
         context.current_side_group_index = next_side_index
@@ -61,21 +76,6 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
                 "item_name": pending.item_name,
                 "group_name": group.name,
                 "top_choices": list(group.top_choice_names),
-            },
-        )
-
-    if pending.item_variants and not _has_valid_variant_selected(context, pending):
-        context.size_target = {"type": "item"}
-        context.current_prompt_field = "size"
-        context.available_choices_kind = "size"
-        context.available_choices_values = pending.item_variant_names
-
-        return AddItemNextStep(
-            next_state=ConversationState.WAITING_FOR_SIZE,
-            response_key="ask_for_size",
-            response_payload={
-                "item_name": pending.item_name,
-                "available_sizes": list(pending.item_variant_names),
             },
         )
 
