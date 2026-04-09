@@ -8,7 +8,7 @@ from app.responses.cart_responses import (
     cart_cleared_response,
     clear_cart_cancelled_response,
     confirm_clear_cart_response,
-    render_cart_summary,
+    render_cart_summary, render_checkout_review_summary,
 )
 from app.responses.flow_control_responses import (
     flow_guard_cancelled,
@@ -138,6 +138,8 @@ class ResponseBuilder:
             "repeat_order_type": lambda *_: "Is this for pickup or delivery?",
             "order_type_captured_pickup": lambda *_: "Got it. Pickup. What would you like to order?",
             "order_type_captured_delivery": lambda *_: "Got it. Delivery. What would you like to order?",
+
+            "checkout_blocked_finish_current_item": lambda *_: "Please finish this item first, or say cancel.",
         }
 
     def _intent_not_allowed(
@@ -274,3 +276,15 @@ class ResponseBuilder:
 
         resume_text = resume_renderer(context, menu_repo, resume_payload)
         return f"{interrupt_text} {resume_text}"
+
+
+    def _confirm_order_summary(
+            self,
+            context: ConversationContext,
+            _: MenuRepository,
+            payload: dict,
+    ) -> str:
+        return render_checkout_review_summary(
+            payload=payload,
+            order_type=context.order_type,
+        )

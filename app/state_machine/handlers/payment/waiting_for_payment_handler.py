@@ -36,7 +36,6 @@ class WaitingForPaymentHandler(BaseHandler):
 
     COMPLETE_PAYMENT_INTENTS = {
         Intent.PAYMENT_DONE,
-        Intent.CONFIRM,
     }
 
     def handle(self, intent, context, user_text, session=None):

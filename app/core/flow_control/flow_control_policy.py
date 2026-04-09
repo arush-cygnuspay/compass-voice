@@ -23,6 +23,27 @@ ACTIVE_TASK_STATES: set[ConversationState] = {
     ConversationState.WAITING_FOR_PAYMENT,
 }
 
+MID_ITEM_BLOCKING_STATES: set[ConversationState] = {
+    ConversationState.CONFIRMING_ITEM,
+    ConversationState.WAITING_FOR_SIDE,
+    ConversationState.WAITING_FOR_SIDE_SIZE,
+    ConversationState.WAITING_FOR_MODIFIER,
+    ConversationState.WAITING_FOR_SIZE,
+    ConversationState.WAITING_FOR_QUANTITY,
+    ConversationState.REMOVING_ITEM,
+    ConversationState.MODIFYING_ITEM,
+}
+
+CHECKOUT_ATTEMPT_INTENTS: set[Intent] = {
+    Intent.START_ORDER,
+    Intent.END_ADDING,
+    Intent.CHECKOUT,
+    Intent.CONFIRM_ORDER,
+    Intent.FINISH_ORDER,
+    Intent.PAYMENT_REQUEST,
+    Intent.REVIEW_ORDER,
+}
+
 READ_ONLY_INTERRUPT_INTENTS: set[Intent] = {
     Intent.ASK_PRICE,
     Intent.SHOW_CART,
@@ -46,12 +67,6 @@ class _GuardPayload:
 class FlowControlPolicy:
     """
     Mid-flow orchestration guardrails.
-
-    Policy:
-    - Explicit cancel inside an active task does not immediately destroy the flow.
-    - Instead, it transitions into cancellation confirmation.
-    - Read-only informational interrupts are allowed mid-flow and should be
-      handled outside the waiting-state handlers.
     """
 
     def evaluate(
@@ -63,10 +78,17 @@ class FlowControlPolicy:
     ) -> FlowDecision:
         payload = _GuardPayload(state=state, context=context)
 
+        if intent in CHECKOUT_ATTEMPT_INTENTS and state in MID_ITEM_BLOCKING_STATES:
+            return FlowDecision(
+                action=FlowAction.BLOCK,
+                response_key="checkout_blocked_finish_current_item",
+                response_payload={"state": state.value},
+            )
+
         if (
-                intent in {Intent.CANCEL, Intent.CANCEL_ORDER}
-                and state in ACTIVE_TASK_STATES
-                and state != ConversationState.CANCELLATION_CONFIRMATION
+            intent in {Intent.CANCEL, Intent.CANCEL_ORDER}
+            and state in ACTIVE_TASK_STATES
+            and state != ConversationState.CANCELLATION_CONFIRMATION
         ):
             return FlowDecision(
                 action=FlowAction.CANCEL,

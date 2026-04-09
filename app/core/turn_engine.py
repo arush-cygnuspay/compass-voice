@@ -9,6 +9,7 @@ from typing import Any
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.core.flow_control.flow_decision import FlowAction
 from app.core.flow_control.flow_control_policy import FlowControlPolicy
+from app.core.response_builder import ResponseBuilder
 from app.logging.nlu_csv_logger import NluCsvLogger
 from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository
@@ -110,12 +111,13 @@ class TurnEngine:
     """
 
     def __init__(
-        self,
-        router: StateRouter,
-        menu_repo: MenuRepository,
-        intent_bundle: IntentBundle,
-        slot_bundle: SlotBundle,
-        nlu_logger: NluCsvLogger | None = None,
+            self,
+            router: StateRouter,
+            menu_repo: MenuRepository,
+            intent_bundle: IntentBundle,
+            slot_bundle: SlotBundle,
+            responder: ResponseBuilder,
+            nlu_logger: NluCsvLogger | None = None,
     ) -> None:
         self.router = router
         self.menu_repo = menu_repo
@@ -125,6 +127,7 @@ class TurnEngine:
         self.flow_policy = FlowControlPolicy()
         self.nlu_logger = nlu_logger or NluCsvLogger()
         self.resume_prompt_builder = ResumePromptBuilder()
+        self.responder = responder
 
         self.handlers: dict[str, Any] = {
             "add_item_handler": AddItemHandler(menu_repo=menu_repo),
@@ -147,10 +150,10 @@ class TurnEngine:
         }
 
     def process_turn(
-        self,
-        session: Session,
-        user_text: str,
-        trace: Any | None = None,
+            self,
+            session: Session,
+            user_text: str,
+            trace: Any | None = None,
     ) -> TurnOutput:
         t_total_start = time.perf_counter()
 
@@ -175,9 +178,12 @@ class TurnEngine:
                 response_payload=gate_result.response_payload,
             )
 
-            return TurnOutput(
-                response_key=gate_result.response_key,
-                response_payload=gate_result.response_payload,
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=gate_result.response_key,
+                    response_payload=gate_result.response_payload,
+                ),
             )
 
         state_before = session.conversation_state
@@ -271,7 +277,10 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-            return shortcut_output
+            return self._hydrate_output(
+                session=session,
+                output=shortcut_output,
+            )
 
         intent_result = self._rewrite_idle_unknown_menu_followup(
             session=session,
@@ -319,9 +328,12 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-            return TurnOutput(
-                response_key=response_key,
-                response_payload=payload,
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=response_key,
+                    response_payload=payload,
+                ),
             )
 
         if flow.action == FlowAction.CANCEL:
@@ -361,9 +373,12 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-            return TurnOutput(
-                response_key=response_key,
-                response_payload=response_payload,
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=response_key,
+                    response_payload=response_payload,
+                ),
             )
 
         if flow.action == FlowAction.HANDLE_READONLY_INTERRUPT:
@@ -445,9 +460,12 @@ class TurnEngine:
                 route_ms=t_route * 1000.0,
                 handler_ms=0.0,
             )
-            return TurnOutput(
-                response_key="intent_not_allowed",
-                response_payload=payload,
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key="intent_not_allowed",
+                    response_payload=payload,
+                ),
             )
 
         handler = self.handlers.get(route.handler_name)
@@ -500,11 +518,14 @@ class TurnEngine:
             command=result.command,
         )
 
-        return TurnOutput(
-            response_key=result.response_key,
-            response_payload=result.response_payload,
-            internal_response_text=getattr(result, "internal_response_text", None),
-            spoken_response_text=getattr(result, "spoken_response_text", None),
+        return self._hydrate_output(
+            session=session,
+            output=TurnOutput(
+                response_key=result.response_key,
+                response_payload=result.response_payload,
+                internal_response_text=getattr(result, "internal_response_text", None),
+                spoken_response_text=getattr(result, "spoken_response_text", None),
+            ),
         )
 
     def _apply_session_response(
@@ -1055,4 +1076,34 @@ class TurnEngine:
             response_payload=followup_output.response_payload,
             internal_response_text=internal,
             spoken_response_text=spoken,
+        )
+
+    @staticmethod
+    def _normalize_response_text(text: str | None) -> str:
+        return " ".join((text or "").split()).strip()
+
+    def _hydrate_output(
+        self,
+        *,
+        session: Session,
+        output: TurnOutput,
+    ) -> TurnOutput:
+        internal_text = self._normalize_response_text(
+            output.internal_response_text
+            or self.responder.build(
+                response_key=output.response_key,
+                context=session.conversation_context,
+                payload=output.response_payload,
+            )
+        )
+
+        spoken_text = self._normalize_response_text(
+            output.spoken_response_text or internal_text
+        )
+
+        return TurnOutput(
+            response_key=output.response_key,
+            response_payload=output.response_payload,
+            internal_response_text=internal_text,
+            spoken_response_text=spoken_text,
         )
