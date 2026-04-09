@@ -86,6 +86,7 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
 
     menu_repo = MenuRepository(menu_store)
     router = StateRouter()
+    responder = ResponseBuilder(menu_repo)
 
     intent_bundle = load_intent_bundle(
         model_dir=str(intent_model_dir),
@@ -100,9 +101,9 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
         menu_repo=menu_repo,
         intent_bundle=intent_bundle,
         slot_bundle=slot_bundle,
+        responder=responder,
         nlu_logger=NluCsvLogger(),
     )
-    responder = ResponseBuilder(menu_repo)
 
     return AppRuntime(
         menu_store=menu_store,

@@ -77,6 +77,7 @@ DYNAMIC_RESPONSE_KEYS = {
     "repeat_order_type",
     "order_type_captured_pickup",
     "order_type_captured_delivery",
+    "confirm_order_summary",
 }
 
 _WELCOME_AUDIO_BYTES_CACHE: bytes | None = None
@@ -693,7 +694,6 @@ async def twilio_media_ws(websocket: WebSocket):
     def _compact_spoken_response(response_key: str, text: str) -> str:
         compact_map = {
             "item_added_successfully": "Added. Anything else?",
-            "confirm_order_summary": "Your total is ready. Checkout now?",
             "payment_link_sent": "Payment link sent. Tell me when done.",
             "order_completed": "Payment confirmed. Your order is placed. Ready in 25 minutes. Thank you.",
             "show_cart": text,
@@ -705,17 +705,25 @@ async def twilio_media_ws(websocket: WebSocket):
         return _normalize_response_text(compact_map.get(response_key, text))
 
     def _build_response_texts(
-        turn_output: Any,
-        app_session: Session,
+            turn_output: Any,
     ) -> tuple[str, str]:
-        internal_text = (
+        internal_text = _normalize_response_text(
             getattr(turn_output, "internal_response_text", None)
-            or app.state.responder.build(
-                response_key=turn_output.response_key,
-                context=app_session.conversation_context,
-                payload=turn_output.response_payload,
-            )
         )
+        spoken_text = _normalize_response_text(
+            getattr(turn_output, "spoken_response_text", None)
+        )
+
+        if not internal_text:
+            raise ValueError(
+                f"TurnEngine returned empty internal_response_text for response_key="
+                f"{getattr(turn_output, 'response_key', 'unknown')}"
+            )
+
+        if not spoken_text:
+            spoken_text = internal_text
+
+        return internal_text, spoken_text
 
         response_key = turn_output.response_key
 
@@ -913,7 +921,6 @@ async def twilio_media_ws(websocket: WebSocket):
             _trace_set_attr(trace, "responder_start_monotonic", time.perf_counter())
             internal_response_text, spoken_response_text = _build_response_texts(
                 turn_output=turn_output,
-                app_session=app_session,
             )
             _trace_set_attr(trace, "responder_end_monotonic", time.perf_counter())
             _trace_set_attr(trace, "response_key", turn_output.response_key)
