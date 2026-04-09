@@ -38,3 +38,5 @@ class ConversationState(str, Enum):
 
     # Mid-flow cancellation confirmation
     CANCELLATION_CONFIRMATION = "cancellation_confirmation"
+
+    WAITING_FOR_ORDER_TYPE = "waiting_for_order_type"

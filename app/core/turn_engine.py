@@ -25,6 +25,7 @@ from app.state_machine.handlers.cart.cart_handlers import CartHandler
 from app.state_machine.handlers.common.cancellation_confirmation_handler import (
     CancellationConfirmationHandler,
 )
+from app.state_machine.handlers.common.waiting_for_order_type_handler import WaitingForOrderTypeHandler
 from app.state_machine.handlers.common.waiting_for_quantity_handler import (
     WaitingForQuantityHandler,
 )
@@ -142,6 +143,7 @@ class TurnEngine:
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
+            "waiting_for_order_type_handler": WaitingForOrderTypeHandler()
         }
 
     def process_turn(
@@ -153,6 +155,31 @@ class TurnEngine:
         t_total_start = time.perf_counter()
 
         ctx = session.conversation_context
+
+        self._normalize_order_type_gate_state(session)
+
+        if session.conversation_state == ConversationState.WAITING_FOR_ORDER_TYPE:
+            handler: WaitingForOrderTypeHandler = self.handlers["waiting_for_order_type_handler"]
+            gate_result = handler.handle(
+                intent=Intent.UNKNOWN,
+                context=ctx,
+                user_text=user_text,
+                session=session,
+            )
+
+            session.conversation_state = gate_result.next_state
+            self._apply_session_response(
+                session=session,
+                intent=Intent.UNKNOWN,
+                response_key=gate_result.response_key,
+                response_payload=gate_result.response_payload,
+            )
+
+            return TurnOutput(
+                response_key=gate_result.response_key,
+                response_payload=gate_result.response_payload,
+            )
+
         state_before = session.conversation_state
         ctx.last_user_text = user_text
 
@@ -998,3 +1025,34 @@ class TurnEngine:
             setattr(trace, attr_name, value)
         except Exception:
             return
+
+
+    def _order_type_required(self, session: Session) -> bool:
+        ctx = session.conversation_context
+        return (not ctx.onboarding_complete) or (ctx.order_type not in {"pickup", "delivery"})
+
+    def _normalize_order_type_gate_state(self, session: Session) -> None:
+        if self._order_type_required(session):
+            session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+
+    def _combine_order_type_and_followup_response(
+        self,
+        *,
+        order_type_key: str,
+        followup_output: TurnOutput,
+    ) -> TurnOutput:
+        prefix = "Got it. Pickup." if order_type_key == "order_type_captured_pickup" else "Got it. Delivery."
+
+        if followup_output.spoken_response_text:
+            spoken = f"{prefix} {followup_output.spoken_response_text}"
+        else:
+            spoken = None
+
+        internal = spoken
+
+        return TurnOutput(
+            response_key=followup_output.response_key,
+            response_payload=followup_output.response_payload,
+            internal_response_text=internal,
+            spoken_response_text=spoken,
+        )

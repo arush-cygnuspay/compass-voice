@@ -8,6 +8,7 @@ import os
 import redis
 
 from app.session.session import Session
+from app.state_machine.conversation_state import ConversationState
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
@@ -23,17 +24,27 @@ _redis = redis.Redis(
 # Public API
 # =================================================
 
+def _new_order_type_session(session_id: str, restaurant_id: str) -> Session:
+    session = Session(session_id=session_id, restaurant_id=restaurant_id)
+    session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+    session.conversation_context.order_type = None
+    session.conversation_context.onboarding_complete = False
+    session.conversation_context.delivery_address_required = False
+    session.conversation_context.delivery_address_confirmed = False
+    return session
+
+
 def load_session(session_id: str, restaurant_id: str) -> Session:
     key = _key(session_id)
     raw = _redis.get(key)
 
     if not raw:
-        return Session(session_id=session_id, restaurant_id=restaurant_id)
+        return _new_order_type_session(session_id, restaurant_id)
 
     session = Session.from_dict(json.loads(raw))
 
     if session.restaurant_id != restaurant_id:
-        return Session(session_id=session_id, restaurant_id=restaurant_id)
+        return _new_order_type_session(session_id, restaurant_id)
 
     return session
 

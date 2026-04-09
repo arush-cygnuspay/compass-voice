@@ -53,7 +53,8 @@ TWILIO_BURST_PACING_SECONDS = TWILIO_FRAME_DURATION_SECONDS * TWILIO_BURST_FRAME
 
 WELCOME_AUDIO_WAV_PATH = os.getenv(
     "COMPASS_WELCOME_AUDIO_WAV_PATH",
-    "app/static/audio/compass_welcome_ulaw_8k_0.9x.wav",
+    # "app/static/audio/compass_welcome_ulaw_8k_0.9x.wav",
+    "app/static/audio/compass_welcome_8k_0.9x_order_type.wav",
 ).strip()
 
 VOICE_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_DEBUG_ENABLED", "0") == "1"
@@ -72,6 +73,10 @@ DYNAMIC_RESPONSE_KEYS = {
     "ask_for_size",
     "ask_for_quantity",
     "ask_for_side_size",
+    "ask_for_order_type",
+    "repeat_order_type",
+    "order_type_captured_pickup",
+    "order_type_captured_delivery",
 }
 
 _WELCOME_AUDIO_BYTES_CACHE: bytes | None = None
@@ -1161,7 +1166,7 @@ async def twilio_media_ws(websocket: WebSocket):
                         )
                         try:
                             await speak_response_text(
-                                "Thank you for calling Compass. What would you like to order today?"
+                                "Welcome to Compass. Is this for pickup or delivery today?"
                             )
                             welcome_sent = True
                         except Exception as fallback_exc:

@@ -13,6 +13,7 @@ WAITING_STATE_HANDLERS: dict[ConversationState, str] = {
     ConversationState.WAITING_FOR_MODIFIER: "waiting_for_modifier_handler",
     ConversationState.WAITING_FOR_SIZE: "waiting_for_size_handler",
     ConversationState.WAITING_FOR_QUANTITY: "waiting_for_quantity_handler",
+    ConversationState.WAITING_FOR_ORDER_TYPE: "waiting_for_order_type_handler",
 }
 
 DIRECT_STATE_HANDLERS: dict[ConversationState, str] = {
