@@ -10,6 +10,7 @@ from app.state_machine.conversation_state import ConversationState
 
 
 ACTIVE_TASK_STATES: set[ConversationState] = {
+    ConversationState.WAITING_FOR_ORDER_TYPE,
     ConversationState.CONFIRMING_ITEM,
     ConversationState.WAITING_FOR_SIDE,
     ConversationState.WAITING_FOR_SIDE_SIZE,

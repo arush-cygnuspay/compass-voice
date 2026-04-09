@@ -133,6 +133,11 @@ class ResponseBuilder:
             "confirm_modifier_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that modifier')}? Yes or no.",
             "confirm_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')}? Yes or no.",
             "confirm_side_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')} for {p.get('side_item_name', 'that side')}? Yes or no.",
+
+            "ask_for_order_type": lambda *_: "Welcome to Compass. Is this for pickup or delivery today?",
+            "repeat_order_type": lambda *_: "Is this for pickup or delivery?",
+            "order_type_captured_pickup": lambda *_: "Got it. Pickup. What would you like to order?",
+            "order_type_captured_delivery": lambda *_: "Got it. Delivery. What would you like to order?",
         }
 
     def _intent_not_allowed(

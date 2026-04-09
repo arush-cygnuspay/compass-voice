@@ -9,6 +9,9 @@ def handle_intent_not_allowed(payload: dict) -> str:
     state = payload.get("state")
     intent = payload.get("intent")
 
+    if state == ConversationState.WAITING_FOR_ORDER_TYPE:
+        return "Please say pickup or delivery."
+
     if state in ADD_ITEM_FLOW_STATES and intent == Intent.SHOW_CART:
         return "Finish this item first, or say cancel."
 

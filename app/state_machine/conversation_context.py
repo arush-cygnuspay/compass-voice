@@ -454,6 +454,11 @@ class ConversationContext:
 
     pending_add_item: Optional[PendingAddItem] = None
 
+    order_type: Optional[str] = None  # "pickup" or "delivery"
+    delivery_address_required: bool = False
+    delivery_address_confirmed: bool = False
+    onboarding_complete: bool = False
+
     def set_last_nlu(self, user_text: str, nlu: NLUResult) -> None:
         self.last_user_text = user_text
         self.last_nlu = nlu
@@ -533,6 +538,10 @@ class ConversationContext:
             "awaiting_flow_confirmation": self.awaiting_flow_confirmation,
             "interrupt_proposal": self.interrupt_proposal.to_dict() if self.interrupt_proposal else None,
             "pending_add_item": _pending_add_item_to_dict(self.pending_add_item) if self.pending_add_item else None,
+            "order_type": self.order_type,
+            "delivery_address_required": self.delivery_address_required,
+            "delivery_address_confirmed": self.delivery_address_confirmed,
+            "onboarding_complete": self.onboarding_complete,
         }
 
     @classmethod
@@ -579,5 +588,10 @@ class ConversationContext:
 
         pending_add_item = data.get("pending_add_item")
         ctx.pending_add_item = _pending_add_item_from_dict(pending_add_item) if pending_add_item else None
+
+        ctx.order_type = data.get("order_type")
+        ctx.delivery_address_required = bool(data.get("delivery_address_required", False))
+        ctx.delivery_address_confirmed = bool(data.get("delivery_address_confirmed", False))
+        ctx.onboarding_complete = bool(data.get("onboarding_complete", False))
 
         return ctx
