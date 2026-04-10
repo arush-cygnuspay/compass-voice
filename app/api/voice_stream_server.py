@@ -425,10 +425,20 @@ async def twilio_media_ws(websocket: WebSocket):
     if twilio_account_sid and twilio_auth_token:
         twilio_client = Client(twilio_account_sid, twilio_auth_token)
 
+    print("TWILIO ACCOUNT SID : {}".format(twilio_account_sid))
+    print("TWILIO AUTH TOKEN : {}".format(twilio_auth_token))
+
     should_end_call_after_playback = False
 
     async def _end_live_call() -> None:
         if not stream_session.call_sid:
+            print(
+                "[TWILIO CALL END SKIPPED]",
+                {
+                    "reason": "missing_call_sid",
+                    "stream_sid": stream_session.stream_sid,
+                },
+            )
             return
 
         if twilio_client is None:
@@ -442,7 +452,7 @@ async def twilio_media_ws(websocket: WebSocket):
             return
 
         try:
-            await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 twilio_client.calls(stream_session.call_sid).update,
                 status="completed",
             )
@@ -451,6 +461,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 {
                     "call_sid": stream_session.call_sid,
                     "stream_sid": stream_session.stream_sid,
+                    "twilio_status": getattr(result, "status", None),
                 },
             )
         except Exception as exc:
@@ -725,26 +736,10 @@ async def twilio_media_ws(websocket: WebSocket):
 
         return internal_text, spoken_text
 
-        response_key = turn_output.response_key
-
-        if response_key in DYNAMIC_RESPONSE_KEYS:
-            spoken_text = internal_text
-        else:
-            spoken_text = getattr(turn_output, "spoken_response_text", None)
-            if not spoken_text:
-                spoken_text = _compact_spoken_response(
-                    response_key,
-                    internal_text,
-                )
-
-        return (
-            _normalize_response_text(internal_text),
-            _normalize_response_text(spoken_text),
-        )
-
     async def speak_response_text(
-        spoken_text: str,
-        trace: RealtimeTurnTrace | None = None,
+            spoken_text: str,
+            trace: RealtimeTurnTrace | None = None,
+            end_call_after_playback: bool = False,
     ) -> None:
         nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at, playback_generation
 
@@ -762,6 +757,7 @@ async def twilio_media_ws(websocket: WebSocket):
             _trace_set_attr(trace, "spoken_response_text", cleaned)
             _trace_set_attr(trace, "tts_text_chars", len(cleaned))
             _trace_set_attr(trace, "tts_request_start_monotonic", time.perf_counter())
+            _trace_set_attr(trace, "end_call_after_playback", end_call_after_playback)
 
         streamed_bytes = await _stream_progressive_tts_text(
             cleaned,
@@ -791,7 +787,7 @@ async def twilio_media_ws(websocket: WebSocket):
             phase = RealtimePhase.LISTENING
             bot_playback_started_at = None
 
-            if trace is not None and getattr(trace, "response_key", None) == "order_completed":
+            if end_call_after_playback:
                 await _end_live_call()
 
             return
@@ -802,6 +798,16 @@ async def twilio_media_ws(websocket: WebSocket):
                 "outbound_audio_duration_ms",
                 round((streamed_bytes / 8000.0) * 1000.0, 3),
             )
+
+        if end_call_after_playback:
+            _debug_log(
+                "[TWILIO CALL END AFTER PLAYBACK]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "call_sid": stream_session.call_sid,
+                },
+            )
+            await _end_live_call()
 
         mark_counter += 1
         active_mark_name = f"bot-playback-{mark_counter}"
@@ -817,6 +823,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 "barge_in_disabled": disable_barge_in,
                 "burst_frames": TWILIO_BURST_FRAMES,
                 "generation": generation,
+                "end_call_after_playback": end_call_after_playback,
             },
         )
 
@@ -926,8 +933,15 @@ async def twilio_media_ws(websocket: WebSocket):
             _trace_set_attr(trace, "response_key", turn_output.response_key)
             _trace_set_attr(trace, "response_text", internal_response_text)
             _trace_set_attr(trace, "spoken_response_text", spoken_response_text)
+            _trace_set_attr(
+                trace,
+                "end_call_after_playback",
+                bool(getattr(turn_output, "end_call_after_playback", False)),
+            )
 
-            should_end_call_after_playback = turn_output.response_key == "order_completed"
+            should_end_call_after_playback = bool(
+                getattr(turn_output, "end_call_after_playback", False)
+            )
 
             _debug_log(
                 "[BOT RESPONSE TEXT]",
@@ -939,7 +953,11 @@ async def twilio_media_ws(websocket: WebSocket):
                 },
             )
 
-            await speak_response_text(spoken_response_text, trace=trace)
+            await speak_response_text(
+                spoken_response_text,
+                trace=trace,
+                end_call_after_playback=should_end_call_after_playback,
+            )
 
             if pending_interrupt_text and phase == RealtimePhase.LISTENING:
                 buffered = pending_interrupt_text

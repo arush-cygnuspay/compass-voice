@@ -18,6 +18,7 @@ class ConversationState(str, Enum):
     GREETING = "greeting"
     IDLE = "idle"
     ERROR_RECOVERY = "error_recovery"
+    COMPLETED = "completed"
 
     # Add-item flow
     CONFIRMING_ITEM = "confirming_item"
