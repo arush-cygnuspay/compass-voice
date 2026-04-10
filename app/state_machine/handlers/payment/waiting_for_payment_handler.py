@@ -53,7 +53,7 @@ class WaitingForPaymentHandler(BaseHandler):
 
         if intent in self.COMPLETE_PAYMENT_INTENTS:
             return HandlerResult(
-                next_state=ConversationState.IDLE,
+                next_state=ConversationState.COMPLETED,
                 response_key="order_completed",
                 reset_context=True,
                 command={"type": "CLEAR_CART"},

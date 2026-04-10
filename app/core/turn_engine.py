@@ -63,6 +63,7 @@ class TurnOutput:
     response_payload: dict[str, Any] | None = None
     internal_response_text: str | None = None
     spoken_response_text: str | None = None
+    end_call_after_playback: bool = False
 
 
 INTENT_MIN_CONF = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
@@ -158,6 +159,16 @@ class TurnEngine:
         t_total_start = time.perf_counter()
 
         ctx = session.conversation_context
+
+        if session.conversation_state == ConversationState.COMPLETED:
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key="order_completed",
+                    response_payload=None,
+                    end_call_after_playback=True,
+                ),
+            )
 
         self._normalize_order_type_gate_state(session)
 
@@ -525,6 +536,7 @@ class TurnEngine:
                 response_payload=result.response_payload,
                 internal_response_text=getattr(result, "internal_response_text", None),
                 spoken_response_text=getattr(result, "spoken_response_text", None),
+                end_call_after_playback=(result.next_state == ConversationState.COMPLETED),
             ),
         )
 
@@ -1083,10 +1095,10 @@ class TurnEngine:
         return " ".join((text or "").split()).strip()
 
     def _hydrate_output(
-        self,
-        *,
-        session: Session,
-        output: TurnOutput,
+            self,
+            *,
+            session: Session,
+            output: TurnOutput,
     ) -> TurnOutput:
         internal_text = self._normalize_response_text(
             output.internal_response_text
@@ -1106,4 +1118,5 @@ class TurnEngine:
             response_payload=output.response_payload,
             internal_response_text=internal_text,
             spoken_response_text=spoken_text,
+            end_call_after_playback=output.end_call_after_playback,
         )
