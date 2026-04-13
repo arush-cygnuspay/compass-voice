@@ -4,7 +4,7 @@ from __future__ import annotations
 import re
 
 from app.menu.repository import MenuRepository
-from app.state_machine.conversation_context import ConversationContext
+from app.state_machine.models.conversation_context import ConversationContext
 from app.utils.top_k_choices import get_top_k_choices
 
 

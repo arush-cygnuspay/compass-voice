@@ -1,6 +1,6 @@
 # app/state_machine/flow_sets.py
 
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 
 ADD_ITEM_FLOW_STATES = {
     ConversationState.CONFIRMING_ITEM,

@@ -1,4 +1,4 @@
-# app/state_machine/conversation_state.py
+# app/state_machine/models/conversation_state.py
 
 from __future__ import annotations
 
@@ -36,8 +36,11 @@ class ConversationState(str, Enum):
     # Order / payment flow
     CONFIRMING_ORDER = "confirming_order"
     WAITING_FOR_PAYMENT = "waiting_for_payment"
+    WAITING_FOR_CHECKOUT_COMPLETION = "waiting_for_checkout_completion"
 
     # Mid-flow cancellation confirmation
     CANCELLATION_CONFIRMATION = "cancellation_confirmation"
 
     WAITING_FOR_ORDER_TYPE = "waiting_for_order_type"
+    WAITING_FOR_DELIVERY_ELIGIBILITY = "waiting_for_delivery_eligibility"
+    WAITING_FOR_DELIVERY_ADDRESS_COLLECTION = "waiting_for_delivery_address_collection"

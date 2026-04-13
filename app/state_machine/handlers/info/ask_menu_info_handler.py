@@ -5,7 +5,7 @@ from app.menu.repository import MenuRepository
 from app.menu.slot_helpers import first_slot_value
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 

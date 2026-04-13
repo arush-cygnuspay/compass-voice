@@ -1,3 +1,4 @@
+# app/core/flow_control/flow_control_policy.py
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -5,12 +6,19 @@ from typing import Any, Mapping
 
 from app.core.flow_control.flow_decision import FlowAction, FlowDecision
 from app.nlu.intent_resolution.intent import Intent
-from app.state_machine.conversation_context import ConversationContext
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.conversation_state import ConversationState
 
+
+DELIVERY_GATING_STATES: set[ConversationState] = {
+    ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+    ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+}
 
 ACTIVE_TASK_STATES: set[ConversationState] = {
     ConversationState.WAITING_FOR_ORDER_TYPE,
+    ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+    ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
     ConversationState.CONFIRMING_ITEM,
     ConversationState.WAITING_FOR_SIDE,
     ConversationState.WAITING_FOR_SIDE_SIZE,
@@ -21,6 +29,7 @@ ACTIVE_TASK_STATES: set[ConversationState] = {
     ConversationState.MODIFYING_ITEM,
     ConversationState.CONFIRMING_ORDER,
     ConversationState.WAITING_FOR_PAYMENT,
+    ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
 }
 
 MID_ITEM_BLOCKING_STATES: set[ConversationState] = {
@@ -65,10 +74,6 @@ class _GuardPayload:
 
 
 class FlowControlPolicy:
-    """
-    Mid-flow orchestration guardrails.
-    """
-
     def evaluate(
         self,
         *,
@@ -95,6 +100,9 @@ class FlowControlPolicy:
                 response_key="flow_guard_confirm_cancel",
                 response_payload=payload.cancel_payload(),
             )
+
+        if state in DELIVERY_GATING_STATES:
+            return FlowDecision(action=FlowAction.PASS)
 
         if (
             intent in READ_ONLY_INTERRUPT_INTENTS

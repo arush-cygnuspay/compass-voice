@@ -3,8 +3,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from app.state_machine.conversation_context import ConversationContext, PendingAddItem
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_context import ConversationContext, PendingAddItem
+from app.state_machine.models.conversation_state import ConversationState
 
 
 @dataclass(frozen=True, slots=True)

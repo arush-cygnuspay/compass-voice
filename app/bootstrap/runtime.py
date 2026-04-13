@@ -13,6 +13,7 @@ from app.menu.repository import MenuRepository
 from app.menu.store import MenuStore
 from app.ml.intent.inference_intent import IntentBundle, load_intent_bundle
 from app.ml.slot.inference_slot import SlotBundle, load_slot_bundle
+from app.services.sms_service import SmsService
 from app.state_machine.state_router import StateRouter
 
 
@@ -25,6 +26,7 @@ class AppRuntime:
     slot_bundle: SlotBundle
     engine: TurnEngine
     responder: ResponseBuilder
+    sms_service: SmsService
 
 
 def _project_root() -> Path:
@@ -87,6 +89,7 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
     menu_repo = MenuRepository(menu_store)
     router = StateRouter()
     responder = ResponseBuilder(menu_repo)
+    sms_service = SmsService()
 
     intent_bundle = load_intent_bundle(
         model_dir=str(intent_model_dir),
@@ -102,6 +105,7 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
         intent_bundle=intent_bundle,
         slot_bundle=slot_bundle,
         responder=responder,
+        sms_service=sms_service,
         nlu_logger=NluCsvLogger(),
     )
 
@@ -113,4 +117,5 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
         slot_bundle=slot_bundle,
         engine=engine,
         responder=responder,
+        sms_service=sms_service,
     )

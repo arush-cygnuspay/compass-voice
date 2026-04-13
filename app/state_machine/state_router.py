@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.route_result import RouteResult
 
 
@@ -14,6 +14,8 @@ WAITING_STATE_HANDLERS: dict[ConversationState, str] = {
     ConversationState.WAITING_FOR_SIZE: "waiting_for_size_handler",
     ConversationState.WAITING_FOR_QUANTITY: "waiting_for_quantity_handler",
     ConversationState.WAITING_FOR_ORDER_TYPE: "waiting_for_order_type_handler",
+    ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY: "waiting_for_delivery_eligibility_handler",
+    ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION: "waiting_for_delivery_address_collection_handler",
 }
 
 DIRECT_STATE_HANDLERS: dict[ConversationState, str] = {
@@ -21,6 +23,7 @@ DIRECT_STATE_HANDLERS: dict[ConversationState, str] = {
     ConversationState.REMOVING_ITEM: "removing_item_handler",
     ConversationState.CONFIRMING_ORDER: "confirming_order_handler",
     ConversationState.WAITING_FOR_PAYMENT: "waiting_for_payment_handler",
+    ConversationState.WAITING_FOR_CHECKOUT_COMPLETION: "waiting_for_checkout_completion_handler",
     ConversationState.CANCELLATION_CONFIRMATION: "cancellation_confirmation_handler",
 }
 

@@ -1,11 +1,9 @@
-from types import SimpleNamespace
-
 from app.core.pending_action import PendingAction
 from app.menu.models import MenuItem, Pricing
 from app.menu.query_result import MenuQueryResult, MenuQueryType
 from app.nlu.intent_resolution.intent import Intent
-from app.state_machine.conversation_context import ConversationContext
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handlers.item.add_item.add_item_handler import AddItemHandler
 
 
