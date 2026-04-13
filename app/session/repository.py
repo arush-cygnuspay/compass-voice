@@ -8,7 +8,7 @@ import os
 import redis
 
 from app.session.session import Session
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))

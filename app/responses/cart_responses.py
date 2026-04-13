@@ -65,8 +65,8 @@ def render_checkout_review_summary(payload: dict, order_type: str | None = None)
         f"{intro}Please review your order. "
         f"{items_text}."
         f"{total_text} "
-        f"Would you like to place this order and continue to payment? "
-        f"Please say yes to confirm, or say add, remove, or cancel."
+        f"Would you like to place this order and continue to checkout? "
+        f"Please say yes to confirm" # , or say add, remove, or cancel.
     )
 
 

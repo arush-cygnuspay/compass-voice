@@ -5,8 +5,8 @@ from __future__ import annotations
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler
-from app.state_machine.conversation_context import ConversationContext
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 
 

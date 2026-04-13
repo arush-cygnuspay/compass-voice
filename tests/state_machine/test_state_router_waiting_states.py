@@ -1,6 +1,6 @@
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.state_router import StateRouter
 
 

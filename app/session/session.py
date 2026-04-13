@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional
 
 from app.cart.cart import Cart
 from app.nlu.intent_resolution.intent import Intent
-from app.state_machine.conversation_context import ConversationContext
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.conversation_state import ConversationState
 
 
 @dataclass(slots=True)

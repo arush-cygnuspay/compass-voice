@@ -19,14 +19,24 @@ from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.nlu_resolver import resolve_nlu
 from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
+from app.services.sms_service import SmsSendRequest, SmsSendResult, SmsService
 from app.session.session import Session
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.handlers.delivery.waiting_for_delivery_address_collection_handler import (
+    WaitingForDeliveryAddressCollectionHandler,
+)
+from app.state_machine.handlers.delivery.waiting_for_delivery_eligibility_handler import (
+    WaitingForDeliveryEligibilityHandler,
+)
+from app.state_machine.handlers.payment.waiting_for_checkout_completion_handler import (
+    WaitingForCheckoutCompletionHandler,
+)
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.cart.cart_handlers import CartHandler
 from app.state_machine.handlers.common.cancellation_confirmation_handler import (
     CancellationConfirmationHandler,
 )
-from app.state_machine.handlers.common.waiting_for_order_type_handler import WaitingForOrderTypeHandler
+from app.state_machine.handlers.order.waiting_for_order_type_handler import WaitingForOrderTypeHandler
 from app.state_machine.handlers.common.waiting_for_quantity_handler import (
     WaitingForQuantityHandler,
 )
@@ -100,25 +110,25 @@ WAITING_STATE_ALLOWED_CONTROL_INTENTS = {
     Intent.SHOW_MENU,
 }
 
+DELIVERY_GATING_ALLOWED_CONTROL_INTENTS = {
+    Intent.AFFIRM,
+    Intent.CONFIRM,
+    Intent.DENY,
+    Intent.CANCEL,
+    Intent.CANCEL_ORDER,
+}
+
+
 class TurnEngine:
-    """
-    Stateless turn processor.
-
-    Orchestration only:
-      input -> preprocess -> NLU -> flow guard -> route -> handler -> commands -> response
-
-    The optional ``trace`` argument is intentionally duck-typed so the engine can enrich
-    realtime latency traces without taking a hard dependency on a specific logger model.
-    """
-
     def __init__(
-            self,
-            router: StateRouter,
-            menu_repo: MenuRepository,
-            intent_bundle: IntentBundle,
-            slot_bundle: SlotBundle,
-            responder: ResponseBuilder,
-            nlu_logger: NluCsvLogger | None = None,
+        self,
+        router: StateRouter,
+        menu_repo: MenuRepository,
+        intent_bundle: IntentBundle,
+        slot_bundle: SlotBundle,
+        responder: ResponseBuilder,
+        sms_service: SmsService,
+        nlu_logger: NluCsvLogger | None = None,
     ) -> None:
         self.router = router
         self.menu_repo = menu_repo
@@ -129,6 +139,7 @@ class TurnEngine:
         self.nlu_logger = nlu_logger or NluCsvLogger()
         self.resume_prompt_builder = ResumePromptBuilder()
         self.responder = responder
+        self.sms_service = sms_service
 
         self.handlers: dict[str, Any] = {
             "add_item_handler": AddItemHandler(menu_repo=menu_repo),
@@ -141,23 +152,30 @@ class TurnEngine:
             "remove_item_handler": RemoveItemHandler(menu_repo),
             "removing_item_handler": RemovingItemHandler(),
             "start_order_handler": StartOrderHandler(self.cart_summary_builder),
-            "confirming_order_handler": ConfirmOrderHandler(self.cart_summary_builder),
+            "confirming_order_handler": ConfirmOrderHandler(
+                self.cart_summary_builder,
+                self.sms_service,
+            ),
             "waiting_for_payment_handler": WaitingForPaymentHandler(),
+            "waiting_for_checkout_completion_handler": WaitingForCheckoutCompletionHandler(),
             "cart_handler": CartHandler(self.cart_summary_builder),
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
-            "waiting_for_order_type_handler": WaitingForOrderTypeHandler()
+            "waiting_for_order_type_handler": WaitingForOrderTypeHandler(),
+            "waiting_for_delivery_eligibility_handler": WaitingForDeliveryEligibilityHandler(),
+            "waiting_for_delivery_address_collection_handler": WaitingForDeliveryAddressCollectionHandler(
+                self.cart_summary_builder
+            ),
         }
 
     def process_turn(
-            self,
-            session: Session,
-            user_text: str,
-            trace: Any | None = None,
+        self,
+        session: Session,
+        user_text: str,
+        trace: Any | None = None,
     ) -> TurnOutput:
         t_total_start = time.perf_counter()
-
         ctx = session.conversation_context
 
         if session.conversation_state == ConversationState.COMPLETED:
@@ -241,13 +259,30 @@ class TurnEngine:
             raw_text=nlu.normalized_text,
         )
 
-        if session.conversation_state in {
+        delivery_gating_states = {
+            ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+            ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+        }
+
+        generic_waiting_states = {
             ConversationState.WAITING_FOR_SIDE,
             ConversationState.WAITING_FOR_SIDE_SIZE,
             ConversationState.WAITING_FOR_MODIFIER,
             ConversationState.WAITING_FOR_SIZE,
             ConversationState.WAITING_FOR_QUANTITY,
-        } and intent_result.intent not in WAITING_STATE_ALLOWED_CONTROL_INTENTS:
+        }
+
+        if session.conversation_state in delivery_gating_states:
+            allowed_control_intents = DELIVERY_GATING_ALLOWED_CONTROL_INTENTS
+        elif session.conversation_state in generic_waiting_states:
+            allowed_control_intents = WAITING_STATE_ALLOWED_CONTROL_INTENTS
+        else:
+            allowed_control_intents = set()
+
+        if (
+                session.conversation_state in delivery_gating_states | generic_waiting_states
+                and intent_result.intent not in allowed_control_intents
+        ):
             intent_result = IntentResult(
                 intent=Intent.UNKNOWN,
                 raw_text=nlu.normalized_text,
@@ -492,8 +527,75 @@ class TurnEngine:
         )
         t_handler = time.perf_counter() - t0
 
+        command_result: dict[str, Any] | None = None
+
         if result.command:
-            self._apply_command(session, result.command)
+            command_result = self._apply_command(session, result.command)
+
+            print(
+                "[COMMAND RESULT]",
+                {
+                    "command": result.command,
+                    "result": command_result,
+                },
+            )
+
+            if not command_result.get("ok", False):
+                command_type = result.command.get("type")
+                command_payload = result.command.get("payload") or {}
+
+                if command_type == "SEND_SMS":
+                    template = command_payload.get("template")
+                    delivery = session.conversation_context.delivery_address
+                    attempts_made = int(command_result.get("attempts_made", 1) or 1)
+
+                    if template == "checkout_link":
+                        # _apply_command already retried internally.
+                        # If it still failed after those attempts, fall back to voice immediately.
+                        if attempts_made >= 2:
+                            delivery.source = "voice"
+                            session.conversation_context.current_prompt_field = "delivery_seed_confirmation"
+                            result = HandlerResult(
+                                next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+                                response_key="checkout_link_failed_fallback_voice",
+                                response_payload={
+                                    "area": delivery.area,
+                                    "postal_code": delivery.postal_code,
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
+                        else:
+                            result = HandlerResult(
+                                next_state=ConversationState.CONFIRMING_ORDER,
+                                response_key="checkout_link_send_failed",
+                                response_payload={
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
+
+                    elif template == "payment_link":
+                        # Payment-link flow also retried internally.
+                        # If still failed, apologize and stop progression.
+                        if attempts_made >= 2:
+                            result = HandlerResult(
+                                next_state=session.conversation_state,
+                                response_key="payment_link_unavailable_now",
+                                response_payload={
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
+                        else:
+                            result = HandlerResult(
+                                next_state=session.conversation_state,
+                                response_key="payment_link_send_failed",
+                                response_payload={
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
 
         if result.reset_context:
             ctx.reset()
@@ -757,7 +859,7 @@ class TurnEngine:
 
         return None
 
-    def _apply_command(self, session: Session, command: dict[str, Any]) -> None:
+    def _apply_command(self, session: Session, command: dict[str, Any]) -> dict[str, Any]:
         cmd_type = command.get("type")
         payload = command.get("payload") or {}
 
@@ -773,15 +875,44 @@ class TurnEngine:
                 modifiers=payload.get("modifiers", {}),
             )
             session.cart.add_item(cart_item)
-            return
+            return {"ok": True}
 
         if cmd_type == "CLEAR_CART":
             session.cart.clear()
-            return
+            return {"ok": True}
 
         if cmd_type == "REMOVE_ITEM_FROM_CART":
             session.cart.remove_item(payload["cart_item_id"])
-            return
+            return {"ok": True}
+
+        if cmd_type == "SEND_SMS":
+            template = payload["template"]
+
+            sms_request = SmsSendRequest(
+                template=template,
+                phone_number=payload["phone_number"],
+                order_number=payload.get("order_number", ""),
+                link=payload.get("link", ""),
+                area=payload.get("area", ""),
+            )
+
+            sms_result: SmsSendResult | None = None
+            attempts_made = 0
+
+            for _ in range(2):
+                attempts_made += 1
+                sms_result = self.sms_service.send(sms_request)
+                if sms_result.ok:
+                    break
+
+            return {
+                "ok": bool(sms_result and sms_result.ok),
+                "sid": sms_result.sid if sms_result else None,
+                "error_code": sms_result.error_code if sms_result else "sms_send_failed",
+                "error_message": sms_result.error_message if sms_result else "SMS send failed.",
+                "template": template,
+                "attempts_made": attempts_made,
+            }
 
         raise ValueError(f"Unknown command type: {cmd_type}")
 
@@ -844,12 +975,7 @@ class TurnEngine:
                 normalized_text=getattr(nlu, "normalized_text", "") or "",
                 pred_main_intent=getattr(nlu, "model_main_intent", "") or "",
                 pred_sub_intent=getattr(nlu, "model_sub_intent", "") or "",
-                pred_intent=getattr(
-                    getattr(nlu, "effective_intent", None),
-                    "value",
-                    "",
-                )
-                or "",
+                pred_intent=getattr(getattr(nlu, "effective_intent", None), "value", "") or "",
                 pred_intent_confidence=getattr(nlu, "intent_confidence", None),
                 slot_model_ran=bool(getattr(nlu, "slot_model_ran", False)),
                 response_key=response_key,
@@ -1027,7 +1153,6 @@ class TurnEngine:
         command: dict[str, Any] | None = None,
     ) -> None:
         engine_end = time.perf_counter()
-
         ctx = session.conversation_context
 
         self._trace_set_attr(trace, "response_key", response_key)
@@ -1043,11 +1168,7 @@ class TurnEngine:
         self._trace_set_attr(trace, "flow_ms", round(flow_ms, 3))
         self._trace_set_attr(trace, "route_ms", round(route_ms, 3))
         self._trace_set_attr(trace, "handler_ms", round(handler_ms, 3))
-        self._trace_set_attr(
-            trace,
-            "engine_total_ms",
-            round((engine_end - total_start_monotonic) * 1000.0, 3),
-        )
+        self._trace_set_attr(trace, "engine_total_ms", round((engine_end - total_start_monotonic) * 1000.0, 3))
         if command is not None:
             self._trace_set_attr(trace, "command", command)
 
@@ -1059,12 +1180,13 @@ class TurnEngine:
         except Exception:
             return
 
-
     def _order_type_required(self, session: Session) -> bool:
         ctx = session.conversation_context
-        return (not ctx.onboarding_complete) or (ctx.order_type not in {"pickup", "delivery"})
+        return ctx.order_type not in {"pickup", "delivery"}
 
     def _normalize_order_type_gate_state(self, session: Session) -> None:
+        if session.conversation_state == ConversationState.COMPLETED:
+            return
         if self._order_type_required(session):
             session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
@@ -1095,10 +1217,10 @@ class TurnEngine:
         return " ".join((text or "").split()).strip()
 
     def _hydrate_output(
-            self,
-            *,
-            session: Session,
-            output: TurnOutput,
+        self,
+        *,
+        session: Session,
+        output: TurnOutput,
     ) -> TurnOutput:
         internal_text = self._normalize_response_text(
             output.internal_response_text

@@ -1,7 +1,7 @@
 # app/responses/intent_not_allowed.py
 
 from app.nlu.intent_resolution.intent import Intent
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.flow_sets import ADD_ITEM_FLOW_STATES
 
 

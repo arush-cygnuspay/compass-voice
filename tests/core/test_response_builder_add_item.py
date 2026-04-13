@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 from app.core.response_builder import ResponseBuilder
-from app.state_machine.conversation_context import ConversationContext
+from app.state_machine.models.conversation_context import ConversationContext
 
 
 class FakeStore:

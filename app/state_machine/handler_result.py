@@ -2,7 +2,7 @@
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 
 
 @dataclass(slots=True)

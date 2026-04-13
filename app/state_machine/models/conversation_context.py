@@ -1,4 +1,4 @@
-# app/state_machine/conversation_context.py
+# app/state_machine/models/conversation_context.py
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -7,137 +7,13 @@ from typing import Any, Dict, Optional
 from app.core.pending_action import PendingAction
 from app.nlu.nlu_result import NLUResult
 from app.nlu.query_normalization.text_preprocessor import normalize_text
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
+from app.state_machine.models.delivery_address import DeliveryAddress
+from app.state_machine.models.pending_item_models import PendingVariantChoice, PendingSideChoice, PendingModifierChoice, \
+    PendingSideGroup, PendingModifierGroup, PendingAddItem, InterruptProposal
 
 
-# =========================================================
-# Serializable pending-flow models
-# =========================================================
-
-
-@dataclass(slots=True)
-class InterruptProposal:
-    text: Optional[str] = None
-    predicted_main_intent: Optional[str] = None
-    predicted_sub_intent: Optional[str] = None
-
-    def to_dict(self) -> Optional[dict]:
-        if (
-            self.text is None
-            and self.predicted_main_intent is None
-            and self.predicted_sub_intent is None
-        ):
-            return None
-
-        return {
-            "text": self.text,
-            "predicted_main_intent": self.predicted_main_intent,
-            "predicted_sub_intent": self.predicted_sub_intent,
-        }
-
-    @classmethod
-    def from_dict(cls, data: Optional[dict]) -> Optional["InterruptProposal"]:
-        if not data:
-            return None
-
-        return cls(
-            text=data.get("text"),
-            predicted_main_intent=data.get("predicted_main_intent"),
-            predicted_sub_intent=data.get("predicted_sub_intent"),
-        )
-
-
-@dataclass(slots=True)
-class PendingVariantChoice:
-    variant_id: str
-    name: str
-    normalized_name: str
-
-
-@dataclass(slots=True)
-class PendingSideChoice:
-    item_id: str
-    name: str
-    pricing_mode: str
-    normalized_name: str
-    variants: list[PendingVariantChoice] = field(default_factory=list)
-
-    # Derived indexes for low-latency matching during waiting states.
-    variants_by_id: dict[str, PendingVariantChoice] = field(default_factory=dict)
-    variants_by_normalized_name: dict[str, PendingVariantChoice] = field(default_factory=dict)
-    variant_names: tuple[str, ...] = ()
-    top_variant_names: tuple[str, ...] = ()
-
-
-@dataclass(slots=True)
-class PendingSideGroup:
-    group_id: str
-    name: str
-    is_required: bool
-    min_selector: int
-    max_selector: int
-    choices: list[PendingSideChoice] = field(default_factory=list)
-
-    # Derived indexes for low-latency matching during waiting states.
-    choices_by_item_id: dict[str, PendingSideChoice] = field(default_factory=dict)
-    choices_by_normalized_name: dict[str, list[PendingSideChoice]] = field(default_factory=dict)
-    choice_names: tuple[str, ...] = ()
-    normalized_choice_names: tuple[str, ...] = ()
-    top_choice_names: tuple[str, ...] = ()
-
-
-@dataclass(slots=True)
-class PendingModifierChoice:
-    modifier_id: str
-    name: str
-    group_id: str
-    normalized_name: str
-
-
-@dataclass(slots=True)
-class PendingModifierGroup:
-    group_id: str
-    name: str
-    is_required: bool
-    min_selector: int
-    max_selector: int
-    choices: list[PendingModifierChoice] = field(default_factory=list)
-
-    # Derived indexes for low-latency matching during waiting states.
-    choices_by_modifier_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
-    choices_by_normalized_name: dict[str, list[PendingModifierChoice]] = field(default_factory=dict)
-    choice_names: tuple[str, ...] = ()
-    normalized_choice_names: tuple[str, ...] = ()
-    top_choice_names: tuple[str, ...] = ()
-
-
-@dataclass(slots=True)
-class PendingAddItem:
-    item_id: str
-    item_name: str
-    item_variants: list[PendingVariantChoice] = field(default_factory=list)
-    side_groups: list[PendingSideGroup] = field(default_factory=list)
-    modifier_groups: list[PendingModifierGroup] = field(default_factory=list)
-
-    # Derived item-level indexes for low-latency matching across turns.
-    item_variants_by_id: dict[str, PendingVariantChoice] = field(default_factory=dict)
-    item_variants_by_normalized_name: dict[str, PendingVariantChoice] = field(default_factory=dict)
-    item_variant_names: tuple[str, ...] = ()
-    top_item_variant_names: tuple[str, ...] = ()
-
-    side_groups_by_id: dict[str, PendingSideGroup] = field(default_factory=dict)
-    side_choice_by_item_id: dict[str, PendingSideChoice] = field(default_factory=dict)
-
-    modifier_groups_by_id: dict[str, PendingModifierGroup] = field(default_factory=dict)
-    modifier_choice_by_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
-
-
-# =========================================================
-# Internal index helpers
-# =========================================================
-
-
-def _append_bucket_value[T](mapping: dict[str, list[T]], key: str, value: T) -> None:
+def _append_bucket_value(mapping: dict[str, list[Any]], key: str, value: Any) -> None:
     bucket = mapping.get(key)
     if bucket is None:
         mapping[key] = [value]
@@ -168,11 +44,6 @@ def _index_variants(
 
     name_tuple = tuple(names)
     return by_id, by_normalized_name, name_tuple, name_tuple[:4]
-
-
-# =========================================================
-# Serialization helpers
-# =========================================================
 
 
 def _pending_variant_to_dict(value: PendingVariantChoice) -> dict:
@@ -232,13 +103,6 @@ def _pending_add_item_to_dict(value: PendingAddItem) -> dict:
         "side_groups": [_pending_side_group_to_dict(group) for group in value.side_groups],
         "modifier_groups": [_pending_modifier_group_to_dict(group) for group in value.modifier_groups],
     }
-
-
-# =========================================================
-# Deserialization helpers
-# Rebuild all derived indexes so persisted sessions behave
-# the same as freshly created pending objects.
-# =========================================================
 
 
 def _pending_variant_from_dict(data: dict) -> PendingVariantChoice:
@@ -301,11 +165,7 @@ def _pending_side_group_from_dict(data: dict) -> PendingSideGroup:
         choices_by_item_id[choice.item_id] = choice
 
         if choice.normalized_name:
-            _append_bucket_value(
-                choices_by_normalized_name,
-                choice.normalized_name,
-                choice,
-            )
+            _append_bucket_value(choices_by_normalized_name, choice.normalized_name, choice)
             normalized_choice_names.append(choice.normalized_name)
 
         if choice.name:
@@ -338,11 +198,7 @@ def _pending_modifier_group_from_dict(data: dict) -> PendingModifierGroup:
         choices_by_modifier_id[choice.modifier_id] = choice
 
         if choice.normalized_name:
-            _append_bucket_value(
-                choices_by_normalized_name,
-                choice.normalized_name,
-                choice,
-            )
+            _append_bucket_value(choices_by_normalized_name, choice.normalized_name, choice)
             normalized_choice_names.append(choice.normalized_name)
 
         if choice.name:
@@ -406,11 +262,6 @@ def _pending_add_item_from_dict(data: dict) -> PendingAddItem:
     )
 
 
-# =========================================================
-# Main conversation context
-# =========================================================
-
-
 @dataclass(slots=True)
 class ConversationContext:
     current_item_id: Optional[str] = None
@@ -454,10 +305,12 @@ class ConversationContext:
 
     pending_add_item: Optional[PendingAddItem] = None
 
-    order_type: Optional[str] = None  # "pickup" or "delivery"
+    order_type: Optional[str] = None
     delivery_address_required: bool = False
     delivery_address_confirmed: bool = False
     onboarding_complete: bool = False
+
+    delivery_address: DeliveryAddress = field(default_factory=DeliveryAddress)
 
     def set_last_nlu(self, user_text: str, nlu: NLUResult) -> None:
         self.last_user_text = user_text
@@ -506,6 +359,7 @@ class ConversationContext:
         self.last_nlu = None
         self.last_intent_confidence = None
         self.last_slots = ()
+        self.delivery_address = DeliveryAddress()
 
     def reset(self) -> None:
         self.reset_task()
@@ -542,6 +396,7 @@ class ConversationContext:
             "delivery_address_required": self.delivery_address_required,
             "delivery_address_confirmed": self.delivery_address_confirmed,
             "onboarding_complete": self.onboarding_complete,
+            "delivery_address": self.delivery_address.to_dict(),
         }
 
     @classmethod
@@ -593,5 +448,19 @@ class ConversationContext:
         ctx.delivery_address_required = bool(data.get("delivery_address_required", False))
         ctx.delivery_address_confirmed = bool(data.get("delivery_address_confirmed", False))
         ctx.onboarding_complete = bool(data.get("onboarding_complete", False))
+
+        legacy_delivery_address = {
+            "area": data.get("delivery_area"),
+            "area_serviceable": data.get("delivery_area_serviceable"),
+            "customer_phone_number": data.get("customer_phone_number"),
+            "order_number": data.get("order_number"),
+            "payment_link": data.get("payment_link"),
+        }
+
+        delivery_address_data = data.get("delivery_address")
+        if delivery_address_data:
+            ctx.delivery_address = DeliveryAddress.from_dict(delivery_address_data)
+        else:
+            ctx.delivery_address = DeliveryAddress.from_dict(legacy_delivery_address)
 
         return ctx

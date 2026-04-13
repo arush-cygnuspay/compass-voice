@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from app.session.session import Session
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 
 
 class ResumePromptBuilder:

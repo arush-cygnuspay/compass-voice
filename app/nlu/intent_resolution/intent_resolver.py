@@ -7,7 +7,7 @@ from app.ml.intent.inference_intent import IntentBundle, predict_intent
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_mapping import SUB_INTENT_TO_INTENT
 from app.nlu.intent_resolution.intent_result import IntentResult
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 
 
 CONFIDENCE_THRESHOLD = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))

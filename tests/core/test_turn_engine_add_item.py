@@ -5,7 +5,7 @@ from app.menu.models import MenuItem, Pricing
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.state_router import StateRouter
 
 

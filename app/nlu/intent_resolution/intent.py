@@ -63,6 +63,7 @@ class Intent(Enum):
     DENY = "deny"
     CANCEL = "cancel"
     META_CLARIFY = "meta_clarify"
+    AFFIRM = "affirm"
 
     GREETING = "greeting"
     MORNING = "morning"

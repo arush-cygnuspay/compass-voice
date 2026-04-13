@@ -7,8 +7,8 @@ from app.menu.models import (
     SideChoice,
     SideGroup,
 )
-from app.state_machine.conversation_context import ConversationContext
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,

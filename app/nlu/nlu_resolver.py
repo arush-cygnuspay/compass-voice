@@ -13,7 +13,7 @@ from app.nlu.intent_resolution.intent_mapping import SUB_INTENT_TO_INTENT
 from app.nlu.intent_resolution.intent_resolver import predict_intent_labels
 from app.nlu.nlu_result import NLUResult, SlotValue
 from app.nlu.slot_resolution.slot_resolver import predict_slots
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.models.conversation_state import ConversationState
 
 
 SLOTS_ENABLED = os.getenv("COMPASS_SLOTS_ENABLED", "1") != "0"
