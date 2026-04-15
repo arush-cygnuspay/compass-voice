@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Callable
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +25,8 @@ from twilio.twiml.voice_response import Connect, VoiceResponse
 
 from app.api.chat_demo import router as test_chat_router
 from app.api.ui.ui import router as ui_router
+from app.api.checkout_routes import router as checkout_api_router, page_router as checkout_page_router
+from app.api.payment_links_webhook import router as payment_links_webhook_router
 from app.bootstrap.runtime import build_runtime
 from app.logging.realtime_latency_logger import (
     RealtimeLatencyLogger,
@@ -38,8 +43,6 @@ from app.realtime.realtime_conversation_state import RealtimePhase
 from app.realtime.turn_commit_controller import TurnCommitController
 from app.session.repository import load_session, save_session
 from app.session.session import Session
-
-load_dotenv()
 
 TWILIO_MULAW_FRAME_BYTES = 160
 TWILIO_FRAME_DURATION_SECONDS = 0.02
@@ -336,6 +339,9 @@ app.mount("/static", StaticFiles(directory="app/static", check_dir=False), name=
 
 app.include_router(test_chat_router)
 app.include_router(ui_router)
+app.include_router(checkout_api_router)
+app.include_router(checkout_page_router)
+app.include_router(payment_links_webhook_router)
 
 
 def _build_stream_url(request: Request) -> str:

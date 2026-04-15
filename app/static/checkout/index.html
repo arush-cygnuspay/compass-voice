@@ -1,0 +1,440 @@
+<!-- app/static/checkout/index.html -->
+<!doctype html>
+<html lang="en" data-checkout-token="__CHECKOUT_TOKEN__">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b2545" />
+  <title>Cygnus Payments &middot; Secure Checkout</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="/static/checkout/checkout.css?v=3" />
+</head>
+<body>
+  <!-- Ambient brand background -->
+  <div class="bg-ambient" aria-hidden="true">
+    <div class="bg-ambient__blob bg-ambient__blob--one"></div>
+    <div class="bg-ambient__blob bg-ambient__blob--two"></div>
+    <div class="bg-ambient__grid"></div>
+  </div>
+
+  <main class="checkout-page">
+    <section class="checkout-shell">
+      <!-- Brand bar -->
+      <nav class="brand-bar" aria-label="Cygnus Payments">
+        <a class="brand-bar__logo" href="#" aria-label="Cygnus Payments home">
+          <img
+            src="/static/images/cygnus-logo.png"
+            alt="Cygnus Payments"
+            class="checkout-logo"
+          />
+        </a>
+        <div class="brand-bar__meta">
+          <span class="brand-bar__lock" aria-hidden="true">
+            <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3Z"/></svg>
+          </span>
+          <span>256-bit TLS encrypted</span>
+        </div>
+      </nav>
+
+      <!-- Hero / intro -->
+      <header class="checkout-header">
+        <div class="checkout-header__copy">
+          <div class="checkout-kicker">
+            <span class="checkout-kicker__dot"></span>
+            Secure Checkout
+          </div>
+          <h1>Confirm your delivery address</h1>
+          <p>
+            Tell us where to send your order. Once saved, you&rsquo;ll continue to
+            a secure Cygnus&nbsp;Payments page to complete your purchase.
+          </p>
+        </div>
+
+        <ul class="trust-row" aria-label="Security assurances">
+          <li>
+            <span class="trust-row__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 2 4 5v6c0 5 3.5 9.5 8 11 4.5-1.5 8-6 8-11V5l-8-3Zm-1 14-4-4 1.4-1.4L11 13.2l5.6-5.6L18 9l-7 7Z"/></svg>
+            </span>
+            PCI DSS Certified
+          </li>
+          <li>
+            <span class="trust-row__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Zm0 2a3 3 0 0 0-3 3v3h6V7a3 3 0 0 0-3-3Z"/></svg>
+            </span>
+            End-to-End Encrypted
+          </li>
+          <li>
+            <span class="trust-row__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M12 1 3 5v6c0 5.6 3.8 10.8 9 12 5.2-1.2 9-6.4 9-12V5l-9-4Z"/></svg>
+            </span>
+            Trusted by Merchants Worldwide
+          </li>
+        </ul>
+      </header>
+
+      <!-- Status -->
+      <div
+        id="status-banner"
+        class="status-banner status-banner--info"
+        role="status"
+        aria-live="polite"
+      >
+        <span class="status-banner__icon" aria-hidden="true"></span>
+        <span class="status-banner__text">Loading checkout&hellip;</span>
+      </div>
+
+      <!-- Card -->
+      <section class="checkout-card">
+        <div class="checkout-card__top">
+          <div class="checkout-step checkout-step--active">
+            <span class="checkout-step__number">1</span>
+            <span class="checkout-step__label">Address</span>
+          </div>
+          <div class="checkout-step__line"></div>
+          <div class="checkout-step">
+            <span class="checkout-step__number">2</span>
+            <span class="checkout-step__label">Payment</span>
+          </div>
+          <div class="checkout-step__line"></div>
+          <div class="checkout-step">
+            <span class="checkout-step__number">3</span>
+            <span class="checkout-step__label">Confirmed</span>
+          </div>
+        </div>
+
+        <section id="address-section" class="checkout-content hidden">
+          <div class="checkout-main">
+            <div class="section-head">
+              <h2>Delivery details</h2>
+              <p>
+                Use your current location for a precise delivery point, or
+                enter your address manually below.
+              </p>
+            </div>
+
+            <div class="seed-grid">
+              <div class="field field--readonly">
+                <label for="area">Area</label>
+                <div class="input-wrap">
+                  <span class="input-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 21s-6-4.35-6-10a6 6 0 1 1 12 0c0 5.65-6 10-6 10Zm0-8.5A2.5 2.5 0 1 0 12 7a2.5 2.5 0 0 0 0 5.5Z"/></svg>
+                  </span>
+                  <input id="area" type="text" disabled />
+                </div>
+              </div>
+
+              <div class="field field--readonly">
+                <label for="postal_code">ZIP Code</label>
+                <div class="input-wrap">
+                  <span class="input-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4V5Zm2 2v2h12V7H6Zm0 4v6h4v-6H6Zm6 0v2h6v-2h-6Zm0 4v2h4v-2h-4Z"/></svg>
+                  </span>
+                  <input id="postal_code" type="text" disabled />
+                </div>
+              </div>
+            </div>
+
+            <!-- Location CTA -->
+            <div class="location-card">
+              <div class="location-card__left">
+                <div class="location-card__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 2a7 7 0 0 1 7 7c0 5.08-5.2 10.41-6.2 11.39a1.15 1.15 0 0 1-1.6 0C10.2 19.8 5 14.47 5 9a7 7 0 0 1 7-7Zm0 9.25A2.25 2.25 0 1 0 12 6.75a2.25 2.25 0 0 0 0 4.5Z"/></svg>
+                </div>
+                <div class="location-card__text">
+                  <div class="location-card__title">Use Current Location</div>
+                  <div class="location-card__desc">
+                    We&rsquo;ll use your current pin and derive the address for
+                    this checkout automatically.
+                  </div>
+                </div>
+              </div>
+
+              <button id="location-btn" type="button" class="btn btn--secondary">
+                <span class="btn__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 8a4 4 0 1 0 4 4 4 4 0 0 0-4-4Zm8.94 3a9 9 0 0 0-7.94-7.94V1h-2v2.06A9 9 0 0 0 3.06 11H1v2h2.06A9 9 0 0 0 11 20.94V23h2v-2.06A9 9 0 0 0 20.94 13H23v-2Z"/></svg>
+                </span>
+                <span>Use Current Location</span>
+              </button>
+            </div>
+
+            <div id="location-result" class="location-result hidden">
+              <div class="location-result__icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24"><path d="m9 16.2-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5Z"/></svg>
+              </div>
+              <div>
+                <div class="location-result__title">Location saved</div>
+                <div id="location-result-text" class="location-result__text"></div>
+              </div>
+            </div>
+
+            <div class="divider-label">
+              <span>Or enter address manually</span>
+            </div>
+
+            <div class="field-grid field-grid--two">
+              <div class="field">
+                <label for="house_number">House Number</label>
+                <div class="input-wrap">
+                  <span class="input-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M3 11.5 12 4l9 7.5V20h-6v-5H9v5H3v-8.5Z"/></svg>
+                  </span>
+                  <input
+                    id="house_number"
+                    type="text"
+                    maxlength="50"
+                    autocomplete="address-line1"
+                    placeholder="245"
+                  />
+                </div>
+                <div class="field-error" id="house_number_error"></div>
+              </div>
+
+              <div class="field">
+                <label for="street">Street</label>
+                <div class="input-wrap">
+                  <span class="input-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M3 16h18v2H3v-2Zm2-5h14v2H5v-2Zm3-5h8v2H8V6Z"/></svg>
+                  </span>
+                  <input
+                    id="street"
+                    type="text"
+                    maxlength="120"
+                    autocomplete="address-line1"
+                    placeholder="Main Street"
+                  />
+                </div>
+                <div class="field-error" id="street_error"></div>
+              </div>
+            </div>
+
+            <div class="field-grid">
+              <div class="field">
+                <label for="secondary_address">Apartment / Suite / Unit / Building <span class="field__optional">Optional</span></label>
+                <div class="input-wrap">
+                  <span class="input-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M4 5h16v14H4V5Zm2 2v10h12V7H6Zm2 2h3v3H8V9Zm0 5h3v1H8v-1Zm5-5h3v3h-3V9Zm0 5h3v1h-3v-1Z"/></svg>
+                  </span>
+                  <input
+                    id="secondary_address"
+                    type="text"
+                    maxlength="120"
+                    autocomplete="address-line2"
+                    placeholder="Apt 4B, Suite 200, Building C&hellip;"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div class="action-row">
+              <button id="save-address-btn" type="button" class="btn btn--primary">
+                <span>Save Address</span>
+                <span class="btn__icon btn__icon--right" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M5 12h12.2l-4.6-4.6L14 6l7 7-7 7-1.4-1.4L17.2 14H5v-2Z"/></svg>
+                </span>
+              </button>
+
+              <div id="save-success" class="save-success hidden">
+                <span class="save-success__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="m9 16.2-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5Z"/></svg>
+                </span>
+                <span>Address saved</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Side / Summary -->
+          <aside class="checkout-side">
+            <div class="checkout-side__card">
+              <div class="checkout-side__eyebrow">
+                <span class="checkout-side__eyebrow-dot"></span>
+                Next Step
+              </div>
+              <h3>Secure payment</h3>
+              <p>
+                Once your address is saved, you&rsquo;ll be redirected to a
+                secure Datacap payment page to complete your order.
+              </p>
+
+              <ul class="payment-list">
+                <li>
+                  <span class="payment-list__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M2 7h20v3H2V7Zm0 5h20v5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-5Zm2-7h16a2 2 0 0 1 2 2H2a2 2 0 0 1 2-2Z"/></svg>
+                  </span>
+                  Credit / Debit cards
+                </li>
+                <li>
+                  <span class="payment-list__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Zm-3 8h6V7a3 3 0 0 0-6 0Z"/></svg>
+                  </span>
+                  Secure hosted payment page
+                </li>
+                <li>
+                  <span class="payment-list__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24"><path d="m9 16.2-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5Z"/></svg>
+                  </span>
+                  Instant order confirmation
+                </li>
+              </ul>
+
+              <button
+                id="continue-payment-btn"
+                type="button"
+                class="btn btn--primary btn--block"
+                disabled
+              >
+                <span>Continue to Payment</span>
+                <span class="btn__icon btn__icon--right" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M5 12h12.2l-4.6-4.6L14 6l7 7-7 7-1.4-1.4L17.2 14H5v-2Z"/></svg>
+                </span>
+              </button>
+
+              <div class="checkout-side__note">
+                <span class="checkout-side__note-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Z"/></svg>
+                </span>
+                Payment details are entered on the secure Cygnus&nbsp;Payments
+                page. We never store your card data.
+              </div>
+            </div>
+
+            <div class="trust-mini">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1 3 5v6c0 5.6 3.8 10.8 9 12 5.2-1.2 9-6.4 9-12V5l-9-4Zm-1 15-4-4 1.4-1.4L11 13.2l5.6-5.6L18 9l-7 7Z"/></svg>
+              <span>Your details are protected by bank-grade encryption.</span>
+            </div>
+          </aside>
+        </section>
+
+        <!-- Payment waiting / confirmation screen -->
+        <section id="payment-section" class="payment-wait-section hidden">
+          <div class="payment-wait-card">
+            <div class="payment-wait-card__header">
+              <div id="payment-spinner" class="payment-spinner" aria-label="Waiting for payment" role="img">
+                <svg viewBox="0 0 50 50" aria-hidden="true">
+                  <circle class="payment-spinner__track" cx="25" cy="25" r="20" fill="none" stroke-width="4"/>
+                  <circle class="payment-spinner__arc"   cx="25" cy="25" r="20" fill="none" stroke-width="4" stroke-dasharray="40 90" stroke-linecap="round"/>
+                </svg>
+              </div>
+              <h2>Complete your payment</h2>
+              <p id="payment-status-text">
+                Your secure payment page has been opened. Complete your payment there,
+                and this screen will update automatically the moment it&rsquo;s confirmed.
+              </p>
+            </div>
+
+            <div class="payment-wait-card__actions">
+              <button id="payment-open-btn" type="button" class="btn btn--primary">
+                <span class="btn__icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14 21 3"/></svg>
+                </span>
+                <span>Reopen Payment Page</span>
+              </button>
+            </div>
+
+            <div class="payment-wait-card__steps">
+              <div class="pwstep">
+                <div class="pwstep__num">1</div>
+                <div class="pwstep__text">A new tab opened with your secure Cygnus&nbsp;Payments page</div>
+              </div>
+              <div class="pwstep">
+                <div class="pwstep__num">2</div>
+                <div class="pwstep__text">Enter your card details and confirm the payment</div>
+              </div>
+              <div class="pwstep">
+                <div class="pwstep__num">3</div>
+                <div class="pwstep__text">Return here — we&rsquo;ll auto-detect payment and confirm your order</div>
+              </div>
+            </div>
+
+            <div class="payment-wait-card__note">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a5 5 0 0 1 5 5v3h1a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h1V7a5 5 0 0 1 5-5Zm-3 8h6V7a3 3 0 0 0-6 0Z"/></svg>
+              <span>We never store your card details — payment is handled by Datacap&rsquo;s PCI DSS certified platform.</span>
+            </div>
+          </div>
+        </section>
+
+        <section id="payment-modal" class="payment-modal hidden" aria-hidden="true">
+          <div class="payment-modal__backdrop" data-payment-modal-close></div>
+          <div
+            class="payment-modal__dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="payment-modal-title"
+          >
+            <div class="payment-modal__header">
+              <div>
+                <div class="payment-modal__eyebrow">Secure Datacap Payment</div>
+                <h2 id="payment-modal-title">Complete payment without leaving this page</h2>
+              </div>
+              <button
+                id="payment-modal-close-btn"
+                type="button"
+                class="payment-modal__close"
+                aria-label="Close payment window"
+              >
+                <span aria-hidden="true">&times;</span>
+              </button>
+            </div>
+
+            <div class="payment-modal__frame-shell">
+              <iframe
+                id="payment-iframe"
+                title="Secure payment"
+                loading="lazy"
+                referrerpolicy="strict-origin-when-cross-origin"
+              ></iframe>
+            </div>
+
+            <div class="payment-modal__footer">
+              <p id="payment-modal-hint">
+                When payment is confirmed, this window will close automatically and your order will be confirmed here.
+              </p>
+              <button
+                id="payment-modal-open-tab-btn"
+                type="button"
+                class="btn btn--secondary"
+              >
+                <span>Open in New Tab</span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <!-- Done -->
+        <section id="done-section" class="done-section hidden">
+          <div class="done-card">
+            <div class="done-card__icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="m9 16.2-3.5-3.5L4 14.2 9 19l11-11-1.5-1.5Z"/></svg>
+            </div>
+            <h2>Checkout completed</h2>
+            <p id="done-message"></p>
+            <div class="done-card__footer">
+              <span class="done-card__badge">Order Confirmed</span>
+            </div>
+          </div>
+        </section>
+      </section>
+
+      <footer class="checkout-footer">
+        <div class="checkout-footer__brand">
+          <span class="checkout-footer__mark"></span>
+          <span>Powered by <strong>Cygnus&nbsp;Payments</strong></span>
+        </div>
+        <div class="checkout-footer__links">
+          <a href="https://www.cygnuspay.com/" rel="noopener" target="_blank">cygnuspay.com</a>
+          <span aria-hidden="true">&middot;</span>
+          <span>&copy; <span id="yr"></span> Cygnus Payments</span>
+        </div>
+      </footer>
+    </section>
+  </main>
+
+  <script src="/static/checkout/checkout.js"></script>
+</body>
+</html>

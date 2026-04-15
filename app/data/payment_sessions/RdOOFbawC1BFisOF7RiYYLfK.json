@@ -1,0 +1,27 @@
+{
+  "payment_session_id": "RdOOFbawC1BFisOF7RiYYLfK",
+  "checkout_token": "OdXmxKwR7Uy3PkYljS5y0UzWFQJODz_a",
+  "provider": "datacap",
+  "mode": "debug",
+  "status": "pending_redirect",
+  "amount": "$2.28",
+  "currency": "USD",
+  "provider_base_url": "https://dsidevportal.com/api/payapi/",
+  "provider_redirect_url": "https://dsidevportal.com/api/payapi?checkout_token=OdXmxKwR7Uy3PkYljS5y0UzWFQJODz_a&order_number=TEST123&amount=$2.28",
+  "provider_reference": "dc-OdXmxKwR7U",
+  "provider_payload": {
+    "checkout_token": "OdXmxKwR7Uy3PkYljS5y0UzWFQJODz_a",
+    "order_number": "TEST123",
+    "amount": "$2.28",
+    "customer_phone_number": "+17036369451",
+    "return_url": "https://voice.cygnuscompass.com/checkout/return",
+    "cancel_url": "https://voice.cygnuscompass.com/checkout/cancel",
+    "metadata": {
+      "restaurant_id": "demo",
+      "area": "Iqbal Park",
+      "postal_code": "54791"
+    }
+  },
+  "created_at": "2026-04-13T19:41:54.274445+00:00",
+  "updated_at": "2026-04-13T19:41:54.274445+00:00"
+}

@@ -1,3 +1,8 @@
-version https://git-lfs.github.com/spec/v1
-oid sha256:5de67a4dbbd1faf0386a7930cd3e121578d627819ea49ea27e0df3bb87508653
-size 115
+{
+  "0": "cart",
+  "1": "confirmation",
+  "2": "greeting",
+  "3": "menu",
+  "4": "order",
+  "5": "payment"
+}

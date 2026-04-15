@@ -1,8 +1,11 @@
-# app/state_machine/handlers/payment/waiting_for_checkout_completion_handler.py
+from __future__ import annotations
+
 from app.nlu.intent_resolution.intent import Intent
-from app.state_machine.handlers.base_handler import BaseHandler
-from app.state_machine.models.conversation_state import ConversationState
+from app.services.checkout_service import CheckoutService
 from app.state_machine.handler_result import HandlerResult
+from app.state_machine.handlers.base_handler import BaseHandler
+from app.state_machine.handlers.payment.payment_flow_support import verify_payment_for_order
+from app.state_machine.models.conversation_state import ConversationState
 
 
 class WaitingForCheckoutCompletionHandler(BaseHandler):
@@ -18,6 +21,16 @@ class WaitingForCheckoutCompletionHandler(BaseHandler):
         Intent.ORDER_PLACEMENT_STATUS,
         Intent.ORDER_ERROR_STATUS,
     }
+
+    VERIFY_STATUS_INTENTS = {
+        Intent.PAYMENT_STATUS,
+        Intent.ORDER_STATUS_GENERAL,
+        Intent.ORDER_PROCESSING_STATUS,
+        Intent.ORDER_PLACEMENT_STATUS,
+    }
+
+    def __init__(self, checkout_service: CheckoutService):
+        self.checkout_service = checkout_service
 
     def handle(self, intent, context, user_text, session=None):
         if session is None:
@@ -35,16 +48,11 @@ class WaitingForCheckoutCompletionHandler(BaseHandler):
         delivery = context.delivery_address
 
         if intent in self.COMPLETE_INTENTS:
-            delivery.form_completed = True
-            delivery.collected = True
-            delivery.confirmed = True
-            context.delivery_address_confirmed = True
-
-            return HandlerResult(
-                next_state=ConversationState.COMPLETED,
-                response_key="order_completed",
-                reset_context=True,
-                command={"type": "CLEAR_CART"},
+            return verify_payment_for_order(
+                checkout_service=self.checkout_service,
+                order_number=delivery.order_number,
+                pending_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                pending_response_key="payment_not_confirmed_yet",
             )
 
         if intent == Intent.CANCEL_ORDER:
@@ -60,7 +68,7 @@ class WaitingForCheckoutCompletionHandler(BaseHandler):
                     response_key="checkout_link_send_failed",
                 )
 
-            delivery.order_number = delivery.order_number or "TEST123"
+            delivery.checkout_link_send_attempts = 0
 
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
@@ -75,6 +83,14 @@ class WaitingForCheckoutCompletionHandler(BaseHandler):
                         "link": delivery.address_form_link,
                     },
                 },
+            )
+
+        if intent in self.VERIFY_STATUS_INTENTS:
+            return verify_payment_for_order(
+                checkout_service=self.checkout_service,
+                order_number=delivery.order_number,
+                pending_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                pending_response_key="waiting_for_checkout_completion",
             )
 
         if intent in self.STATUS_INTENTS or intent in {Intent.DENY, Intent.CANCEL}:

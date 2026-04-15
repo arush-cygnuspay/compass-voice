@@ -1,0 +1,44 @@
+{
+  "token": "R9lfrtmua8c8AUrLysB3t6T9EqRrr41X",
+  "restaurant_id": "demo",
+  "call_sid": "CAdf7a05dcfd3afbfd1b71a169449e91dd",
+  "order_number": "TEST123",
+  "customer_phone_number": "+17036369451",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Coke (Small)",
+        "base_name": "Coke",
+        "variant_label": "Small",
+        "sides": [],
+        "modifiers": [],
+        "quantity": 2,
+        "unit_price": "$2.28",
+        "line_total": "$4.56"
+      }
+    ],
+    "item_count": 2,
+    "total": "$4.56"
+  },
+  "area": "Iqbal Park",
+  "postal_code": "54791",
+  "house_number": "22",
+  "street": "St 35 Sec B Ph 1",
+  "secondary_address": null,
+  "city": "Charr",
+  "state": "\u067e\u0646\u062c\u0627\u0628",
+  "full_address_raw": "St 35 Sec B Ph 1, DHA, Iqbal Park, Charr, \u062a\u062d\u0635\u06cc\u0644 \u0644\u0627\u06c1\u0648\u0631 \u06a9\u0646\u0679\u0648\u0646\u0645\u0646\u0679, \u0636\u0644\u0639 \u0644\u0627\u06c1\u0648\u0631, \u0644\u0627\u06c1\u0648\u0631 \u0688\u0648\u06cc\u0698\u0646, \u067e\u0646\u062c\u0627\u0628, 54791, \u067e\u0627\u06a9\u0633\u062a\u0627\u0646",
+  "address_source": "manual",
+  "latitude": 31.4832,
+  "longitude": 74.3845,
+  "location_permission_granted": true,
+  "address_completed": true,
+  "payment_started": false,
+  "payment_completed": false,
+  "payment_reference": null,
+  "payment_provider": "datacap",
+  "status": "pending_payment",
+  "created_at": "2026-04-14T14:58:43.662863+00:00",
+  "updated_at": "2026-04-14T15:21:39.368633+00:00",
+  "expires_at": "2026-04-14T16:58:43.662863+00:00"
+}
