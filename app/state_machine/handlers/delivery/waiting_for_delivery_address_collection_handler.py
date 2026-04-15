@@ -6,6 +6,9 @@ import re
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler
+from app.state_machine.handlers.payment.payment_flow_support import (
+    ensure_payment_link_for_voice_session,
+)
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
@@ -31,8 +34,9 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
         "no apartment or suite",
     }
 
-    def __init__(self, cart_summary_builder):
+    def __init__(self, cart_summary_builder, checkout_service):
         self.cart_summary_builder = cart_summary_builder
+        self.checkout_service = checkout_service
 
     def handle(
         self,
@@ -284,29 +288,63 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
 
     def _finish(self, session: Session | None, context: ConversationContext) -> HandlerResult:
         delivery = context.delivery_address
+        delivery.source = "voice"
         delivery.collected = True
         delivery.confirmed = True
+        delivery.payment_link_send_attempts = 0
+
         context.delivery_address_confirmed = True
         context.current_prompt_field = None
 
         phone_number = delivery.customer_phone_number
         if not phone_number:
-            payload = (
-                self.cart_summary_builder.build(session.cart)
-                if session is not None and not session.cart.is_empty()
-                else None
-            )
             return HandlerResult(
                 next_state=ConversationState.CONFIRMING_ORDER,
                 response_key="payment_link_send_failed",
                 response_payload={
                     "reason": "missing_customer_phone_number",
-                    "cart": payload,
                 },
             )
 
-        delivery.order_number = delivery.order_number or "TEST123"
-        delivery.payment_link = delivery.payment_link or "https://www.cygnuspay.com"
+        if session is None:
+            return HandlerResult(
+                next_state=ConversationState.ERROR_RECOVERY,
+                response_key="confirmation_state_error",
+            )
+
+        order_summary = self.cart_summary_builder.build(session.cart)
+        try:
+            payment_info = ensure_payment_link_for_voice_session(
+                checkout_service=self.checkout_service,
+                session=session,
+                order_summary=order_summary,
+                address_source="voice",
+            )
+        except Exception:
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ORDER,
+                response_key="payment_link_send_failed",
+            )
+        delivery.order_number = payment_info.get("order_number") or delivery.order_number
+        delivery.payment_link = payment_info.get("redirect_url") or delivery.payment_link
+        delivery.confirmation_link = (
+            payment_info.get("confirmation_link") or delivery.confirmation_link
+        )
+
+        if payment_info.get("payment_completed"):
+            return HandlerResult(
+                next_state=ConversationState.COMPLETED,
+                response_key="order_completed",
+                response_payload={"order_number": delivery.order_number},
+                reset_context=True,
+                command={"type": "CLEAR_CART"},
+            )
+
+        if not delivery.payment_link:
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ORDER,
+                response_key="payment_link_send_failed",
+            )
 
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_PAYMENT,

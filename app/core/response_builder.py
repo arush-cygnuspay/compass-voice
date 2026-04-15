@@ -111,11 +111,10 @@ class ResponseBuilder:
             "cart_cleared": lambda *_: cart_cleared_response(),
             "clear_cart_cancelled": lambda *_: clear_cart_cancelled_response(),
             "confirm_order_summary": self._confirm_order_summary,
-            "payment_link_sent": lambda *_: "Payment link sent. Tell me when done.",
-            "waiting_for_payment": lambda *_: "Waiting for payment. Tell me when it’s done.",
-            "order_completed": lambda *_: (
-                "Payment confirmed. Order placed. It will be ready in 25 minutes. Thank you."
+            "waiting_for_payment": lambda *_: (
+                "Waiting for payment confirmation. I will confirm it automatically as soon as it clears."
             ),
+
             "no_active_order_to_cancel": lambda *_: "There’s no active order to cancel.",
             "no_active_payment": lambda *_: "There’s no payment in progress.",
             "payment_not_started": lambda *_: "Payment has not started. Say checkout when ready.",
@@ -148,22 +147,11 @@ class ResponseBuilder:
             "delivery_area_confirmed": lambda *_: "Great, we deliver there. What would you like to order?",
 
             "ask_delivery_address_method": lambda *_: (
-                "I’ve sent you one secure checkout link. Please fill in your delivery address and complete payment so I can place your order."
-            ),
-            "checkout_link_unavailable_fallback_voice": lambda *_: (
-                "I can’t send the checkout link right now, so I’ll take your delivery address here. Please say your house number."
-            ),
-            "checkout_link_sent": lambda *_: (
-                "I’ve sent you one secure checkout link. Please confirm your delivery address there, allow location access if you want, and complete payment. Tell me when done."
+                "I have sent you one secure checkout link. Please fill in your delivery address and complete payment. I will confirm the order automatically as soon as payment clears."
             ),
             "waiting_for_checkout_completion": lambda *_: (
-                "I’m waiting for you to finish the checkout link. Tell me when payment is done."
+                "I am waiting for the checkout link to finish. I will confirm the payment automatically as soon as it clears."
             ),
-
-            "ask_for_delivery_house_number": lambda *_: "Please say your house number.",
-            "repeat_delivery_house_number": lambda *_: "Please say your house number.",
-            "ask_for_delivery_street": lambda *_: "Please say your street name or street number.",
-            "repeat_delivery_street": lambda *_: "Please say your street name or street number.",
 
             "confirm_delivery_house_number": lambda c, m, p: (
                 f"I heard {p.get('house_number', 'that number')}. Is that correct?"
@@ -171,20 +159,51 @@ class ResponseBuilder:
             "confirm_delivery_street": lambda c, m, p: (
                 f"I heard {p.get('street', 'that street')}. Is that correct?"
             ),
-            "ask_for_delivery_secondary_address": lambda *_: (
-                "Any apartment, suite, unit, building, or block? If none, say none."
-            ),
+
             "confirm_delivery_secondary_address": lambda c, m, p: (
                 f"I heard {p.get('secondary_address', 'that address detail')}. Is that correct?"
             ),
-            "delivery_address_captured_resume_checkout": lambda *_: (
-                "Got it. I have your delivery address. I’m sending your payment link now."
+
+            "payment_link_unavailable_now": lambda *_: (
+                "I’m sorry, I couldn’t send the payment link right now, so I’m unable to complete the order at the moment."
+            ),
+
+            "checkout_link_sent": lambda *_: (
+                "I have sent you a secure checkout link. Please enter your delivery address there and complete payment. I will confirm the order automatically as soon as payment clears."
+            ),
+            "checkout_link_unavailable_fallback_voice": lambda *_: (
+                "I can’t send the checkout link right now, so I’ll take your delivery address here. Please say your house number."
             ),
             "checkout_link_failed_fallback_voice": lambda *_: (
                 "I couldn’t send the checkout link right now, so I’ll take your delivery address here. Please say your house number."
             ),
-            "payment_link_unavailable_now": lambda *_: (
-                "I’m sorry, I couldn’t send the payment link right now, so I’m unable to complete the order at the moment."
+            "ask_for_delivery_house_number": lambda *_: "Please say your house number.",
+            "repeat_delivery_house_number": lambda *_: "Please say your house number.",
+            "ask_for_delivery_street": lambda *_: "Please say your street name or street number.",
+            "repeat_delivery_street": lambda *_: "Please say your street name or street number.",
+            "ask_for_delivery_secondary_address": lambda *_: (
+                "Please say your apartment, suite, unit, building, or block. If there is none, say none."
+            ),
+            "delivery_address_captured_resume_checkout": lambda *_: (
+                "Got it. I have your delivery address. I’m sending your payment link now."
+            ),
+            "payment_link_sent": lambda *_: (
+                "I have sent you the payment link. Please complete payment. I will confirm the order automatically as soon as payment clears."
+            ),
+            "order_completed": self._order_completed,
+
+            # Returned when a customer says "I paid" but Datacap has not yet
+            # confirmed the payment — we stay in WAITING_FOR_PAYMENT.
+            "payment_not_confirmed_yet": lambda *_: (
+                "We have not received payment confirmation from our provider just yet. "
+                "Please give it a moment and complete the payment on the link we sent. "
+                "I will confirm the order automatically as soon as it clears."
+            ),
+
+            # Returned when the Datacap verification call itself throws an error.
+            "payment_verification_error": lambda *_: (
+                "I had trouble checking your payment status right now. "
+                "Please wait a moment while I keep checking for the payment confirmation."
             ),
         }
 
@@ -208,8 +227,42 @@ class ResponseBuilder:
         item_name = item_name or "that item"
         return f"{item_name}, right? Yes or no."
 
-    def _confirm_order_summary(self, context: ConversationContext, _: MenuRepository, payload: dict) -> str:
-        return f"{render_checkout_review_summary(payload=payload, order_type=context.order_type)} Would you like to checkout?"
+    def _confirm_order_summary(
+            self,
+            context: ConversationContext,
+            _: MenuRepository,
+            payload: dict,
+    ) -> str:
+        summary = render_checkout_review_summary(
+            payload=payload,
+            order_type=context.order_type,
+        )
+        return f"{summary} Would you like to checkout?"
+
+    def _order_completed(
+        self,
+        context: ConversationContext,
+        _: MenuRepository,
+        payload: dict,
+    ) -> str:
+        order_number = str(
+            payload.get("order_number")
+            or context.delivery_address.order_number
+            or ""
+        ).strip()
+        order_sentence = ""
+        if order_number:
+            order_sentence = f" Your order number is {self._spoken_order_number(order_number)}."
+
+        return (
+            f"Payment confirmed.{order_sentence} "
+            "Your order has been placed successfully. Will be ready in 25 minutes. Thank you!"
+        )
+
+    def _spoken_order_number(self, order_number: str) -> str:
+        if order_number.isdigit():
+            return " ".join(order_number)
+        return order_number
 
     def _ask_for_side_size(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
         side_item_name = payload.get("side_item_name") or "that side"

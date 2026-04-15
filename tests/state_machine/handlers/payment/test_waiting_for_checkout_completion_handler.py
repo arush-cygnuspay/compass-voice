@@ -1,0 +1,102 @@
+import unittest
+import sys
+import types
+
+
+twilio_module = types.ModuleType("twilio")
+twilio_base_module = types.ModuleType("twilio.base")
+twilio_base_exceptions_module = types.ModuleType("twilio.base.exceptions")
+twilio_rest_module = types.ModuleType("twilio.rest")
+
+
+class _TwilioRestException(Exception):
+    pass
+
+
+class _TwilioClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+twilio_base_exceptions_module.TwilioRestException = _TwilioRestException
+twilio_rest_module.Client = _TwilioClient
+
+sys.modules.setdefault("twilio", twilio_module)
+sys.modules.setdefault("twilio.base", twilio_base_module)
+sys.modules.setdefault("twilio.base.exceptions", twilio_base_exceptions_module)
+sys.modules.setdefault("twilio.rest", twilio_rest_module)
+
+from app.nlu.intent_resolution.intent import Intent
+from app.session.session import Session
+from app.state_machine.handlers.payment.waiting_for_checkout_completion_handler import (
+    WaitingForCheckoutCompletionHandler,
+)
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.conversation_state import ConversationState
+
+
+class StubCheckoutService:
+    def __init__(self, *, paid: bool):
+        self.paid = paid
+
+    def verify_payment_by_order_number(self, order_number: str) -> dict:
+        return {
+            "ok": True,
+            "paid": self.paid,
+            "payment_completed": self.paid,
+            "status": "completed" if self.paid else "pending",
+            "reference": "ref-123" if self.paid else None,
+            "session": None,
+            "error": None,
+        }
+
+
+def _make_session() -> Session:
+    session = Session(session_id="call-1", restaurant_id="demo")
+    session.conversation_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
+    return session
+
+
+def _make_context() -> ConversationContext:
+    context = ConversationContext()
+    context.delivery_address.order_number = "1234567"
+    context.delivery_address.customer_phone_number = "+15555550123"
+    context.delivery_address.address_form_link = "https://example.com/checkout"
+    return context
+
+
+class WaitingForCheckoutCompletionHandlerTests(unittest.TestCase):
+    def test_payment_done_completes_only_after_verified_provider_confirmation(self):
+        handler = WaitingForCheckoutCompletionHandler(StubCheckoutService(paid=True))
+
+        result = handler.handle(
+            intent=Intent.PAYMENT_DONE,
+            context=_make_context(),
+            user_text="i paid",
+            session=_make_session(),
+        )
+
+        self.assertEqual(result.next_state, ConversationState.COMPLETED)
+        self.assertEqual(result.response_key, "order_completed")
+        self.assertEqual(result.response_payload, {"order_number": "1234567"})
+        self.assertEqual(result.command, {"type": "CLEAR_CART"})
+
+    def test_payment_done_stays_waiting_when_provider_has_not_confirmed_payment(self):
+        handler = WaitingForCheckoutCompletionHandler(StubCheckoutService(paid=False))
+
+        result = handler.handle(
+            intent=Intent.PAYMENT_DONE,
+            context=_make_context(),
+            user_text="i paid",
+            session=_make_session(),
+        )
+
+        self.assertEqual(
+            result.next_state,
+            ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+        )
+        self.assertEqual(result.response_key, "payment_not_confirmed_yet")
+
+
+if __name__ == "__main__":
+    unittest.main()

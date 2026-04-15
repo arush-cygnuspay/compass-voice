@@ -49,6 +49,20 @@ def load_session(session_id: str, restaurant_id: str) -> Session:
     return session
 
 
+def load_existing_session(session_id: str, restaurant_id: str) -> Session | None:
+    key = _key(session_id)
+    raw = _redis.get(key)
+
+    if not raw:
+        return None
+
+    session = Session.from_dict(json.loads(raw))
+    if session.restaurant_id != restaurant_id:
+        return None
+
+    return session
+
+
 def save_session(session: Session) -> None:
     key = _key(session.session_id)
     _redis.setex(key, SESSION_TTL_SECONDS, json.dumps(session.to_dict()))

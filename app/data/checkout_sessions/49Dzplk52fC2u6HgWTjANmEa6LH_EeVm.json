@@ -1,0 +1,46 @@
+{
+  "token": "49Dzplk52fC2u6HgWTjANmEa6LH_EeVm",
+  "restaurant_id": "demo",
+  "call_sid": "CA3789ebd85040a660f30641ca419b94a0",
+  "order_number": "5711274",
+  "customer_phone_number": "+17036369451",
+  "address_required": true,
+  "confirmation_link": "https://www.shakeshack.com",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Coke (Medium)",
+        "base_name": "Coke",
+        "variant_label": "Medium",
+        "sides": [],
+        "modifiers": [],
+        "quantity": 1,
+        "unit_price": "$2.48",
+        "line_total": "$2.48"
+      }
+    ],
+    "item_count": 1,
+    "total": "$2.48"
+  },
+  "area": "\u062f\u06be\u0631\u0645 \u067e\u0648\u0631\u0627",
+  "postal_code": "54900",
+  "house_number": null,
+  "street": "\u0646\u06c1\u0631 \u0633\u0691\u06a9\u200e",
+  "secondary_address": null,
+  "city": "\u0644\u0627\u06c1\u0648\u0631 \u06a9\u06cc\u0646\u0679",
+  "state": "\u067e\u0646\u062c\u0627\u0628",
+  "full_address_raw": "Royal Palm Club, \u0646\u06c1\u0631 \u0633\u0691\u06a9\u200e, \u062f\u06be\u0631\u0645 \u067e\u0648\u0631\u0627, \u0644\u0627\u06c1\u0648\u0631 \u06a9\u06cc\u0646\u0679, \u062a\u062d\u0635\u06cc\u0644 \u0644\u0627\u06c1\u0648\u0631 \u06a9\u0646\u0679\u0648\u0646\u0645\u0646\u0679, \u0636\u0644\u0639 \u0644\u0627\u06c1\u0648\u0631, \u0644\u0627\u06c1\u0648\u0631 \u0688\u0648\u06cc\u0698\u0646, \u067e\u0646\u062c\u0627\u0628, 54900, \u067e\u0627\u06a9\u0633\u062a\u0627\u0646",
+  "address_source": "device_location",
+  "latitude": 31.558,
+  "longitude": 74.3587,
+  "location_permission_granted": true,
+  "address_completed": true,
+  "payment_started": true,
+  "payment_completed": true,
+  "payment_reference": "01KP913HDVQR81JPHD10GK7SAE",
+  "payment_provider": "datacap",
+  "status": "completed",
+  "created_at": "2026-04-15T16:55:12.742367+00:00",
+  "updated_at": "2026-04-15T16:55:52.158893+00:00",
+  "expires_at": "2026-04-15T18:55:12.742367+00:00"
+}

@@ -1,0 +1,46 @@
+{
+  "token": "E1uxosvBNwcLsBDpkCdVVTWlrjTZ0MF2",
+  "restaurant_id": "demo",
+  "call_sid": "CAafdeb8f9de046888768321b9f76cb820",
+  "order_number": "1903923",
+  "customer_phone_number": "+17036369451",
+  "address_required": true,
+  "confirmation_link": "https://www.shakeshack.com",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Coke (Small)",
+        "base_name": "Coke",
+        "variant_label": "Small",
+        "sides": [],
+        "modifiers": [],
+        "quantity": 1,
+        "unit_price": "$2.28",
+        "line_total": "$2.28"
+      }
+    ],
+    "item_count": 1,
+    "total": "$2.28"
+  },
+  "area": "\u0644\u0627\u06c1\u0648\u0631",
+  "postal_code": "54810",
+  "house_number": null,
+  "street": "Tufail Road (Wellington Road)",
+  "secondary_address": null,
+  "city": "\u0644\u0627\u06c1\u0648\u0631",
+  "state": "\u067e\u0646\u062c\u0627\u0628",
+  "full_address_raw": "Uniworth Dress Co - Mall Of Lahore, Tufail Road (Wellington Road), \u0644\u0627\u06c1\u0648\u0631, \u062a\u062d\u0635\u06cc\u0644 \u0644\u0627\u06c1\u0648\u0631 \u06a9\u0646\u0679\u0648\u0646\u0645\u0646\u0679, \u0636\u0644\u0639 \u0644\u0627\u06c1\u0648\u0631, \u0644\u0627\u06c1\u0648\u0631 \u0688\u0648\u06cc\u0698\u0646, \u067e\u0646\u062c\u0627\u0628, 54810, \u067e\u0627\u06a9\u0633\u062a\u0627\u0646",
+  "address_source": "device_location",
+  "latitude": 31.5294666,
+  "longitude": 74.3786633,
+  "location_permission_granted": true,
+  "address_completed": true,
+  "payment_started": true,
+  "payment_completed": true,
+  "payment_reference": "01KP92Z452FQRNNGJJPTM3X5Y5",
+  "payment_provider": "datacap",
+  "status": "completed",
+  "created_at": "2026-04-15T17:27:19.234488+00:00",
+  "updated_at": "2026-04-15T17:28:40.407312+00:00",
+  "expires_at": "2026-04-15T19:27:19.234488+00:00"
+}

@@ -19,6 +19,7 @@ from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.nlu_resolver import resolve_nlu
 from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
+from app.services.checkout_service import CheckoutService
 from app.services.sms_service import SmsSendRequest, SmsSendResult, SmsService
 from app.session.session import Session
 from app.state_machine.handlers.delivery.waiting_for_delivery_address_collection_handler import (
@@ -140,6 +141,7 @@ class TurnEngine:
         self.resume_prompt_builder = ResumePromptBuilder()
         self.responder = responder
         self.sms_service = sms_service
+        self.checkout_service = CheckoutService()
 
         self.handlers: dict[str, Any] = {
             "add_item_handler": AddItemHandler(menu_repo=menu_repo),
@@ -155,9 +157,15 @@ class TurnEngine:
             "confirming_order_handler": ConfirmOrderHandler(
                 self.cart_summary_builder,
                 self.sms_service,
+                self.checkout_service,
             ),
-            "waiting_for_payment_handler": WaitingForPaymentHandler(),
-            "waiting_for_checkout_completion_handler": WaitingForCheckoutCompletionHandler(),
+            "waiting_for_payment_handler": WaitingForPaymentHandler(
+                self.cart_summary_builder,
+                self.checkout_service,
+            ),
+            "waiting_for_checkout_completion_handler": WaitingForCheckoutCompletionHandler(
+                self.checkout_service,
+            ),
             "cart_handler": CartHandler(self.cart_summary_builder),
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
@@ -165,7 +173,8 @@ class TurnEngine:
             "waiting_for_order_type_handler": WaitingForOrderTypeHandler(),
             "waiting_for_delivery_eligibility_handler": WaitingForDeliveryEligibilityHandler(),
             "waiting_for_delivery_address_collection_handler": WaitingForDeliveryAddressCollectionHandler(
-                self.cart_summary_builder
+                self.cart_summary_builder,
+                self.checkout_service,
             ),
         }
 
@@ -183,7 +192,7 @@ class TurnEngine:
                 session=session,
                 output=TurnOutput(
                     response_key="order_completed",
-                    response_payload=None,
+                    response_payload=session.last_response_payload,
                     end_call_after_playback=True,
                 ),
             )

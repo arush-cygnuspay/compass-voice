@@ -31,6 +31,7 @@ class DeliveryAddress:
     order_number: Optional[str] = None
     payment_link: Optional[str] = None
     address_form_link: Optional[str] = None
+    confirmation_link: Optional[str] = None
     feedback_link: Optional[str] = None
     menu_link: Optional[str] = None
 
@@ -51,7 +52,12 @@ class DeliveryAddress:
         self.confirmed = False
         self.checkout_link_send_attempts = 0
         self.payment_link_send_attempts = 0
+        self.order_number = None
+        self.payment_link = None
         self.address_form_link = None
+        self.confirmation_link = None
+        self.feedback_link = None
+        self.menu_link = None
 
     def missing_eligibility_fields(self) -> list[str]:
         missing: list[str] = []
@@ -97,6 +103,7 @@ class DeliveryAddress:
             "order_number": self.order_number,
             "payment_link": self.payment_link,
             "address_form_link": self.address_form_link,
+            "confirmation_link": self.confirmation_link,
             "feedback_link": self.feedback_link,
             "menu_link": self.menu_link,
         }
@@ -129,6 +136,7 @@ class DeliveryAddress:
             order_number=data.get("order_number"),
             payment_link=data.get("payment_link"),
             address_form_link=data.get("address_form_link"),
+            confirmation_link=data.get("confirmation_link"),
             feedback_link=data.get("feedback_link"),
             menu_link=data.get("menu_link"),
         )

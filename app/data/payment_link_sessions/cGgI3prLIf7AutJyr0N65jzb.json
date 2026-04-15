@@ -1,0 +1,59 @@
+{
+  "id": "cGgI3prLIf7AutJyr0N65jzb",
+  "checkout_token": "MTSVUyyTAJEslzfFb-zbdbGhyNGmOaO7",
+  "invoice_no": "12345",
+  "amount": "4.56",
+  "request_id": "01KP8PQ11FY19TBQA6BX9KYFD7",
+  "public_link_id": "69Wv1lRVSwD-57",
+  "public_link_url": "https://paylink-cert.dcap.com/69Wv1lRVSwD-57",
+  "public_link_embedded_url": "https://paylink-cert.dcap.com/69Wv1lRVSwD-57?widget=true",
+  "public_link_qr_code_url": "https://paylink-cert.dcap.com/api/v1/qrcode/69Wv1lRVSwD-57",
+  "status": "Open",
+  "payment_type_used": null,
+  "provider_reference": "01KP8PQ11FY19TBQA6BX9KYFD7",
+  "raw_response": {
+    "requestId": "01KP8PQ11FY19TBQA6BX9KYFD7",
+    "publicLinkId": "69Wv1lRVSwD-57",
+    "publicLinkUrl": "https://paylink-cert.dcap.com/69Wv1lRVSwD-57",
+    "publicLinkQRCodeUrl": "https://paylink-cert.dcap.com/api/v1/qrcode/69Wv1lRVSwD-57",
+    "publicLinkEmbeddedUrl": "https://paylink-cert.dcap.com/69Wv1lRVSwD-57?widget=true",
+    "paymentTypes": [
+      "CreditDebit"
+    ],
+    "status": "Open",
+    "paymentTypeUsed": null,
+    "paymentDetailsAch": null,
+    "paymentDetailsCredit": null,
+    "paymentDetailsGift": null,
+    "createdAt": "2026-04-15T13:53:55.6692005Z",
+    "paidAtTime": null,
+    "communicationMethods": [],
+    "transactionProperties": {
+      "amount": 4.56,
+      "paymentFeeDescription": "Convenience Fee",
+      "invoiceNo": "12345",
+      "allowedTipPercentages": [
+        0.15,
+        0.2,
+        0.25
+      ],
+      "items": [],
+      "totalAmountToDisplay": 4.56,
+      "itemSubtotalAmount": 4.56
+    },
+    "displayProperties": {
+      "merchantName": "Cygnus Payments",
+      "lightModeColorScheme": null,
+      "invitationSubject": "Payment requested.",
+      "initialMessage": "Thank you for your order.",
+      "orderItemsHeader": "Your Order",
+      "additionalMessageHeader": "Additional Notes",
+      "thankYouMessage": "Thank you for your purchase!",
+      "receiptHeader": "Your Receipt",
+      "smsReceiptMessage": "Thank You",
+      "requireGoogleCaptcha": true
+    }
+  },
+  "created_at": "2026-04-15T13:53:55.566467+00:00",
+  "updated_at": "2026-04-15T13:53:55.567469+00:00"
+}

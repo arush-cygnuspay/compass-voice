@@ -1,0 +1,40 @@
+{
+  "token": "uFOzfo8cHEl82hw2c8ks9adfwO_wdHgM",
+  "restaurant_id": "demo",
+  "call_sid": "CA352fcebe4f2c531aaa2a0ad2a99eab0a",
+  "order_number": "TEST123",
+  "customer_phone_number": "+17036369451",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Coke (Small)",
+        "base_name": "Coke",
+        "variant_label": "Small",
+        "sides": [],
+        "modifiers": [],
+        "quantity": 2,
+        "unit_price": "$2.28",
+        "line_total": "$4.56"
+      }
+    ],
+    "item_count": 2,
+    "total": "$4.56"
+  },
+  "area": "washington dc",
+  "postal_code": "20001",
+  "house_number": "2",
+  "street": "1",
+  "secondary_address": "23",
+  "latitude": 31.4832,
+  "longitude": 74.3845,
+  "location_permission_granted": true,
+  "address_completed": true,
+  "payment_started": true,
+  "payment_completed": true,
+  "payment_reference": "debug-uFOzfo8c",
+  "payment_provider": "datacap",
+  "status": "completed",
+  "created_at": "2026-04-13T18:19:20.921483+00:00",
+  "updated_at": "2026-04-13T18:21:57.960154+00:00",
+  "expires_at": "2026-04-13T20:19:20.921483+00:00"
+}
