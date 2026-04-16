@@ -45,6 +45,17 @@ class WaitingForOrderTypeHandler(BaseHandler):
                 response_payload=None,
             )
 
+        # Defensive safety net: landline callers cannot receive payment
+        # links for delivery, so we never offer delivery to them. This
+        # handler is normally not reached on the landline path (the call
+        # is transferred to a human first), but if it is somehow reached
+        # we silently coerce the choice to pickup.
+        if (
+            order_type == "delivery"
+            and getattr(context, "caller_device_type", None) == "landline"
+        ):
+            order_type = "pickup"
+
         context.order_type = order_type
         context.delivery_address_required = order_type == "delivery"
         context.delivery_address_confirmed = False

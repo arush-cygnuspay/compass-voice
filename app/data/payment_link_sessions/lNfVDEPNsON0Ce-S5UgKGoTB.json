@@ -1,0 +1,82 @@
+{
+  "id": "lNfVDEPNsON0Ce-S5UgKGoTB",
+  "checkout_token": "JT-ueCmZ3YEoG_lvY5aajEZRABhxY6J7",
+  "invoice_no": "3460680",
+  "amount": "2.28",
+  "request_id": "01KP9976PNJKEDZJA39V3056J2",
+  "public_link_id": "5h9bKEO47QL-57",
+  "public_link_url": "https://paylink-cert.dcap.com/5h9bKEO47QL-57",
+  "public_link_embedded_url": "https://paylink-cert.dcap.com/5h9bKEO47QL-57?widget=true",
+  "public_link_qr_code_url": "https://paylink-cert.dcap.com/api/v1/qrcode/5h9bKEO47QL-57",
+  "status": "Paid",
+  "payment_type_used": null,
+  "provider_reference": "01KP9976PNJKEDZJA39V3056J2",
+  "raw_response": {
+    "requestId": "01KP9976PNJKEDZJA39V3056J2",
+    "publicLinkId": "5h9bKEO47QL-57",
+    "publicLinkUrl": "https://paylink-cert.dcap.com/5h9bKEO47QL-57",
+    "publicLinkQRCodeUrl": "https://paylink-cert.dcap.com/api/v1/qrcode/5h9bKEO47QL-57",
+    "publicLinkEmbeddedUrl": "https://paylink-cert.dcap.com/5h9bKEO47QL-57?widget=true",
+    "paymentTypes": [
+      "CreditDebit"
+    ],
+    "status": "Paid",
+    "paymentTypeUsed": "CreditDebit",
+    "paymentDetailsAch": null,
+    "paymentDetailsCredit": {
+      "responseOrigin": "Processor",
+      "returnCode": "000000",
+      "status": "Approved",
+      "message": "APPROVED",
+      "account": "476173XXXXXX0043",
+      "expiration": "XXXX",
+      "brand": "VISA",
+      "tranCode": "Sale",
+      "authCode": "ro1yulOZQ",
+      "refNo": "q-3CPIIIRTWQy5kpsbK0MhfHQigKa",
+      "invoiceNo": "3460680",
+      "amount": "2.28",
+      "authorized": "2.28",
+      "token": "DC4:AQH3gC3Ye1u0c5PkWB0Qcq2zTbuo6XCs2TWcez4gHbyD0DOY3rLNvqs3NusgvnTyhnf-BmkdmyCEHTM5gNdDEvBU0M0aZXMscn46sNM-lquzFXBJwrBaWyaX3c4ePTjrCN_-X-RIPrV0SHUw5rMWbEOm",
+      "cvvResult": null,
+      "trace": null,
+      "avsResult": null,
+      "tip": "0.00",
+      "surchargeWithLookup": null,
+      "cardHolderID": null,
+      "recurringData": null
+    },
+    "paymentDetailsGift": null,
+    "createdAt": "2026-04-15T19:17:20.1784949Z",
+    "paidAtTime": "2026-04-15T19:18:16.7427758Z",
+    "communicationMethods": [],
+    "transactionProperties": {
+      "amount": 2.28,
+      "paymentFeeDescription": "Convenience Fee",
+      "invoiceNo": "3460680",
+      "tipAmount": 0.0,
+      "allowedTipPercentages": [
+        0.15,
+        0.2,
+        0.25
+      ],
+      "items": [],
+      "totalAmountToDisplay": 2.28,
+      "itemSubtotalAmount": 2.28
+    },
+    "displayProperties": {
+      "merchantName": "Cygnus Payments",
+      "lightModeColorScheme": null,
+      "invitationSubject": "Payment requested.",
+      "initialMessage": "Thank you for your order.",
+      "orderItemsHeader": "Your Order",
+      "additionalMessageHeader": "Additional Notes",
+      "thankYouMessage": "Thank you for your purchase!",
+      "receiptHeader": "Your Receipt",
+      "smsReceiptMessage": "Thank You",
+      "requireGoogleCaptcha": true
+    }
+  },
+  "created_at": "2026-04-15T19:17:18.759907+00:00",
+  "updated_at": "2026-04-15T19:18:15.872775+00:00"
+}

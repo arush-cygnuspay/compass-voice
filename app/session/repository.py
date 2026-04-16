@@ -26,8 +26,9 @@ _redis = redis.Redis(
 
 def _new_order_type_session(session_id: str, restaurant_id: str) -> Session:
     session = Session(session_id=session_id, restaurant_id=restaurant_id)
-    session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+    session.conversation_state = ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE
     session.conversation_context.order_type = None
+    session.conversation_context.caller_device_type = None
     session.conversation_context.onboarding_complete = False
     session.conversation_context.delivery_address_required = False
     session.conversation_context.delivery_address_confirmed = False
@@ -57,6 +58,7 @@ def load_existing_session(session_id: str, restaurant_id: str) -> Session | None
         return None
 
     session = Session.from_dict(json.loads(raw))
+
     if session.restaurant_id != restaurant_id:
         return None
 
@@ -70,3 +72,4 @@ def save_session(session: Session) -> None:
 
 def _key(session_id: str) -> str:
     return f"session:{session_id}"
+ 

@@ -9,6 +9,12 @@ def handle_intent_not_allowed(payload: dict) -> str:
     state = payload.get("state")
     intent = payload.get("intent")
 
+    if state == ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE:
+        return "Please say landline or mobile phone."
+
+    if state == ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION:
+        return "Pickup is available for landline callers only. Would you like to proceed?"
+
     if state == ConversationState.WAITING_FOR_ORDER_TYPE:
         return "Please say pickup or delivery."
 

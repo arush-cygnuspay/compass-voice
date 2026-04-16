@@ -310,6 +310,10 @@ class ConversationContext:
     delivery_address_confirmed: bool = False
     onboarding_complete: bool = False
 
+    # "phone" (mobile / cell) or "landline". If "landline" the call is
+    # redirected to a human agent and we do not collect order details.
+    caller_device_type: Optional[str] = None
+
     delivery_address: DeliveryAddress = field(default_factory=DeliveryAddress)
 
     def set_last_nlu(self, user_text: str, nlu: NLUResult) -> None:
@@ -396,6 +400,7 @@ class ConversationContext:
             "delivery_address_required": self.delivery_address_required,
             "delivery_address_confirmed": self.delivery_address_confirmed,
             "onboarding_complete": self.onboarding_complete,
+            "caller_device_type": self.caller_device_type,
             "delivery_address": self.delivery_address.to_dict(),
         }
 
@@ -448,6 +453,7 @@ class ConversationContext:
         ctx.delivery_address_required = bool(data.get("delivery_address_required", False))
         ctx.delivery_address_confirmed = bool(data.get("delivery_address_confirmed", False))
         ctx.onboarding_complete = bool(data.get("onboarding_complete", False))
+        ctx.caller_device_type = data.get("caller_device_type")
 
         legacy_delivery_address = {
             "area": data.get("delivery_area"),

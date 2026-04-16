@@ -38,6 +38,10 @@ from app.state_machine.handlers.common.cancellation_confirmation_handler import 
     CancellationConfirmationHandler,
 )
 from app.state_machine.handlers.order.waiting_for_order_type_handler import WaitingForOrderTypeHandler
+from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
+    HUMAN_AGENT_TRANSFER_NUMBER,
+    WaitingForCallerDeviceTypeHandler,
+)
 from app.state_machine.handlers.common.waiting_for_quantity_handler import (
     WaitingForQuantityHandler,
 )
@@ -61,6 +65,7 @@ from app.state_machine.handlers.item.remove_item_handler import RemoveItemHandle
 from app.state_machine.handlers.item.removing_item_handler import RemovingItemHandler
 from app.state_machine.handlers.order.confirm_order_handler import ConfirmOrderHandler
 from app.state_machine.handlers.order.start_order_handler import StartOrderHandler
+from app.state_machine.handlers.payment.payment_flow_support import verify_payment_for_order
 from app.state_machine.handlers.payment.waiting_for_payment_handler import (
     WaitingForPaymentHandler,
 )
@@ -75,6 +80,10 @@ class TurnOutput:
     internal_response_text: str | None = None
     spoken_response_text: str | None = None
     end_call_after_playback: bool = False
+    # If set, the voice transport layer should redirect the live call to
+    # this PSTN number after the spoken response finishes playing. Used
+    # to hand landline callers off to a human agent.
+    transfer_call_to_number: str | None = None
 
 
 INTENT_MIN_CONF = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
@@ -170,6 +179,7 @@ class TurnEngine:
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
+            "waiting_for_caller_device_type_handler": WaitingForCallerDeviceTypeHandler(),
             "waiting_for_order_type_handler": WaitingForOrderTypeHandler(),
             "waiting_for_delivery_eligibility_handler": WaitingForDeliveryEligibilityHandler(),
             "waiting_for_delivery_address_collection_handler": WaitingForDeliveryAddressCollectionHandler(
@@ -196,6 +206,71 @@ class TurnEngine:
                     end_call_after_playback=True,
                 ),
             )
+
+        # Once a landline caller has been handed off to a human agent the
+        # voice transport layer will tear down the WebSocket / call. If a
+        # spurious turn still arrives in this state we just acknowledge
+        # and tell the bridge to end the agent's side of the call.
+        if session.conversation_state == ConversationState.TRANSFERRING_TO_HUMAN_AGENT:
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key="transferring_to_human_agent",
+                    response_payload={
+                        "transfer_number": HUMAN_AGENT_TRANSFER_NUMBER,
+                    },
+                    transfer_call_to_number=HUMAN_AGENT_TRANSFER_NUMBER,
+                    end_call_after_playback=True,
+                ),
+            )
+
+        # Caller-device-type gate. Must run BEFORE the order-type gate
+        # because landline callers are routed to a live human and never
+        # reach the pickup / delivery question.
+        if session.conversation_state == ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE:
+            device_handler: WaitingForCallerDeviceTypeHandler = self.handlers[
+                "waiting_for_caller_device_type_handler"
+            ]
+            device_result = device_handler.handle(
+                intent=Intent.UNKNOWN,
+                context=ctx,
+                user_text=user_text,
+                session=session,
+            )
+
+            session.conversation_state = device_result.next_state
+            self._apply_session_response(
+                session=session,
+                intent=Intent.UNKNOWN,
+                response_key=device_result.response_key,
+                response_payload=device_result.response_payload,
+            )
+
+            transfer_number: str | None = None
+            command = device_result.command or {}
+            if command.get("type") == "transfer_call":
+                transfer_number = command.get("transfer_number")
+
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=device_result.response_key,
+                    response_payload=device_result.response_payload,
+                    transfer_call_to_number=transfer_number,
+                    # Once we hand the call off there is nothing for the
+                    # voice agent to do, so end the agent leg cleanly
+                    # after the goodbye plays. The transfer command is
+                    # carried out by the transport layer and supersedes
+                    # a plain hangup if both are set.
+                    end_call_after_playback=transfer_number is not None,
+                ),
+            )
+
+        # Auto payment-check probe injected by the transport layer after
+        # PAYMENT_AUTO_CHECK_DELAY_SECONDS of silence.  Bypass NLU entirely
+        # and call the payment verifier directly — O(1) path, no model inference.
+        if user_text == "__auto_payment_check__":
+            return self._handle_auto_payment_check(session)
 
         self._normalize_order_type_gate_state(session)
 
@@ -537,9 +612,19 @@ class TurnEngine:
         t_handler = time.perf_counter() - t0
 
         command_result: dict[str, Any] | None = None
+        transfer_number: str | None = None
 
         if result.command:
-            command_result = self._apply_command(session, result.command)
+            command_type = result.command.get("type")
+            if command_type == "transfer_call":
+                transfer_number = result.command.get("transfer_number")
+                command_result = {
+                    "ok": True,
+                    "transport_only": True,
+                    "transfer_number": transfer_number,
+                }
+            else:
+                command_result = self._apply_command(session, result.command)
 
             print(
                 "[COMMAND RESULT]",
@@ -647,7 +732,11 @@ class TurnEngine:
                 response_payload=result.response_payload,
                 internal_response_text=getattr(result, "internal_response_text", None),
                 spoken_response_text=getattr(result, "spoken_response_text", None),
-                end_call_after_playback=(result.next_state == ConversationState.COMPLETED),
+                end_call_after_playback=(
+                    result.next_state == ConversationState.COMPLETED
+                    or transfer_number is not None
+                ),
+                transfer_call_to_number=transfer_number,
             ),
         )
 
@@ -923,6 +1012,13 @@ class TurnEngine:
                 "attempts_made": attempts_made,
             }
 
+        if cmd_type == "transfer_call":
+            return {
+                "ok": True,
+                "transport_only": True,
+                "transfer_number": command.get("transfer_number"),
+            }
+
         raise ValueError(f"Unknown command type: {cmd_type}")
 
     def _safe_session_id(self, session: Session) -> str:
@@ -1189,12 +1285,75 @@ class TurnEngine:
         except Exception:
             return
 
+    def _handle_auto_payment_check(self, session: Session) -> TurnOutput:
+        """Verify payment status without going through the NLU pipeline.
+
+        Called when the transport layer fires the ``__auto_payment_check__``
+        sentinel.  Only meaningful in WAITING_FOR_PAYMENT and
+        WAITING_FOR_CHECKOUT_COMPLETION states; all other states return a
+        silent no-op so the call flow is never disrupted.
+        """
+        ctx = session.conversation_context
+        state = session.conversation_state
+
+        if state == ConversationState.WAITING_FOR_PAYMENT:
+            pending_state = ConversationState.WAITING_FOR_PAYMENT
+            pending_key = "waiting_for_payment"
+        elif state == ConversationState.WAITING_FOR_CHECKOUT_COMPLETION:
+            pending_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
+            pending_key = "waiting_for_checkout_completion"
+        else:
+            # State changed between scheduling and firing — do nothing.
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(response_key=session.last_response_key or "waiting_for_payment"),
+            )
+
+        delivery = ctx.delivery_address
+        order_number = getattr(delivery, "order_number", None)
+
+        result = verify_payment_for_order(
+            checkout_service=self.checkout_service,
+            order_number=order_number,
+            pending_state=pending_state,
+            pending_response_key=pending_key,
+        )
+
+        if result.reset_context:
+            ctx.reset()
+        if result.command:
+            self._apply_command(session, result.command)
+
+        session.conversation_state = result.next_state
+        self._apply_session_response(
+            session=session,
+            intent=Intent.PAYMENT_STATUS,
+            response_key=result.response_key,
+            response_payload=result.response_payload,
+        )
+
+        return self._hydrate_output(
+            session=session,
+            output=TurnOutput(
+                response_key=result.response_key,
+                response_payload=result.response_payload,
+                end_call_after_playback=(result.next_state == ConversationState.COMPLETED),
+            ),
+        )
+
     def _order_type_required(self, session: Session) -> bool:
         ctx = session.conversation_context
         return ctx.order_type not in {"pickup", "delivery"}
 
     def _normalize_order_type_gate_state(self, session: Session) -> None:
         if session.conversation_state == ConversationState.COMPLETED:
+            return
+        # Don't clobber the device-type gate or the human-handoff state.
+        if session.conversation_state in {
+            ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
+            ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
+            ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
+        }:
             return
         if self._order_type_required(session):
             session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
@@ -1250,4 +1409,5 @@ class TurnEngine:
             internal_response_text=internal_text,
             spoken_response_text=spoken_text,
             end_call_after_playback=output.end_call_after_playback,
+            transfer_call_to_number=output.transfer_call_to_number,
         )
