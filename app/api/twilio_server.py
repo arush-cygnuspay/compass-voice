@@ -73,7 +73,7 @@ async def voice(request: Request):
     vr.append(
         gather(
             action_url=str(request.url_for("process_speech")),
-            say="Hello! Thank you for calling Compass. What would you like to order?",
+            say="Welcome to Compass. Before we get started, are you calling from a landline or a mobile phone?",
         )
     )
 
@@ -135,6 +135,16 @@ async def process_speech(
     print(f"[BOT → CALLER] {response_text}")
 
     vr.say(response_text)
+
+    transfer_number = getattr(turn_output, "transfer_call_to_number", None)
+    if transfer_number:
+        vr.dial(transfer_number)
+        return Response(str(vr), media_type="application/xml")
+
+    if getattr(turn_output, "end_call_after_playback", False):
+        vr.hangup()
+        return Response(str(vr), media_type="application/xml")
+
     vr.append(gather(str(request.url_for("process_speech"))))
 
     return Response(str(vr), media_type="application/xml")

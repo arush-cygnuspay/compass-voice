@@ -16,6 +16,8 @@ DELIVERY_GATING_STATES: set[ConversationState] = {
 }
 
 ACTIVE_TASK_STATES: set[ConversationState] = {
+    ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
+    ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
     ConversationState.WAITING_FOR_ORDER_TYPE,
     ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
     ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,

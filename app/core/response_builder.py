@@ -124,7 +124,27 @@ class ResponseBuilder:
             "confirm_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')}? Yes or no.",
             "confirm_side_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')} for {p.get('side_item_name', 'that side')}? Yes or no.",
 
-            "ask_for_order_type": lambda *_: "Welcome to Compass. Is this for pickup or delivery today?",
+            "ask_for_caller_device_type": lambda *_: (
+                "Welcome to Compass. Before we get started, are you calling "
+                "from a landline or a mobile phone?"
+            ),
+            "repeat_caller_device_type": lambda *_: (
+                "Sorry, I missed that. Are you calling from a landline or a mobile phone?"
+            ),
+            "confirm_landline_pickup_only": lambda *_: (
+                "For Landline user you need to connect with our team member. Would you like to proceed and place your order with a team member?"
+            ),
+            "repeat_landline_pickup_only": lambda *_: (
+                "Would you like to connect with a team member?. Please say yes to proceed or no to cancel."
+            ),
+            "transferring_to_human_agent": lambda c, m, p: (
+                "Okay. Connecting you to a team member now. One moment please."
+            ),
+            "landline_pickup_declined": lambda *_: (
+                "Okay. No problem. Feel free to call us again anytime. Goodbye."
+            ),
+
+            "ask_for_order_type": lambda *_: "Got it. Is this for pickup or delivery today?",
             "repeat_order_type": lambda *_: "Is this for pickup or delivery?",
             "order_type_captured_pickup": lambda *_: "Got it. Pickup. What would you like to order?",
             "order_type_captured_delivery": lambda *_: "Got it. Delivery. What would you like to order?",
@@ -292,7 +312,7 @@ class ResponseBuilder:
         return self._repeat_side_size_options(_, __, payload)
 
     def _invalid_side_size_option(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
-        return self._repeat_side_size_options(_, __, payload)
+        return self._repeat_side_size_op
 
     def _readonly_interrupt_with_resume(
         self,
