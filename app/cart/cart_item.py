@@ -1,7 +1,7 @@
 # app/cart/cart_item.py
 
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 import uuid
 
 
@@ -25,8 +25,8 @@ class CartItem:
     # side item_id -> variant_id
     side_variants: Dict[str, str] = field(default_factory=dict)
 
-    # group_id -> list[modifier_id]
-    modifiers: Dict[str, List[str]] = field(default_factory=dict)
+    # group_id -> list[modifier_id] or richer modifier selection entries
+    modifiers: Dict[str, List[Any]] = field(default_factory=dict)
 
     @staticmethod
     def create(
@@ -35,7 +35,7 @@ class CartItem:
         variant_id: Optional[str],
         sides: Dict[str, List[str]],
         side_variants: Dict[str, str],
-        modifiers: Dict[str, List[str]],
+        modifiers: Dict[str, List[Any]],
     ) -> "CartItem":
         return CartItem(
             cart_item_id=str(uuid.uuid4()),

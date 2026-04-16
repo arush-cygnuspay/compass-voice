@@ -5,6 +5,9 @@ from dataclasses import dataclass
 
 from app.state_machine.models.conversation_context import ConversationContext, PendingAddItem
 from app.state_machine.models.conversation_state import ConversationState
+from app.state_machine.handlers.item.add_item.group_collection_utils import (
+    effective_group_selector_bounds,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +48,7 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
     if next_side_index is not None:
         context.current_side_group_index = next_side_index
         group = pending.side_groups[next_side_index]
+        selected_ids = list(context.selected_side_groups.get(group.group_id, []))
 
         context.current_prompt_field = "side"
         context.available_choices_kind = "side"
@@ -57,6 +61,9 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
                 "item_name": pending.item_name,
                 "group_name": group.name,
                 "top_choices": list(group.top_choice_names),
+                "min_selector": effective_group_selector_bounds(group)[0],
+                "max_selector": effective_group_selector_bounds(group)[1],
+                "selected_count": len(selected_ids),
             },
         )
 
@@ -64,6 +71,8 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
     if next_modifier_index is not None:
         context.current_modifier_group_index = next_modifier_index
         group = pending.modifier_groups[next_modifier_index]
+
+        selected_ids = list(context.selected_modifier_groups.get(group.group_id, []))
 
         context.current_prompt_field = "modifier"
         context.available_choices_kind = "modifier"
@@ -76,6 +85,9 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
                 "item_name": pending.item_name,
                 "group_name": group.name,
                 "top_choices": list(group.top_choice_names),
+                "min_selector": effective_group_selector_bounds(group)[0],
+                "max_selector": effective_group_selector_bounds(group)[1],
+                "selected_count": len(selected_ids),
             },
         )
 
@@ -110,7 +122,18 @@ def build_add_item_command(context: ConversationContext) -> dict:
             "variant_id": context.selected_variant_id,
             "sides": dict(context.selected_side_groups),
             "side_variants": dict(context.selected_side_variants),
-            "modifiers": dict(context.selected_modifier_groups),
+            "modifiers": {
+                    group_id: [
+                        {
+                            "modifier_id": sel.modifier_id,
+                            "name": sel.name,
+                            "action": sel.action,
+                            "instruction": sel.instruction,
+                        }
+                        for sel in selections
+                    ]
+                    for group_id, selections in context.selected_modifier_groups.items()
+                },
         },
     }
 
@@ -188,8 +211,9 @@ def _find_next_unresolved_side_group_index(
 
 def _side_group_satisfied(group, selected_item_ids: list[str] | tuple[str, ...], skipped: bool) -> bool:
     selected_count = len(selected_item_ids)
-    if bool(group.is_required):
-        return selected_count >= int(group.min_selector or 1)
+    min_selector, _ = effective_group_selector_bounds(group)
+    if min_selector > 0:
+        return selected_count >= min_selector
     return selected_count > 0 or skipped
 
 
@@ -213,10 +237,17 @@ def _find_next_unresolved_modifier_group_index(
     return None
 
 
-def _modifier_group_satisfied(group, selected_modifier_ids: list[str] | tuple[str, ...], skipped: bool) -> bool:
-    selected_count = len(selected_modifier_ids)
-    if bool(group.is_required):
-        return selected_count >= int(group.min_selector or 1)
+def _modifier_group_satisfied(group, selected_modifier_selections, skipped: bool) -> bool:
+    """
+    A modifier group is satisfied when:
+    - required group: selected count >= min_selector
+    - optional group: at least one selection exists OR the whole group was skipped
+    """
+    selected_count = len(selected_modifier_selections or ())
+    min_selector, _ = effective_group_selector_bounds(group)
+    if min_selector > 0:
+        return selected_count >= min_selector
+
     return selected_count > 0 or skipped
 
 

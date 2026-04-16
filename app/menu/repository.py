@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from app.menu.models import ItemResolution, MenuItem
 from app.menu.query_result import MenuQueryResult, MenuQueryType
-from app.menu.slot_helpers import first_slot_value
+from app.menu.slot_helpers import slot_values
 from app.menu.store import MenuStore
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
@@ -58,6 +58,24 @@ class MenuRepository:
             ]
 
         return list(self.store.items.values())
+
+    def _has_explicit_item_evidence(self, normalized_text: str) -> bool:
+        if not normalized_text:
+            return False
+
+        if self.store.find_entity(normalized_text, allowed_types={"item"}):
+            return True
+
+        if self.store.find_item_exact(normalized_text) is not None:
+            return True
+
+        if self.store.find_item_ids_by_alias(normalized_text):
+            return True
+
+        if self.store.find_item_ids_by_voice_label(normalized_text):
+            return True
+
+        return False
 
     # ======================================================
     # CANDIDATE-LOCAL RESOLUTION
@@ -286,52 +304,53 @@ class MenuRepository:
         fallback_to_text: bool = True,
         limit: int = 5,
     ) -> MenuQueryResult:
-        item_query = first_slot_value(slots, "ITEM", "MENU_ITEM")
-        category_query = first_slot_value(slots, "CATEGORY", "MENU_CATEGORY")
+        item_queries = [
+            normalize_text(value)
+            for value in slot_values(slots, "ITEM", "MENU_ITEM")
+            if normalize_text(value)
+        ]
+        category_queries = [
+            normalize_text(value)
+            for value in slot_values(slots, "CATEGORY", "MENU_CATEGORY")
+            if normalize_text(value)
+        ]
 
-        normalized_item_query = normalize_text(item_query) if item_query else ""
-        normalized_category_query = normalize_text(category_query) if category_query else ""
-
-        if normalized_category_query and not normalized_item_query:
+        category_result = None
+        for normalized_category_query in category_queries:
             category_result = self.resolve_category_query_normalized(
                 normalized_category_query,
                 limit=limit,
             )
             if category_result is not None:
-                return category_result
+                break
 
-        if normalized_item_query:
+        if category_result is not None and not item_queries:
+            return category_result
+
+        prioritized_item_queries = [query for query in item_queries if self._has_explicit_item_evidence(query)]
+        if not prioritized_item_queries:
+            prioritized_item_queries = item_queries
+
+        fallback_slot_item_result: MenuQueryResult | None = None
+        for normalized_item_query in prioritized_item_queries:
             slot_item_result = self._resolve_item_query_from_explicit_slot_normalized(
                 normalized_item_query,
                 limit=limit,
             )
+            if slot_item_result is None:
+                continue
 
-            if normalized_category_query:
-                category_result = self.resolve_category_query_normalized(
-                    normalized_category_query,
-                    limit=limit,
-                )
-
-                if category_result is not None and slot_item_result is not None:
-                    if slot_item_result.type in {
-                        MenuQueryType.ITEM_AMBIGUOUS,
-                        MenuQueryType.NOT_FOUND,
-                    }:
-                        return category_result
-
-                if category_result is not None and slot_item_result is None:
-                    return category_result
-
-            if slot_item_result is not None:
+            if slot_item_result.type == MenuQueryType.ITEM:
                 return slot_item_result
 
-        if normalized_category_query:
-            category_result = self.resolve_category_query_normalized(
-                normalized_category_query,
-                limit=limit,
-            )
-            if category_result is not None:
-                return category_result
+            if fallback_slot_item_result is None:
+                fallback_slot_item_result = slot_item_result
+
+        if category_result is not None:
+            return category_result
+
+        if fallback_slot_item_result is not None:
+            return fallback_slot_item_result
 
         if not fallback_to_text or not normalized_user_text:
             similar_items, categories = self.build_not_found_recovery_normalized(
