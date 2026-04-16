@@ -33,6 +33,196 @@ def _format_options(options: list[str], max_items: int = 3) -> str:
     return f"{limited[0]}, {limited[1]}, or {limited[2]}"
 
 
+def _pluralize(word: str, count: int) -> str:
+    return word if count == 1 else f"{word}s"
+
+
+def _format_selected_names(selected_names: list[str]) -> str:
+    clean = [str(name).strip() for name in selected_names if str(name).strip()]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    if len(clean) == 2:
+        return f"{clean[0]} and {clean[1]}"
+    return f"{', '.join(clean[:-1])}, and {clean[-1]}"
+
+
+def _payload_value(payload: dict, key: str, default):
+    if key in payload:
+        return payload[key]
+    return default
+
+
+def _group_payload(
+    *,
+    payload: dict,
+    group_name: str,
+    option_names: list[str],
+    selected_names: list[str],
+    min_selector: int,
+    max_selector: int,
+) -> dict:
+    selected_count = len(selected_names)
+    effective_max = max_selector if max_selector > 0 else len(option_names)
+    if option_names and effective_max > len(option_names):
+        effective_max = len(option_names)
+
+    remaining_to_min = max(min_selector - selected_count, 0)
+    remaining_to_max = max(effective_max - selected_count, 0) if effective_max > 0 else 0
+
+    return {
+        "group_name": _payload_value(payload, "group_name", group_name),
+        "top_choices": _payload_value(payload, "top_choices", option_names[:4]),
+        "all_choices": _payload_value(payload, "all_choices", option_names),
+        "selected_names": _payload_value(payload, "selected_names", selected_names),
+        "selected_count": int(_payload_value(payload, "selected_count", selected_count) or 0),
+        "min_selector": int(_payload_value(payload, "min_selector", min_selector) or 0),
+        "max_selector": int(_payload_value(payload, "max_selector", effective_max) or 0),
+        "remaining_to_min": int(_payload_value(payload, "remaining_to_min", remaining_to_min) or 0),
+        "remaining_to_max": int(_payload_value(payload, "remaining_to_max", remaining_to_max) or 0),
+    }
+
+
+def _current_side_payload(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> dict:
+    payload = payload or {}
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.side_groups[context.current_side_group_index]
+    selected_ids = list(context.selected_side_groups.get(group.group_id, []))
+    selected_names = [
+        group.choices_by_item_id[item_id].name
+        for item_id in selected_ids
+        if item_id in group.choices_by_item_id
+    ]
+
+    return _group_payload(
+        payload=payload,
+        group_name=group.name,
+        option_names=[choice.name for choice in group.choices],
+        selected_names=selected_names,
+        min_selector=int(group.min_selector or 0),
+        max_selector=int(group.max_selector or 0),
+    )
+
+
+def _current_modifier_payload(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> dict:
+    payload = payload or {}
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.modifier_groups[context.current_modifier_group_index]
+    selected_names = []
+    for selection in context.selected_modifier_groups.get(group.group_id, []):
+        if selection.action == "remove":
+            selected_names.append(f"no {selection.name}")
+        elif selection.instruction == "extra":
+            selected_names.append(f"extra {selection.name}")
+        elif selection.instruction == "less":
+            selected_names.append(f"less {selection.name}")
+        else:
+            selected_names.append(selection.name)
+
+    return _group_payload(
+        payload=payload,
+        group_name=group.name,
+        option_names=[choice.name for choice in group.choices],
+        selected_names=selected_names,
+        min_selector=int(group.min_selector or 0),
+        max_selector=int(group.max_selector or 0),
+    )
+
+
+def _initial_multi_select_prompt(*, item_name: str, group_label: str, options: str, min_selector: int, max_selector: int, optional: bool) -> str:
+    if optional:
+        if max_selector == 1:
+            return f"Would you like a {group_label} with your {item_name}? {options}, or say no."
+        return (
+            f"Would you like any {group_label} for your {item_name}? "
+            f"You can choose up to {max_selector}. You can say them all at once. "
+            f"{options}, or say no."
+        )
+
+    if min_selector == max_selector:
+        if min_selector == 1:
+            return f"Which {group_label} would you like with your {item_name}? {options}."
+        return (
+            f"Please choose {min_selector} options for your {item_name}. "
+            f"You can say them all at once. {options}."
+        )
+
+    if max_selector > 0:
+        if min_selector == 1:
+            return (
+                f"Please choose 1 option for your {item_name}. "
+                f"You can choose up to {max_selector} and say them all at once. {options}."
+            )
+        return (
+            f"Please choose at least {min_selector} options for your {item_name}. "
+            f"You can choose up to {max_selector} and say them all at once. {options}."
+        )
+
+    return (
+        f"Please choose at least {min_selector} options for your {item_name}. "
+        f"You can say them all at once. {options}."
+    )
+
+
+def _progress_prompt(payload: dict, *, item_word: str, invalid_lead: str) -> str:
+    top_choices = _payload_value(payload, "top_choices", [])
+    all_choices = _payload_value(payload, "all_choices", [])
+    option_values = top_choices if top_choices else all_choices
+    options = _format_options(option_values)
+    selected_names = payload.get("selected_names") or []
+    selected_part = ""
+    if selected_names:
+        selected_part = f"You already picked {_format_selected_names(selected_names)}. "
+
+    reason = payload.get("repeat_reason")
+    if reason == "need_more":
+        remaining = max(int(payload.get("remaining_to_min", 0) or 0), 0)
+        need_more = f"Please choose {remaining} more {_pluralize(item_word, remaining)}."
+        if remaining == 1:
+            need_more = f"Please choose 1 more {item_word}."
+        return (
+            f"{selected_part}{need_more} Remaining options are {options}."
+            if options
+            else f"{selected_part}{need_more}"
+        )
+
+    if reason == "optional_more":
+        remaining = max(int(payload.get("remaining_to_max", 0) or 0), 0)
+        if remaining > 0:
+            add_more = f"You can add up to {remaining} more, or say done."
+            if remaining == 1:
+                add_more = "You can add 1 more, or say done."
+            return (
+                f"{selected_part}{add_more} Remaining options are {options}."
+                if options
+                else f"{selected_part}{add_more}"
+            )
+        return f"{selected_part}Say done when you're ready."
+
+    remaining = max(int(payload.get("remaining_to_min", 0) or 0), 0)
+    if remaining == 0:
+        if options:
+            remaining_to_max = max(int(payload.get("remaining_to_max", 0) or 0), 0)
+            if remaining_to_max > 0:
+                add_more = f"You can add up to {remaining_to_max} more, or say done."
+                if remaining_to_max == 1:
+                    add_more = "You can add 1 more, or say done."
+                return f"{selected_part}{add_more} Remaining options are {options}."
+        return f"{selected_part}Say done when you're ready."
+
+    invalid = invalid_lead
+    if remaining > 0:
+        invalid = f"{invalid_lead} Please choose {remaining} more {_pluralize(item_word, remaining)}."
+        if remaining == 1:
+            invalid = f"{invalid_lead} Please choose 1 more {item_word}."
+    return (
+        f"{selected_part}{invalid} Remaining options are {options}."
+        if options
+        else f"{selected_part}{invalid}"
+    )
+
+
 def _top_side_choices(
     context: ConversationContext,
     menu_repo: MenuRepository,
@@ -53,14 +243,27 @@ def _top_modifier_choices(
     return [choice.name for choice in get_top_k_choices(group.choices, k=k)]
 
 
-def ask_for_side(context: ConversationContext, menu_repo: MenuRepository) -> str:
+def ask_for_side(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> str:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.side_groups[context.current_side_group_index]
+    group_payload = _current_side_payload(context, menu_repo, payload)
 
     group_label = _clean_group_label(group.name, "side").lower()
     options = _format_options([choice.name for choice in group.choices])
+    min_selector = int(group_payload.get("min_selector", 0) or 0)
+    max_selector = int(group_payload.get("max_selector", 0) or 0)
 
-    if group.is_required:
+    if options and (min_selector > 0 or max_selector > 1):
+        return _initial_multi_select_prompt(
+            item_name=item.name,
+            group_label=group_label,
+            options=options,
+            min_selector=min_selector,
+            max_selector=max_selector,
+            optional=min_selector == 0,
+        )
+
+    if min_selector > 0:
         if options:
             return f"Which {group_label} would you like with your {item.name}? {options}."
         return f"Which {group_label} would you like with your {item.name}?"
@@ -70,14 +273,27 @@ def ask_for_side(context: ConversationContext, menu_repo: MenuRepository) -> str
     return f"Would you like a {group_label} with your {item.name}? You can also say no."
 
 
-def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository) -> str:
+def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> str:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.modifier_groups[context.current_modifier_group_index]
+    group_payload = _current_modifier_payload(context, menu_repo, payload)
 
     group_label = _clean_group_label(group.name, "add-on").lower()
     options = _format_options([choice.name for choice in group.choices])
+    min_selector = int(group_payload.get("min_selector", 0) or 0)
+    max_selector = int(group_payload.get("max_selector", 0) or 0)
 
-    if group.is_required:
+    if options and (min_selector > 0 or max_selector > 1):
+        return _initial_multi_select_prompt(
+            item_name=item.name,
+            group_label=group_label,
+            options=options,
+            min_selector=min_selector,
+            max_selector=max_selector,
+            optional=min_selector == 0,
+        )
+
+    if min_selector > 0:
         if options:
             return f"Which {group_label} would you like for your {item.name}? {options}."
         return f"Which {group_label} would you like for your {item.name}?"
@@ -153,43 +369,67 @@ def confirm_item_from_category(context, menu_repo, payload) -> str:
 
 
 def repeat_side_options(context, menu_repo, payload) -> str:
-    options = _format_options(payload.get("top_choices") or _top_side_choices(context, menu_repo))
-    if options:
-        return f"Please choose one of these: {options}."
+    side_payload = _current_side_payload(context, menu_repo, payload)
+    if side_payload.get("top_choices") or side_payload.get("all_choices"):
+        return _progress_prompt(
+            side_payload,
+            item_word="side",
+            invalid_lead="I didn't catch a valid side.",
+        )
     return "Please choose one of the available sides."
 
 
 def repeat_modifier_options(context, menu_repo, payload) -> str:
-    options = _format_options(payload.get("top_choices") or _top_modifier_choices(context, menu_repo))
-    if options:
-        return f"Please choose one of these: {options}."
+    modifier_payload = _current_modifier_payload(context, menu_repo, payload)
+    if modifier_payload.get("top_choices") or modifier_payload.get("all_choices"):
+        return _progress_prompt(
+            modifier_payload,
+            item_word="option",
+            invalid_lead="I didn't catch a valid option.",
+        )
     return "Please choose one of the available options."
 
 
 def too_many_side_choices(context, menu_repo, payload) -> str:
-    options = _format_options(payload.get("top_choices") or _top_side_choices(context, menu_repo))
+    side_payload = _current_side_payload(context, menu_repo, payload)
+    options = _format_options(side_payload.get("top_choices") or side_payload.get("all_choices") or _top_side_choices(context, menu_repo))
+    max_selector = int(side_payload.get("max_selector", 0) or 0)
     if options:
+        if max_selector > 1:
+            return f"That is too many sides. You can choose up to {max_selector}. Please pick again from {options}."
         return f"That is too many sides. Please choose from {options}."
     return "That is too many sides. Please choose fewer options."
 
 
 def too_many_modifier_choices(context, menu_repo, payload) -> str:
-    options = _format_options(payload.get("top_choices") or _top_modifier_choices(context, menu_repo))
+    modifier_payload = _current_modifier_payload(context, menu_repo, payload)
+    options = _format_options(modifier_payload.get("top_choices") or modifier_payload.get("all_choices") or _top_modifier_choices(context, menu_repo))
+    max_selector = int(modifier_payload.get("max_selector", 0) or 0)
     if options:
+        if max_selector > 1:
+            return f"That is too many extras. You can choose up to {max_selector}. Please pick again from {options}."
         return f"That is too many extras. Please choose from {options}."
     return "That is too many extras. Please choose fewer options."
 
 
-def required_side_cannot_skip(context, menu_repo) -> str:
-    options = _format_options(_top_side_choices(context, menu_repo))
+def required_side_cannot_skip(context, menu_repo, payload: dict | None = None) -> str:
+    side_payload = _current_side_payload(context, menu_repo, payload)
+    options = _format_options(side_payload.get("top_choices") or _top_side_choices(context, menu_repo))
+    remaining = max(int(side_payload.get("remaining_to_min", 0) or 0), 0)
     if options:
+        if remaining > 1:
+            return f"This item still needs {remaining} more sides. Please choose from {options}."
         return f"This item needs a side. Please choose {options}."
     return "This item needs a side. Please choose one."
 
 
-def required_modifier_cannot_skip(context, menu_repo) -> str:
-    options = _format_options(_top_modifier_choices(context, menu_repo))
+def required_modifier_cannot_skip(context, menu_repo, payload: dict | None = None) -> str:
+    modifier_payload = _current_modifier_payload(context, menu_repo, payload)
+    options = _format_options(modifier_payload.get("top_choices") or _top_modifier_choices(context, menu_repo))
+    remaining = max(int(modifier_payload.get("remaining_to_min", 0) or 0), 0)
     if options:
+        if remaining > 1:
+            return f"This item still needs {remaining} more options. Please choose from {options}."
         return f"This item needs an option. Please choose {options}."
     return "This item needs an option. Please choose one."
 
@@ -277,8 +517,12 @@ def size_not_applicable(context, menu_repo, payload) -> str:
 
 
 def list_side_options(context, menu_repo, payload) -> str:
-    options = _format_options(payload.get("top_choices") or _top_side_choices(context, menu_repo))
+    side_payload = _current_side_payload(context, menu_repo, payload)
+    options = _format_options(side_payload.get("top_choices") or _top_side_choices(context, menu_repo))
     if options:
+        max_selector = int(side_payload.get("max_selector", 0) or 0)
+        if max_selector > 1:
+            return f"You can choose up to {max_selector}. Your side options are {options}."
         return f"Your side options are {options}."
     return "Here are the available side options."
 
@@ -291,8 +535,12 @@ def clarify_side_choice(context, menu_repo, payload) -> str:
 
 
 def list_modifier_options(context, menu_repo, payload) -> str:
-    options = _format_options(payload.get("top_choices") or _top_modifier_choices(context, menu_repo))
+    modifier_payload = _current_modifier_payload(context, menu_repo, payload)
+    options = _format_options(modifier_payload.get("top_choices") or _top_modifier_choices(context, menu_repo))
     if options:
+        max_selector = int(modifier_payload.get("max_selector", 0) or 0)
+        if max_selector > 1:
+            return f"You can choose up to {max_selector}. Your options are {options}."
         return f"Your options are {options}."
     return "Here are the available options."
 

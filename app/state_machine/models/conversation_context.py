@@ -10,7 +10,7 @@ from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.models.delivery_address import DeliveryAddress
 from app.state_machine.models.pending_item_models import PendingVariantChoice, PendingSideChoice, PendingModifierChoice, \
-    PendingSideGroup, PendingModifierGroup, PendingAddItem, InterruptProposal
+    PendingSideGroup, PendingModifierGroup, PendingAddItem, InterruptProposal, ModifierSelection
 
 
 def _append_bucket_value(mapping: dict[str, list[Any]], key: str, value: Any) -> None:
@@ -262,6 +262,24 @@ def _pending_add_item_from_dict(data: dict) -> PendingAddItem:
     )
 
 
+def _modifier_selection_to_dict(value: ModifierSelection) -> dict:
+    return {
+        "modifier_id": value.modifier_id,
+        "name": value.name,
+        "action": value.action,
+        "instruction": value.instruction,
+    }
+
+def _modifier_selection_from_dict(data: dict) -> ModifierSelection:
+    return ModifierSelection(
+        modifier_id=data["modifier_id"],
+        name=data["name"],
+        action=data.get("action", "add"),
+        instruction=data.get("instruction"),
+    )
+
+
+
 @dataclass(slots=True)
 class ConversationContext:
     current_item_id: Optional[str] = None
@@ -281,7 +299,7 @@ class ConversationContext:
     pending_side_group_id: Optional[str] = None
 
     current_modifier_group_index: int = 0
-    selected_modifier_groups: Dict[str, list[str]] = field(default_factory=dict)
+    selected_modifier_groups: Dict[str, list[ModifierSelection]] = field(default_factory=dict)
     skipped_modifier_groups: set[str] = field(default_factory=set)
 
     quantity: Optional[int] = None
@@ -315,6 +333,10 @@ class ConversationContext:
     caller_device_type: Optional[str] = None
 
     delivery_address: DeliveryAddress = field(default_factory=DeliveryAddress)
+
+    # NEW: lightweight group collection metadata
+    group_prompt_cursors: Dict[str, int] = field(default_factory=dict)
+    group_multi_select_announced: set[str] = field(default_factory=set)
 
     def set_last_nlu(self, user_text: str, nlu: NLUResult) -> None:
         self.last_user_text = user_text
@@ -357,6 +379,9 @@ class ConversationContext:
         self.interrupt_proposal = None
         self.pending_add_item = None
 
+        self.group_prompt_cursors.clear()
+        self.group_multi_select_announced.clear()
+
     def reset_all(self) -> None:
         self.reset_task()
         self.last_user_text = None
@@ -383,7 +408,10 @@ class ConversationContext:
             "pending_side_item_name": self.pending_side_item_name,
             "pending_side_group_id": self.pending_side_group_id,
             "current_modifier_group_index": self.current_modifier_group_index,
-            "selected_modifier_groups": self.selected_modifier_groups,
+            "selected_modifier_groups": {
+                group_id: [_modifier_selection_to_dict(sel) for sel in selections]
+                for group_id, selections in self.selected_modifier_groups.items()
+            },
             "skipped_modifier_groups": list(self.skipped_modifier_groups),
             "quantity": self.quantity,
             "pending_action": self.pending_action.value if self.pending_action else None,
@@ -402,6 +430,8 @@ class ConversationContext:
             "onboarding_complete": self.onboarding_complete,
             "caller_device_type": self.caller_device_type,
             "delivery_address": self.delivery_address.to_dict(),
+            "group_prompt_cursors": dict(self.group_prompt_cursors),
+            "group_multi_select_announced": list(self.group_multi_select_announced),
         }
 
     @classmethod
@@ -425,7 +455,11 @@ class ConversationContext:
         ctx.pending_side_group_id = data.get("pending_side_group_id")
 
         ctx.current_modifier_group_index = data.get("current_modifier_group_index", 0)
-        ctx.selected_modifier_groups = dict(data.get("selected_modifier_groups", {}))
+        raw_selected_modifier_groups = data.get("selected_modifier_groups", {})
+        ctx.selected_modifier_groups = {
+            group_id: [_modifier_selection_from_dict(sel) for sel in selections]
+            for group_id, selections in raw_selected_modifier_groups.items()
+        }
         ctx.skipped_modifier_groups = set(data.get("skipped_modifier_groups", []))
 
         ctx.quantity = data.get("quantity")
@@ -469,4 +503,8 @@ class ConversationContext:
         else:
             ctx.delivery_address = DeliveryAddress.from_dict(legacy_delivery_address)
 
+        ctx.group_prompt_cursors = dict(data.get("group_prompt_cursors", {}))
+        ctx.group_multi_select_announced = set(data.get("group_multi_select_announced", []))
+
         return ctx
+

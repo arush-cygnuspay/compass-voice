@@ -109,3 +109,11 @@ class PendingAddItem:
     side_choice_by_item_id: dict[str, PendingSideChoice] = field(default_factory=dict)
     modifier_groups_by_id: dict[str, PendingModifierGroup] = field(default_factory=dict)
     modifier_choice_by_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
+
+
+@dataclass(slots=True)
+class ModifierSelection:
+    modifier_id: str
+    name: str
+    action: str = "add"         # add | remove
+    instruction: Optional[str] = None  # extra | less | light | on_side | None

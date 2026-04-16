@@ -118,6 +118,10 @@ WAITING_STATE_ALLOWED_CONTROL_INTENTS = {
     Intent.BROWSE_CATEGORY,
     Intent.RECOMMENDATION_QUERY,
     Intent.SHOW_MENU,
+    # allow true task-switch requests to reach the waiting handlers
+    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,
+    Intent.MODIFY_ITEM,
 }
 
 DELIVERY_GATING_ALLOWED_CONTROL_INTENTS = {

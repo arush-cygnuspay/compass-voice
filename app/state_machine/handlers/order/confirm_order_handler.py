@@ -132,8 +132,11 @@ class ConfirmOrderHandler(BaseHandler):
 
                 can_use_checkout_link = (
                         not FORCE_VOICE_ADDRESS_FALLBACK
-                        and self.sms_service.is_configured()
                         and bool(delivery.customer_phone_number)
+                        and (
+                            self.sms_service.is_configured()
+                            or getattr(context, "caller_device_type", None) == "chat"
+                        )
                 )
 
                 if can_use_checkout_link:

@@ -89,8 +89,8 @@ class CartSummaryBuilder:
         )
         side_variants_key = tuple(sorted(cart_item.side_variants.items()))
         modifiers_key = tuple(
-            (group_id, tuple(sorted(modifier_ids)))
-            for group_id, modifier_ids in sorted(cart_item.modifiers.items())
+            (group_id, self._normalize_modifier_entries(modifier_entries))
+            for group_id, modifier_entries in sorted(cart_item.modifiers.items())
         )
 
         return (
@@ -142,19 +142,71 @@ class CartSummaryBuilder:
                 return getattr(variant, "label", None)
         return None
 
-    def _get_modifier_labels(self, cart_item, menu_item) -> tuple[str, ...]:
+    def _get_modifier_labels(self, cart_item, menu_item) -> list[str]:
         labels: list[str] = []
 
-        for group in getattr(menu_item, "modifier_groups", []) or []:
-            chosen_ids = set(cart_item.modifiers.get(group.group_id, []))
-            if not chosen_ids:
+        if not getattr(cart_item, "modifiers", None):
+            return labels
+
+        for group in menu_item.modifier_groups or []:
+            raw_entries = cart_item.modifiers.get(group.group_id, [])
+            if not raw_entries:
                 continue
 
-            for choice in getattr(group, "choices", []) or []:
-                if choice.modifier_id in chosen_ids:
-                    labels.append(choice.name)
+            for entry in raw_entries:
+                if isinstance(entry, str):
+                    modifier_id = entry
+                    action = "add"
+                    instruction = None
+                    choice_name = None
+                else:
+                    modifier_id = entry.get("modifier_id")
+                    action = entry.get("action", "add")
+                    instruction = entry.get("instruction")
+                    choice_name = entry.get("name")
 
-        return tuple(labels)
+                if not modifier_id:
+                    continue
+
+                if choice_name is None:
+                    matched = None
+                    for choice in group.choices or []:
+                        if choice.modifier_id == modifier_id:
+                            matched = choice
+                            break
+                    if matched is None:
+                        continue
+                    choice_name = matched.name
+
+                if action == "remove":
+                    labels.append(f"no {choice_name}")
+                elif instruction == "extra":
+                    labels.append(f"extra {choice_name}")
+                elif instruction == "less":
+                    labels.append(f"less {choice_name}")
+                else:
+                    labels.append(choice_name)
+
+        return labels
+
+    def _normalize_modifier_entries(self, modifier_entries) -> tuple[tuple[str | None, str, str | None, str | None], ...]:
+        normalized: list[tuple[str | None, str, str | None, str | None]] = []
+        for entry in modifier_entries or []:
+            if isinstance(entry, str):
+                normalized.append((entry, "add", None, None))
+                continue
+
+            normalized.append(
+                (
+                    entry.get("modifier_id"),
+                    entry.get("action", "add"),
+                    entry.get("instruction"),
+                    entry.get("name"),
+                )
+            )
+
+        normalized.sort()
+        return tuple(normalized)
 
     def _get_item_base_price(self, cart_item, menu_item) -> int:
         if cart_item.variant_id:
@@ -177,7 +229,20 @@ class CartSummaryBuilder:
     def _get_modifiers_price(self, cart_item, menu_item) -> int:
         total = 0
         for group in menu_item.modifier_groups:
-            chosen_ids = cart_item.modifiers.get(group.group_id, [])
+            raw_entries = cart_item.modifiers.get(group.group_id, [])
+            chosen_ids: set[str] = set()
+            for entry in raw_entries:
+                if isinstance(entry, str):
+                    chosen_ids.add(entry)
+                    continue
+
+                if entry.get("action") == "remove":
+                    continue
+
+                modifier_id = entry.get("modifier_id")
+                if modifier_id:
+                    chosen_ids.add(modifier_id)
+
             for choice in group.choices:
                 if choice.modifier_id in chosen_ids:
                     total += choice.price_cents or 0
