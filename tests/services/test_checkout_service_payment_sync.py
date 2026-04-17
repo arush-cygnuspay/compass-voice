@@ -206,7 +206,7 @@ class CheckoutServicePaymentSyncTests(unittest.TestCase):
                 self.assertIsNotNone(updated)
                 self.assertTrue(updated.payment_completed)
                 self.assertEqual(updated.payment_reference, "ref-789")
-                self.assertEqual(updated.confirmation_link, "https://www.shakeshack.com")
+                self.assertEqual(updated.confirmation_link, "https://www.cygnuspay.com")
 
                 saved = saved_voice_session["session"]
                 self.assertEqual(saved.conversation_state, ConversationState.COMPLETED)
@@ -217,7 +217,7 @@ class CheckoutServicePaymentSyncTests(unittest.TestCase):
                 self.assertTrue(saved.conversation_context.delivery_address.form_completed)
                 self.assertEqual(
                     saved.conversation_context.delivery_address.confirmation_link,
-                    "https://www.shakeshack.com",
+                    "https://www.cygnuspay.com",
                 )
                 self.assertEqual(
                     saved.last_response_payload,
@@ -228,7 +228,7 @@ class CheckoutServicePaymentSyncTests(unittest.TestCase):
                 )
                 self.assertEqual(
                     service.sms_service.requests[0].link,
-                    "https://www.shakeshack.com",
+                    "https://www.cygnuspay.com",
                 )
                 self.assertEqual(
                     service.live_call_service.calls,

@@ -117,6 +117,8 @@ def _current_modifier_payload(context: ConversationContext, menu_repo: MenuRepos
             selected_names.append(f"extra {selection.name}")
         elif selection.instruction == "less":
             selected_names.append(f"less {selection.name}")
+        elif selection.instruction == "on_side":
+            selected_names.append(f"{selection.name} on the side")
         else:
             selected_names.append(selection.name)
 
@@ -133,11 +135,14 @@ def _current_modifier_payload(context: ConversationContext, menu_repo: MenuRepos
 def _initial_multi_select_prompt(*, item_name: str, group_label: str, options: str, min_selector: int, max_selector: int, optional: bool) -> str:
     if optional:
         if max_selector == 1:
-            return f"Would you like a {group_label} with your {item_name}? {options}, or say no."
+            return (
+                f"Would you like a {group_label} with your {item_name}? {options}, or say no. "
+                "You can also say no plus the option name, like no sauce."
+            )
         return (
             f"Would you like any {group_label} for your {item_name}? "
             f"You can choose up to {max_selector}. You can say them all at once. "
-            f"{options}, or say no."
+            f"{options}, or say no. You can also say no plus the option name, like no sauce."
         )
 
     if min_selector == max_selector:
@@ -299,7 +304,10 @@ def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository, pa
         return f"Which {group_label} would you like for your {item.name}?"
 
     if options:
-        return f"Any extras for your {item.name}? {options}, or say no."
+        return (
+            f"Any extras for your {item.name}? {options}, or say no. "
+            "You can also say no plus the option name, like no sauce."
+        )
     return f"Any extras for your {item.name}? You can also say no."
 
 

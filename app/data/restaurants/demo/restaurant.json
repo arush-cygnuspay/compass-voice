@@ -1,16 +1,16 @@
 {
   "restaurant_id": "rest-001",
-  "name": "Shake Shack",
+  "name": "Cygnus Demo Restaurant",
   "brand_type": "Fast Casual",
-  "description": "Shake Shack serves modern American classics like burgers, fries, shakes, and frozen custard, made with premium ingredients.",
+  "description": "Cygnus demo ordering experience for testing live cart, checkout, and status tracking flows.",
   "contact": {
     "phone": "+1-212-889-6600",
-    "email": "info@shakeshack.com",
-    "website": "https://www.shakeshack.com"
+    "email": "support@cygnuspay.com",
+    "website": "https://www.cygnuspay.com"
   },
   "links": {
-    "order_confirmation": "https://www.shakeshack.com",
-    "menu": "https://www.shakeshack.com"
+    "order_confirmation": "https://www.cygnuspay.com",
+    "menu": "https://www.cygnuspay.com"
   },
   "location": {
     "address_line_1": "Madison Square Park",

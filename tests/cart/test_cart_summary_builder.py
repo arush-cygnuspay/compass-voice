@@ -64,3 +64,42 @@ def test_cart_summary_builder_handles_rich_modifier_entries():
 
     assert summary["items"][0]["modifiers"] == ["Green Bell Pepper", "no Onion"]
     assert summary["items"][0]["unit_price"] == "$11.50"
+
+
+def test_cart_summary_builder_renders_on_side_modifier_instruction():
+    menu_item = SimpleNamespace(
+        name="Wings",
+        pricing=SimpleNamespace(price_cents=1200, variants=[]),
+        side_groups=[],
+        modifier_groups=[
+            SimpleNamespace(
+                group_id="mods",
+                choices=[
+                    SimpleNamespace(modifier_id="ranch", name="Ranch", price_cents=50),
+                ],
+            )
+        ],
+    )
+
+    cart_item = CartItem.create(
+        item_id="wings",
+        quantity=1,
+        variant_id=None,
+        sides={},
+        side_variants={},
+        modifiers={
+            "mods": [
+                {
+                    "modifier_id": "ranch",
+                    "name": "Ranch",
+                    "action": "add",
+                    "instruction": "on_side",
+                }
+            ]
+        },
+    )
+
+    summary = CartSummaryBuilder(FakeMenuRepo(menu_item)).build(FakeCart([cart_item]))
+
+    assert summary["items"][0]["modifiers"] == ["Ranch on the side"]
+    assert summary["items"][0]["unit_price"] == "$12.50"

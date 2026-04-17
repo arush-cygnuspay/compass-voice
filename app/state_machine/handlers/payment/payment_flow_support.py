@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 
-from app.services.checkout_service import CheckoutService
+from app.services.checkout_service import CheckoutService, PAYMENT_FAILURE_STATUSES
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.models.conversation_state import ConversationState
@@ -73,6 +73,14 @@ def verify_payment_for_order(
             response_payload={"order_number": order_number},
             reset_context=True,
             command={"type": "CLEAR_CART"},
+        )
+
+    status_lower = str(result.get("status") or "").lower()
+    if status_lower in PAYMENT_FAILURE_STATUSES:
+        return HandlerResult(
+            next_state=ConversationState.CONFIRMING_ORDER,
+            response_key="payment_draft_saved_retry_later",
+            response_payload={"order_number": order_number},
         )
 
     return HandlerResult(

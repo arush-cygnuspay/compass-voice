@@ -1,5 +1,3 @@
-# app/utils/quantity_detection.py
-
 import re
 
 NUMBER_WORDS = {
@@ -14,6 +12,8 @@ NUMBER_WORDS = {
     "eight": 8,
     "nine": 9,
     "ten": 10,
+    "eleven": 11,
+    "twelve": 12,
 }
 
 SPECIAL_QUANTITIES = {
@@ -23,6 +23,79 @@ SPECIAL_QUANTITIES = {
     "couple": 2,
 }
 
+UNIT_WORDS = (
+    "dozens",
+    "dozen",
+    "pieces",
+    "piece",
+    "pcs",
+    "pc",
+    "orders",
+    "order",
+)
+
+INCREMENTAL_PATTERNS = (
+    r"\bone more\b",
+    r"\banother one\b",
+    r"\banother\b",
+)
+
+VAGUE_PATTERNS = (
+    r"\bsome\b",
+    r"\ba few\b",
+    r"\bseveral\b",
+)
+
+UNIT_PATTERN = "|".join(sorted(UNIT_WORDS, key=len, reverse=True))
+
+
+def _first_numeric_token(text: str) -> int | None:
+    match = re.search(r"\b(\d+)\b", text)
+    if match:
+        return int(match.group(1))
+    return None
+
+
+def _first_number_word(text: str) -> int | None:
+    for word, value in NUMBER_WORDS.items():
+        if re.search(rf"\b{re.escape(word)}\b", text):
+            return value
+
+    return None
+
+
+def _extract_dozen_quantity(text: str) -> int | None:
+    if re.search(r"\bhalf dozen\b", text):
+        return 6
+
+    digit_match = re.search(r"\b(\d+)\s+dozen\b", text)
+    if digit_match:
+        return int(digit_match.group(1)) * 12
+
+    for word, value in {**NUMBER_WORDS, **SPECIAL_QUANTITIES}.items():
+        if re.search(rf"\b{re.escape(word)}\s+dozen\b", text):
+            return value * 12
+
+    if re.search(r"\ba dozen\b", text):
+        return 12
+
+    return None
+
+
+def _extract_unit_quantity(text: str) -> int | None:
+    digit_match = re.search(rf"\b(\d+)\s*(?:{UNIT_PATTERN})\b", text)
+    if digit_match:
+        return int(digit_match.group(1))
+
+    for word, value in {**NUMBER_WORDS, **SPECIAL_QUANTITIES}.items():
+        if re.search(rf"\b{re.escape(word)}\s+(?:{UNIT_PATTERN})\b", text):
+            if re.search(rf"\b{re.escape(word)}\s+dozen\b", text):
+                continue
+            return value
+
+    return None
+
+
 def normalize_quantity(text: str) -> int | None:
     """
     Normalize quantity expressions into an integer.
@@ -30,11 +103,9 @@ def normalize_quantity(text: str) -> int | None:
     Examples:
     - "2" -> 2
     - "two" -> 2
-    - "a" -> 1
-    - "just one" -> 1
-    - "only two" -> 2
-    - "one more" -> 1
-    - "another one" -> 1
+    - "2 pcs" -> 2
+    - "half dozen" -> 6
+    - "one dozen" -> 12
     """
 
     if not text:
@@ -42,43 +113,33 @@ def normalize_quantity(text: str) -> int | None:
 
     text = text.lower().strip()
 
-    # ----------------------------------
-    # 1️⃣ Pure digit
-    # ----------------------------------
+    dozen_quantity = _extract_dozen_quantity(text)
+    if dozen_quantity is not None:
+        return dozen_quantity
+
+    unit_quantity = _extract_unit_quantity(text)
+    if unit_quantity is not None:
+        return unit_quantity
+
     if text.isdigit():
         return int(text)
 
-    # ----------------------------------
-    # 2️⃣ Exact word match
-    # ----------------------------------
     if text in NUMBER_WORDS:
         return NUMBER_WORDS[text]
 
     if text in SPECIAL_QUANTITIES:
         return SPECIAL_QUANTITIES[text]
 
-    # ----------------------------------
-    # 3️⃣ Extract first numeric token
-    # ----------------------------------
-    tokens = re.findall(r"\b\d+\b", text)
-    if tokens:
-        return int(tokens[0])
+    numeric_token = _first_numeric_token(text)
+    if numeric_token is not None:
+        return numeric_token
 
-    # ----------------------------------
-    # 4️⃣ Extract first number word
-    # ----------------------------------
-    for word, value in NUMBER_WORDS.items():
-        if re.search(rf"\b{word}\b", text):
-            return value
+    number_word = _first_number_word(text)
+    if number_word is not None:
+        return number_word
 
-    for word, value in SPECIAL_QUANTITIES.items():
-        if re.search(rf"\b{word}\b", text):
-            return value
-
-    # ----------------------------------
-    # 5️⃣ No usable quantity
-    # ----------------------------------
     return None
+
 
 def detect_quantity(text: str) -> dict | None:
     """
@@ -88,5 +149,31 @@ def detect_quantity(text: str) -> dict | None:
         "value": int | None
     }
     """
+
+    normalized = (text or "").lower().strip()
+    if not normalized:
+        return None
+
+    value = normalize_quantity(normalized)
+    if value is not None:
+        quantity_type = "exact"
+        if any(re.search(pattern, normalized) for pattern in INCREMENTAL_PATTERNS):
+            quantity_type = "incremental"
+        return {
+            "type": quantity_type,
+            "value": value,
+        }
+
+    if any(re.search(pattern, normalized) for pattern in INCREMENTAL_PATTERNS):
+        return {
+            "type": "incremental",
+            "value": 1,
+        }
+
+    if any(re.search(pattern, normalized) for pattern in VAGUE_PATTERNS):
+        return {
+            "type": "vague",
+            "value": None,
+        }
 
     return None

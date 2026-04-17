@@ -30,7 +30,6 @@ from app.state_machine.handlers.item.add_item.modifier_group_resolver import (
     ModifierGroupResolver,
     extract_modifier_slot_values_normalized,
 )
-from app.utils.quantity_detection import normalize_quantity
 from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
 
 SIZE_WORDS = (
@@ -95,14 +94,6 @@ class AddItemHandler(BaseHandler):
         context.awaiting_flow_confirmation = False
         context.interrupt_proposal = None
         context.awaiting_confirmation_for = None
-
-        quantity = self._extract_quantity(
-            normalized_user_text=normalized_user_text,
-            item_slot_value=item_slot_value,
-            category_slot_value=category_slot_value,
-        )
-        if quantity is not None and quantity > 0:
-            context.quantity = quantity
 
         if item_slot_value or category_slot_value:
             result = self.menu_repo.resolve_menu_query_from_slots_normalized(
@@ -480,22 +471,6 @@ class AddItemHandler(BaseHandler):
 
     def _get_last_slots(self, context: ConversationContext) -> Sequence[SlotValue]:
         return context.last_slots or ()
-
-    def _extract_quantity(
-        self,
-        *,
-        normalized_user_text: str,
-        item_slot_value: str | None,
-        category_slot_value: str | None,
-    ) -> int | None:
-        resolved_entity_text = normalize_text(item_slot_value or category_slot_value or "")
-        if resolved_entity_text and normalized_user_text == resolved_entity_text:
-            return None
-
-        try:
-            return normalize_quantity(normalized_user_text)
-        except Exception:
-            return None
 
     def _normalize_item_request_text(self, text: str) -> str:
         normalized = normalize_text(text or "")

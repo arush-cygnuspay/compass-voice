@@ -59,6 +59,8 @@ class CheckoutSession:
     payment_completed: bool = False
     payment_reference: str | None = None
     payment_provider: str = "datacap"
+    can_retry_payment: bool = False
+    last_payment_status: str | None = None
 
     status: str = "pending_address"
     created_at: datetime = field(default_factory=utc_now)
@@ -108,13 +110,26 @@ class CheckoutSession:
 
     def mark_payment_started(self) -> None:
         self.payment_started = True
+        self.can_retry_payment = False
+        self.last_payment_status = None
         self.status = "payment_started"
         self.touch()
 
     def mark_payment_completed(self, reference: str | None = None) -> None:
+        self.payment_started = False
         self.payment_completed = True
+        self.can_retry_payment = False
+        self.last_payment_status = "completed"
         self.payment_reference = reference
         self.status = "completed"
+        self.touch()
+
+    def mark_payment_retryable(self, status: str | None = None) -> None:
+        self.payment_started = False
+        self.payment_completed = False
+        self.can_retry_payment = True
+        self.last_payment_status = (status or "").strip() or self.last_payment_status
+        self.status = "pending_payment_retry"
         self.touch()
 
     def to_dict(self) -> dict[str, Any]:
@@ -144,6 +159,8 @@ class CheckoutSession:
             "payment_completed": self.payment_completed,
             "payment_reference": self.payment_reference,
             "payment_provider": self.payment_provider,
+            "can_retry_payment": self.can_retry_payment,
+            "last_payment_status": self.last_payment_status,
             "status": self.status,
             "created_at": self.created_at.isoformat(),
             "updated_at": self.updated_at.isoformat(),
@@ -178,6 +195,8 @@ class CheckoutSession:
             payment_completed=bool(data.get("payment_completed", False)),
             payment_reference=data.get("payment_reference"),
             payment_provider=data.get("payment_provider", "datacap"),
+            can_retry_payment=bool(data.get("can_retry_payment", False)),
+            last_payment_status=data.get("last_payment_status"),
             status=data.get("status", "pending_address"),
             created_at=datetime.fromisoformat(data["created_at"]),
             updated_at=datetime.fromisoformat(data["updated_at"]),
