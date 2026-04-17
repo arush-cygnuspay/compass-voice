@@ -275,6 +275,7 @@ class CheckoutService:
     def serialize_session(self, session: CheckoutSession) -> dict[str, Any]:
         payload = session.to_dict()
         latest_payment_link = self._find_latest_payment_link_session(session.token)
+        live_cart_url = self.build_checkout_url(session.token)
 
         payload["payment_link_url"] = (
             latest_payment_link.public_link_url if latest_payment_link else None
@@ -293,6 +294,10 @@ class CheckoutService:
         payload["payment_link_request_id"] = (
             latest_payment_link.request_id if latest_payment_link else None
         )
+        payload["live_cart_url"] = live_cart_url
+        payload["status_tracking_url"] = session.confirmation_link or live_cart_url
+        payload["payment_retry_available"] = bool(session.can_retry_payment)
+        payload["order_state"] = session.status
 
         return payload
 
@@ -616,6 +621,12 @@ class CheckoutService:
         session.mark_payment_started()
         self.save_session(session)
         self.save_payment_link_session(payment_link_session)
+        logger.info(
+            "Started payment link for order=%s token=%s request_id=%s",
+            session.order_number,
+            session.token,
+            payment_link_session.request_id,
+        )
         self._start_payment_poller(session.token)
 
         return {
@@ -706,7 +717,7 @@ class CheckoutService:
                 "error": None,
             }
 
-        if not session.payment_started:
+        if not session.payment_started and not session.can_retry_payment:
             return {
                 "ok": True,
                 "paid": False,
@@ -719,6 +730,16 @@ class CheckoutService:
 
         payment_link_session = self._find_latest_payment_link_session(token)
         if not payment_link_session or not payment_link_session.request_id:
+            if session.can_retry_payment:
+                return {
+                    "ok": True,
+                    "paid": False,
+                    "payment_completed": False,
+                    "status": session.last_payment_status or session.status,
+                    "reference": None,
+                    "session": self.serialize_session(session),
+                    "error": None,
+                }
             return {
                 "ok": False,
                 "paid": False,
@@ -765,6 +786,26 @@ class CheckoutService:
                 "status": status_info.get("status"),
                 "reference": updated.payment_reference,
                 "session": self.serialize_session(updated),
+                "error": None,
+            }
+
+        status_lower = str(status_info.get("status") or "").lower()
+        if status_lower in PAYMENT_FAILURE_STATUSES:
+            session.mark_payment_retryable(status_lower)
+            self.save_session(session)
+            logger.info(
+                "Payment requires retry for order=%s token=%s status=%s",
+                session.order_number,
+                session.token,
+                status_lower,
+            )
+            return {
+                "ok": True,
+                "paid": False,
+                "payment_completed": False,
+                "status": status_lower,
+                "reference": None,
+                "session": self.serialize_session(session),
                 "error": None,
             }
 

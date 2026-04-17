@@ -61,6 +61,7 @@ from app.state_machine.handlers.item.add_item.waiting_for_size_handler import (
     WaitingForSizeHandler,
 )
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
+from app.state_machine.handlers.item.modifying_item_handler import ModifyingItemHandler
 from app.state_machine.handlers.item.remove_item_handler import RemoveItemHandler
 from app.state_machine.handlers.item.removing_item_handler import RemovingItemHandler
 from app.state_machine.handlers.order.confirm_order_handler import ConfirmOrderHandler
@@ -93,6 +94,9 @@ ROUTE_DEBUG_ENABLED = os.getenv("COMPASS_ROUTE_DEBUG_ENABLED", "0") == "1"
 CONFIRMING_ORDER_EXIT_TO_IDLE_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
     Intent.REMOVE_ITEM,
+    Intent.REPLACE_ITEM,
+    Intent.MODIFY_ITEM,
+    Intent.UNDO_LAST,
     Intent.ASK_ITEM_INFO,
     Intent.ASK_MENU_INFO,
     Intent.ASK_OPTIONS,
@@ -164,6 +168,7 @@ class TurnEngine:
             "waiting_for_side_size_handler": WaitingForSideSizeHandler(menu_repo),
             "waiting_for_quantity_handler": WaitingForQuantityHandler(),
             "confirming_handler": ConfirmingHandler(menu_repo),
+            "modifying_item_handler": ModifyingItemHandler(menu_repo),
             "remove_item_handler": RemoveItemHandler(menu_repo),
             "removing_item_handler": RemovingItemHandler(),
             "start_order_handler": StartOrderHandler(self.cart_summary_builder),
@@ -659,6 +664,7 @@ class TurnEngine:
                                 response_payload={
                                     "area": delivery.area,
                                     "postal_code": delivery.postal_code,
+                                    "order_number": delivery.order_number,
                                     "error_code": command_result.get("error_code"),
                                     "error_message": command_result.get("error_message"),
                                 },
@@ -668,6 +674,7 @@ class TurnEngine:
                                 next_state=ConversationState.CONFIRMING_ORDER,
                                 response_key="checkout_link_send_failed",
                                 response_payload={
+                                    "order_number": delivery.order_number,
                                     "error_code": command_result.get("error_code"),
                                     "error_message": command_result.get("error_message"),
                                 },
@@ -681,6 +688,7 @@ class TurnEngine:
                                 next_state=session.conversation_state,
                                 response_key="payment_link_unavailable_now",
                                 response_payload={
+                                    "order_number": delivery.order_number,
                                     "error_code": command_result.get("error_code"),
                                     "error_message": command_result.get("error_message"),
                                 },
@@ -690,6 +698,7 @@ class TurnEngine:
                                 next_state=session.conversation_state,
                                 response_key="payment_link_send_failed",
                                 response_payload={
+                                    "order_number": delivery.order_number,
                                     "error_code": command_result.get("error_code"),
                                     "error_message": command_result.get("error_message"),
                                 },

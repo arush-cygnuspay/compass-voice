@@ -22,6 +22,7 @@ WAITING_STATE_HANDLERS: dict[ConversationState, str] = {
 
 DIRECT_STATE_HANDLERS: dict[ConversationState, str] = {
     ConversationState.CONFIRMING_ITEM: "confirming_handler",
+    ConversationState.MODIFYING_ITEM: "modifying_item_handler",
     ConversationState.REMOVING_ITEM: "removing_item_handler",
     ConversationState.CONFIRMING_ORDER: "confirming_order_handler",
     ConversationState.WAITING_FOR_PAYMENT: "waiting_for_payment_handler",
@@ -110,7 +111,12 @@ class StateRouter:
                     handler_name="add_item_handler",
                 )
 
-            if intent == Intent.REMOVE_ITEM:
+            if intent in {
+                Intent.REMOVE_ITEM,
+                Intent.REPLACE_ITEM,
+                Intent.MODIFY_ITEM,
+                Intent.UNDO_LAST,
+            }:
                 return RouteResult(
                     allowed=True,
                     handler_name="remove_item_handler",

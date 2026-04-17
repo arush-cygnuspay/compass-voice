@@ -215,17 +215,32 @@ def test_add_item_handler_prefills_only_choices_that_fit_the_current_item():
         session=None,
     )
 
-    assert result.response_key == "item_added_successfully"
-    assert result.command is not None
-    assert result.command["payload"]["quantity"] == 2
-    assert result.command["payload"]["sides"] == {"drink": ["coke"]}
-    assert result.command["payload"]["modifiers"] == {
-        "mods": [
-            {
-                "modifier_id": "cheese",
-                "name": "Cheese",
-                "action": "add",
-                "instruction": None,
-            }
-        ]
-    }
+    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
+    assert result.response_key == "ask_for_quantity"
+    assert result.command is None
+    assert context.quantity is None
+    assert context.selected_side_groups == {"drink": ["coke"]}
+    assert context.selected_modifier_groups["mods"][0].modifier_id == "cheese"
+    assert context.selected_modifier_groups["mods"][0].instruction is None
+
+
+def test_add_item_handler_always_asks_quantity_even_when_initial_request_contains_it():
+    item = make_item_with_groups()
+    repo = FakeMenuRepo(MenuQueryResult(type=MenuQueryType.ITEM, item=item))
+    handler = AddItemHandler(repo)
+    context = ConversationContext()
+    context.last_slots = (
+        SlotValue(name="ITEM", value="Chicken Burger"),
+        SlotValue(name="QUANTITY", value=2),
+    )
+
+    result = handler.handle(
+        intent=Intent.ADD_ITEM,
+        context=context,
+        user_text="2 chicken burger",
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
+    assert result.response_key == "ask_for_quantity"
+    assert context.quantity is None

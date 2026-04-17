@@ -76,6 +76,11 @@ def _looks_like_skip_modifier_answer(normalized_user_text: str, group: PendingMo
     return text in SKIP_WORDS
 
 
+def _looks_like_specific_modifier_removal(normalized_user_text: str) -> bool:
+    text = (normalized_user_text or "").strip()
+    return bool(text) and (text.startswith("no ") or text.startswith("without "))
+
+
 class WaitingForModifierHandler(BaseHandler):
     """
     Resolve modifier selections strictly from the active pending item snapshot.
@@ -131,7 +136,10 @@ class WaitingForModifierHandler(BaseHandler):
                 response_payload=self._choice_payload(group, existing_selections),
             )
 
-        if intent == Intent.DENY or _looks_like_skip_modifier_answer(normalized_user_text, group):
+        if (
+            (intent == Intent.DENY and not _looks_like_specific_modifier_removal(normalized_user_text))
+            or _looks_like_skip_modifier_answer(normalized_user_text, group)
+        ):
             if len(existing_selections) < min_selector:
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_MODIFIER,

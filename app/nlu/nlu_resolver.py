@@ -14,6 +14,7 @@ from app.nlu.intent_resolution.intent_resolver import predict_intent_labels
 from app.nlu.nlu_result import NLUResult, SlotValue
 from app.nlu.slot_resolution.slot_resolver import predict_slots
 from app.state_machine.models.conversation_state import ConversationState
+from app.utils.quantity_detection import normalize_quantity
 
 
 SLOTS_ENABLED = os.getenv("COMPASS_SLOTS_ENABLED", "1") != "0"
@@ -38,20 +39,14 @@ SLOT_SUBINTENTS: set[str] = {
     "browse_menu",
 }
 
-QUANTITY_WORDS = {
-    "a": 1,
-    "an": 1,
-    "one": 1,
-    "two": 2,
-    "three": 3,
-    "four": 4,
-    "five": 5,
-    "six": 6,
-    "seven": 7,
-    "eight": 8,
-    "nine": 9,
-    "ten": 10,
-}
+QUANTITY_PATTERNS = (
+    r"\bhalf dozen\b",
+    r"\ba dozen\b",
+    r"\b(?:\d+|a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+dozen\b",
+    r"\b(?:\d+|a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:pieces|piece|pcs|pc|orders|order)\b",
+    r"\b\d+\b",
+    r"\b(?:a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b",
+)
 
 SIZE_WORDS = {
     "small",
@@ -109,32 +104,26 @@ def _dicts_to_slotvalues(slot_dicts: list[dict]) -> tuple[SlotValue, ...]:
 
 
 def _extract_quantity_rule(normalized: str) -> tuple[SlotValue, ...]:
-    match = re.search(r"\b(\d+)\b", normalized)
-    if match:
+    for pattern in QUANTITY_PATTERNS:
+        match = re.search(pattern, normalized)
+        if not match:
+            continue
+
+        raw = match.group(0)
+        value = normalize_quantity(raw)
+        if value is None:
+            continue
+
         return (
             SlotValue(
                 name="QUANTITY",
-                value=int(match.group(1)),
-                raw=match.group(1),
+                value=value,
+                raw=raw,
                 start=match.start(),
                 end=match.end(),
                 confidence=1.0,
             ),
         )
-
-    for word, qty in QUANTITY_WORDS.items():
-        match = re.search(rf"\b{re.escape(word)}\b", normalized)
-        if match:
-            return (
-                SlotValue(
-                    name="QUANTITY",
-                    value=qty,
-                    raw=word,
-                    start=match.start(),
-                    end=match.end(),
-                    confidence=1.0,
-                ),
-            )
 
     return ()
 

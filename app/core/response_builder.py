@@ -91,6 +91,27 @@ class ResponseBuilder:
             "item_context_missing": item_context_missing,
             "size_not_applicable": size_not_applicable,
             "item_added_successfully": lambda c, m, p: item_added_successfully(p),
+            "confirm_remove_item": lambda c, m, p: (
+                f"Do you want to remove {p.get('item_name', 'that item')} from your cart? Please say yes or no."
+            ),
+            "confirm_modify_item": lambda c, m, p: (
+                f"Do you want to update {p.get('item_name', 'that item')}? "
+                "I will remove the current one and add the updated version. Please say yes or no."
+            ),
+            "confirm_replace_item": lambda c, m, p: (
+                f"Do you want to replace {p.get('item_name', 'that item')} "
+                f"with {p.get('replacement_item_name', 'that item')}? Please say yes or no."
+            ),
+            "ask_replacement_item": lambda c, m, p: (
+                f"What would you like instead of {p.get('item_name', 'that item')}?"
+            ),
+            "item_removed_successfully": lambda c, m, p: (
+                f"Removed {p.get('item_name', 'that item')} from your cart. What would you like next?"
+            ),
+            "item_removal_cancelled": lambda *_: "Okay, I kept that item in your cart.",
+            "item_replacement_cancelled": lambda *_: "Okay, I did not replace that item.",
+            "item_modification_cancelled": lambda *_: "Okay, I left that item as it is.",
+            "action_cancelled": lambda *_: "Okay, cancelled.",
             "confirm_cancel_current_item": confirm_cancel_current_item,
             "confirm_cancel_current_item_for_new_request": confirm_cancel_current_item_for_new_request,
             "continue_current_item_after_cancel_denied": continue_current_item_after_cancel_denied,
@@ -102,7 +123,13 @@ class ResponseBuilder:
             "menu_ambiguity": lambda c, m, p: menu_ambiguity_response(p),
             "menu_not_found": lambda *_: menu_not_found_response(),
             "show_item_price": lambda c, m, p: show_item_price_response(p),
+            "show_modifier_price": lambda c, m, p: (
+                f"{p.get('modifier_name', 'That option')} on {p.get('item_name', 'that item')} costs {p.get('price', '$0.00')}."
+            ),
             "price_not_found": lambda *_: "I couldn’t find that item. Say the item name again.",
+            "modifier_requires_item_context": lambda *_: (
+                "That option is only available with certain items. Ask with the item name, like extra cheese on burger."
+            ),
             "readonly_interrupt_with_resume": self._readonly_interrupt_with_resume,
             "show_cart": lambda c, m, p: render_cart_summary(p),
             "show_total": lambda c, m, p: f"Your total is {p.get('total', '$0.00')}.",
@@ -151,8 +178,12 @@ class ResponseBuilder:
 
             "checkout_blocked_finish_current_item": lambda *_: "Please finish this item first, or say cancel.",
 
-            "payment_link_send_failed": lambda *_: "I could not send the payment link right now. Please try again.",
-            "checkout_link_send_failed": lambda *_: "I could not send the checkout link right now. Please try again.",
+            "payment_link_send_failed": lambda *_: (
+                "I could not send the payment link right now. Your order is saved as a draft, so please try again in a few minutes."
+            ),
+            "checkout_link_send_failed": lambda *_: (
+                "I could not send the checkout link right now. Your order is saved as a draft, so please try again in a few minutes."
+            ),
 
             "ask_for_delivery_area": lambda *_: "Got it. Delivery. Please say your delivery area.",
             "repeat_delivery_area": lambda *_: "Please say your delivery area.",
@@ -185,7 +216,7 @@ class ResponseBuilder:
             ),
 
             "payment_link_unavailable_now": lambda *_: (
-                "I’m sorry, I couldn’t send the payment link right now, so I’m unable to complete the order at the moment."
+                "I’m sorry, I couldn’t send the payment link right now. Your order is saved as a draft, so please try again in a few minutes."
             ),
 
             "checkout_link_sent": lambda *_: (
@@ -209,6 +240,9 @@ class ResponseBuilder:
             ),
             "payment_link_sent": lambda *_: (
                 "I have sent you the payment link. Please complete payment. I will confirm the order automatically as soon as payment clears."
+            ),
+            "payment_draft_saved_retry_later": lambda *_: (
+                "Payment did not go through. Your order is still saved as a draft, so please try checkout again in a few minutes."
             ),
             "order_completed": self._order_completed,
 

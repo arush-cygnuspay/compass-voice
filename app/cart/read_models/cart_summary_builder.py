@@ -184,6 +184,8 @@ class CartSummaryBuilder:
                     labels.append(f"extra {choice_name}")
                 elif instruction == "less":
                     labels.append(f"less {choice_name}")
+                elif instruction == "on_side":
+                    labels.append(f"{choice_name} on the side")
                 else:
                     labels.append(choice_name)
 

@@ -16,13 +16,13 @@ MIN_CONFIRM_GAP = 0.08
 REMOVE_PREFIXES = ("no ", "without ")
 EXTRA_WORDS = {"extra", "more", "double"}
 LESS_WORDS = {"less", "light"}
+ON_SIDE_SUFFIXES = ("on the side", "on side")
 
 # IMPORTANT: generic words that should NEVER become modifiers
 GENERIC_MODIFIER_WORDS = {
     "toppings",
     "stuff",
     "things",
-    "sauce",
 }
 
 
@@ -146,6 +146,8 @@ class ModifierGroupResolver:
             return 3
         if sel.instruction == "less":
             return 2
+        if sel.instruction == "on_side":
+            return 2
         return 1
 
     def _build_candidates(self, text, slot_values):
@@ -191,6 +193,14 @@ class ModifierGroupResolver:
 
         if first in LESS_WORDS and rest:
             return {"action": "add", "instruction": "less", "target": rest}
+
+        for suffix in ON_SIDE_SUFFIXES:
+            if text.endswith(f" {suffix}"):
+                return {
+                    "action": "add",
+                    "instruction": "on_side",
+                    "target": text[: -(len(suffix) + 1)].strip(),
+                }
 
         return {"action": "add", "instruction": None, "target": text}
 

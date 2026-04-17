@@ -58,6 +58,15 @@
     continuePaymentBtn.disabled = !enabled;
   }
 
+  function setPaymentActionLabel(labelText) {
+    if (!paymentOpenBtn) return;
+    const labels = paymentOpenBtn.querySelectorAll("span");
+    const labelEl = labels[labels.length - 1];
+    if (labelEl) {
+      labelEl.textContent = labelText;
+    }
+  }
+
   function rememberPaymentTargets(source) {
     if (!source) return;
     currentPaymentUrl =
@@ -266,6 +275,29 @@
 
     // ── Payment started but not complete → resume waiting screen ──────────
     // This handles the case where the user refreshes the page mid-payment.
+    if (session.can_retry_payment || session.payment_retry_available) {
+      lockAddressForm();
+      addressSection.classList.add("hidden");
+      if (paymentSection) paymentSection.classList.remove("hidden");
+      doneSection.classList.add("hidden");
+      advanceStepper(2);
+      setStatus("Your order is still saved. You can try payment again from this same link.", "error");
+      if (paymentStatusText) {
+        const failedStatus = session.last_payment_status || "failed";
+        paymentStatusText.textContent =
+          `Your last payment attempt was ${failedStatus}. Your order is still saved as a draft. Use the button below to try payment again from this same checkout link.`;
+      }
+      if (paymentSpinner) paymentSpinner.classList.add("hidden");
+      if (paymentOpenBtn) {
+        setPaymentActionLabel("Try Payment Again");
+        paymentOpenBtn.onclick = async () => {
+          await goToPayment();
+        };
+        paymentOpenBtn.disabled = false;
+      }
+      return;
+    }
+
     if (session.payment_started) {
       lockAddressForm();
       addressSection.classList.add("hidden");
@@ -279,6 +311,7 @@
       }
       if (paymentSpinner) paymentSpinner.classList.remove("hidden");
       if (paymentOpenBtn) {
+        setPaymentActionLabel("Reopen Payment Page");
         paymentOpenBtn.onclick = () => openPaymentSurface();
         paymentOpenBtn.disabled = !(currentEmbeddedPaymentUrl || currentPaymentUrl);
       }
@@ -338,6 +371,7 @@
 
     // Wire up "Open Payment Page" button
     if (paymentOpenBtn) {
+      setPaymentActionLabel("Reopen Payment Page");
       paymentOpenBtn.onclick = () => openPaymentSurface();
       paymentOpenBtn.disabled = false;
     }
@@ -374,9 +408,13 @@
         } else if (result.status && ["cancelled", "canceled", "expired", "failed", "declined"].includes(result.status.toLowerCase())) {
           stopPaymentPolling();
           closePaymentSurface();
-          setStatus("Payment was not completed. Please try again.", "error");
-          if (paymentStatusText) paymentStatusText.textContent = "Payment failed or was cancelled. Please go back and try again.";
-          if (paymentSpinner) paymentSpinner.classList.add("hidden");
+          if (result.session) {
+            renderSession(result.session);
+          } else {
+            setStatus("Payment was not completed. Please try again.", "error");
+            if (paymentStatusText) paymentStatusText.textContent = "Payment failed or was cancelled. Please go back and try again.";
+            if (paymentSpinner) paymentSpinner.classList.add("hidden");
+          }
         }
         // else: still open/pending — keep polling
       } catch (_) {

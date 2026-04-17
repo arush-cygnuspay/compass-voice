@@ -371,6 +371,13 @@ class MenuStore:
         stripped_number = self._strip_leading_menu_number(base)
         add(stripped_number)
 
+        menu_number = self._leading_menu_number(base)
+        if menu_number and stripped_number:
+            stripped_tokens = [token for token in stripped_number.split() if token]
+            if stripped_tokens:
+                add(f"{menu_number} {stripped_tokens[-1]}")
+                add(f"number {menu_number} {stripped_tokens[-1]}")
+
         no_hash = stripped_number.replace("#", "").strip()
         add(no_hash)
 
@@ -410,6 +417,22 @@ class MenuStore:
             return value[idx:].strip()
 
         return value
+
+    def _leading_menu_number(self, text: str) -> str:
+        value = (text or "").strip()
+        idx = 0
+
+        while idx < len(value) and value[idx] in {"#", " "}:
+            idx += 1
+
+        start_digits = idx
+        while idx < len(value) and value[idx].isdigit():
+            idx += 1
+
+        if idx > start_digits:
+            return value[start_digits:idx]
+
+        return ""
 
     def _singular_plural_variants(self, text: str) -> list[str]:
         tokens = [token for token in text.split() if token]
