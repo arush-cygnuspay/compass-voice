@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import deque
 from typing import Sequence
 
 from app.core.pending_action import PendingAction
@@ -23,6 +24,9 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,
 )
+from app.state_machine.handlers.item.add_item.group_collection_utils import (
+    effective_group_selector_bounds,
+)
 from app.state_machine.handlers.item.add_item.pending_add_item_factory import build_pending_add_item
 from app.state_machine.handlers.item.add_item.side_group_resolver import (
     SideGroupResolver,
@@ -32,7 +36,11 @@ from app.state_machine.handlers.item.add_item.modifier_group_resolver import (
     ModifierGroupResolver,
     extract_modifier_slot_values_normalized,
 )
-from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match
+from app.utils.token_matcher import (
+    is_controlled_partial_match,
+    is_strong_token_match,
+    tokenize,
+)
 
 SIZE_WORDS = (
     "extra large",
@@ -86,13 +94,18 @@ class AddItemHandler(BaseHandler):
                 response_key="unhandled_intent",
             )
 
+        slot_aligned_user_text = normalize_text(user_text or "")
         normalized_user_text = self._normalize_item_request_text(user_text)
         slots = self._get_last_slots(context)
 
         # ── Multi-item detection ──────────────────────────────
         # If the user said multiple items in one go, queue the extras
         # and process only the first item now.
-        multi_segments = parse_multi_item_utterance(normalized_user_text, slots)
+        multi_segments = parse_multi_item_utterance(
+            slot_aligned_user_text,
+            slots,
+            menu_store=getattr(self.menu_repo, "store", None),
+        )
         if len(multi_segments) >= 2:
             return self._handle_multi_item_utterance(
                 context=context,
@@ -174,7 +187,7 @@ class AddItemHandler(BaseHandler):
 
         # Queue the remaining items — preserve segment slots for better
         # modifier/side prefilling when dequeued.
-        context.pending_item_queue = [
+        context.pending_item_queue = deque(
             QueuedItemRequest(
                 raw_text=seg.raw_text,
                 item_slot_value=seg.item_slot_value,
@@ -183,7 +196,7 @@ class AddItemHandler(BaseHandler):
                 segment_slots=seg.slots or (),
             )
             for seg in remaining_segments
-        ]
+        )
 
         # Build detailed summary of what we heard (include modifiers/sides)
         item_summaries = []
@@ -198,6 +211,7 @@ class AddItemHandler(BaseHandler):
         context.awaiting_flow_confirmation = False
         context.interrupt_proposal = None
         context.awaiting_confirmation_for = None
+        context.last_slots = tuple(first_slots)
 
         if first_segment.quantity and first_segment.quantity > 0:
             context.quantity = first_segment.quantity
@@ -395,7 +409,7 @@ class AddItemHandler(BaseHandler):
         )
 
         # 2) prefill side selections from first utterance
-        self._prefill_side_groups(
+        side_feedback = self._prefill_side_groups(
             context=context,
             normalized_user_text=user_text,
         )
@@ -408,25 +422,32 @@ class AddItemHandler(BaseHandler):
         )
 
         # 4) prefill modifiers (structured: add/remove/extra/less)
-        self._prefill_modifier_groups(
+        modifier_feedback = self._prefill_modifier_groups(
             context=context,
             normalized_user_text=user_text,
         )
 
         # Build a spoken summary of everything that was pre-captured
         prefilled_summary = self._build_prefilled_summary(context)
+        prefill_feedback = self._build_prefill_feedback_summary(
+            context,
+            side_feedback + modifier_feedback,
+        )
 
         step = determine_next_add_item_step(context)
 
         if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
+            payload = {
+                "item_name": item.name,
+                "quantity": context.quantity or 1,
+                "prefilled_summary": prefilled_summary,
+            }
+            if prefill_feedback:
+                payload["prefill_feedback"] = prefill_feedback
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
-                response_payload={
-                    "item_name": item.name,
-                    "quantity": context.quantity or 1,
-                    "prefilled_summary": prefilled_summary,
-                },
+                response_payload=payload,
                 command=build_add_item_command(context),
                 reset_context=True,
             )
@@ -435,6 +456,8 @@ class AddItemHandler(BaseHandler):
         if prefilled_summary:
             payload["prefilled_summary"] = prefilled_summary
             payload["prefilled_item_name"] = item.name
+        if prefill_feedback:
+            payload["prefill_feedback"] = prefill_feedback
 
         return HandlerResult(
             next_state=step.next_state,
@@ -498,17 +521,248 @@ class AddItemHandler(BaseHandler):
             return f"with {parts[0]} and {parts[1]}"
         return f"with {', '.join(parts[:-1])}, and {parts[-1]}"
 
+    @staticmethod
+    def _format_feedback_names(values: list[str]) -> str:
+        clean = [str(value).strip() for value in values if str(value).strip()]
+        if not clean:
+            return ""
+        if len(clean) == 1:
+            return clean[0]
+        if len(clean) == 2:
+            return f"{clean[0]} and {clean[1]}"
+        return f"{', '.join(clean[:-1])}, and {clean[-1]}"
+
+    def _build_prefill_feedback_summary(
+        self,
+        context: ConversationContext,
+        feedback_entries: list[dict],
+    ) -> str:
+        parts: list[str] = []
+
+        for entry in feedback_entries:
+            accepted_names = entry.get("accepted_names") or []
+            dropped_names = entry.get("dropped_names") or []
+            max_selector = int(entry.get("max_selector", 0) or 0)
+
+            if dropped_names:
+                dropped_text = self._format_feedback_names(dropped_names)
+                accepted_text = self._format_feedback_names(accepted_names)
+                if accepted_text and max_selector > 0:
+                    parts.append(
+                        f"I kept {accepted_text} and left off {dropped_text} because you can only pick {max_selector}."
+                    )
+                elif accepted_text:
+                    parts.append(f"I kept {accepted_text} and left off {dropped_text}.")
+                elif max_selector > 0:
+                    parts.append(f"I left off {dropped_text} because you can only pick {max_selector}.")
+                else:
+                    parts.append(f"I left off {dropped_text}.")
+
+        unmatched_names = self._collapse_prefill_unmatched_names(context, feedback_entries)
+        if unmatched_names:
+            parts.append(
+                f"I couldn't find {self._format_feedback_names(unmatched_names)}."
+            )
+
+        return " ".join(parts).strip()
+
+    def _collapse_prefill_unmatched_names(
+        self,
+        context: ConversationContext,
+        feedback_entries: list[dict],
+    ) -> list[str]:
+        pending = context.pending_add_item
+        if pending is None:
+            return []
+
+        ignored_tokens: set[str] = set(tokenize(normalize_text(pending.item_name)))
+        ignored_tokens.update(
+            {
+                "with",
+                "extra",
+                "more",
+                "double",
+                "no",
+                "without",
+                "light",
+                "less",
+                "on",
+                "the",
+                "side",
+                "and",
+                "plus",
+                "plu",
+                "also",
+                "als",
+            }
+        )
+        known_choice_tokens: set[str] = set()
+        known_phrases: set[str] = {normalize_text(pending.item_name)}
+        matched_feedback_tokens: set[str] = set()
+        raw_unmatched_values: list[str] = []
+
+        for group in pending.side_groups:
+            for choice in group.choices:
+                known_choice_tokens.update(tokenize(choice.normalized_name))
+                known_phrases.add(choice.normalized_name)
+
+        for group in pending.modifier_groups:
+            for choice in group.choices:
+                known_choice_tokens.update(tokenize(choice.normalized_name))
+                known_phrases.add(choice.normalized_name)
+
+        for variant in pending.item_variants:
+            known_choice_tokens.update(tokenize(variant.normalized_name))
+            known_phrases.add(variant.normalized_name)
+
+        for entry in feedback_entries:
+            for accepted_name in entry.get("accepted_names") or []:
+                matched_feedback_tokens.update(tokenize(normalize_text(accepted_name)))
+            for dropped_name in entry.get("dropped_names") or []:
+                matched_feedback_tokens.update(tokenize(normalize_text(dropped_name)))
+            for unmatched_name in entry.get("unmatched_names") or []:
+                if unmatched_name:
+                    raw_unmatched_values.append(str(unmatched_name).strip())
+
+        deduped_values = self._dedupe_keep_order(raw_unmatched_values)
+        if not deduped_values:
+            return []
+
+        first_pass: list[str] = []
+        known_tokens = ignored_tokens | known_choice_tokens | matched_feedback_tokens
+        for value in deduped_values:
+            normalized_value = normalize_text(value)
+            value_tokens = set(tokenize(normalized_value))
+            novel_tokens = value_tokens - known_tokens
+            if novel_tokens or self._should_keep_raw_unmatched_phrase(
+                normalized_value,
+                known_phrases,
+            ):
+                first_pass.append(value)
+
+        cleaned_values: list[str] = []
+        for value in first_pass:
+            normalized_value = normalize_text(value)
+            value_tokens = set(tokenize(normalized_value)) - known_tokens
+            if not value_tokens:
+                if self._should_keep_raw_unmatched_phrase(normalized_value, known_phrases):
+                    cleaned_values.append(value)
+                continue
+
+            covered_by_shorter = False
+            for other in first_pass:
+                if other == value or len(other) >= len(value):
+                    continue
+                other_tokens = set(tokenize(normalize_text(other))) - known_tokens
+                if value_tokens and value_tokens.issubset(other_tokens):
+                    covered_by_shorter = True
+                    break
+
+            if not covered_by_shorter:
+                cleaned_values.append(value)
+
+        final_values: list[str] = []
+        canonical_seen: set[str] = set()
+        for value in cleaned_values:
+            canonical = self._canonicalize_unmatched_phrase(
+                normalize_text(value),
+                ignored_tokens=ignored_tokens,
+                matched_feedback_tokens=matched_feedback_tokens,
+            )
+            if canonical and canonical in canonical_seen:
+                continue
+            if canonical:
+                canonical_seen.add(canonical)
+            final_values.append(value)
+
+        return self._dedupe_keep_order(final_values)
+
+    @staticmethod
+    def _dedupe_keep_order(values: list[str]) -> list[str]:
+        seen: set[str] = set()
+        result: list[str] = []
+        for value in values:
+            cleaned = str(value).strip()
+            if not cleaned or cleaned in seen:
+                continue
+            seen.add(cleaned)
+            result.append(cleaned)
+        return result
+
+    @staticmethod
+    def _should_keep_raw_unmatched_phrase(
+        normalized_value: str,
+        known_phrases: set[str],
+    ) -> bool:
+        if not normalized_value or normalized_value in known_phrases:
+            return False
+
+        return normalized_value.startswith("no ") or normalized_value.startswith("without ")
+
+    @staticmethod
+    def _canonicalize_unmatched_phrase(
+        normalized_value: str,
+        *,
+        ignored_tokens: set[str],
+        matched_feedback_tokens: set[str],
+    ) -> str:
+        tokens = [
+            token
+            for token in tokenize(normalized_value)
+            if token not in ignored_tokens and token not in matched_feedback_tokens
+        ]
+        return " ".join(tokens).strip()
+
+    @staticmethod
+    def _clean_prefill_unmatched_values(
+        values: list[str],
+        *,
+        item_name: str,
+    ) -> list[str]:
+        normalized_item_name = normalize_text(item_name)
+        return [
+            value
+            for value in values
+            if value and normalize_text(value) != normalized_item_name
+        ]
+
+    @staticmethod
+    def _prefill_ignored_modifier_values(context: ConversationContext) -> list[str]:
+        pending = context.pending_add_item
+        if pending is None:
+            return []
+
+        ignored: list[str] = []
+        normalized_item_name = normalize_text(pending.item_name)
+        if normalized_item_name:
+            ignored.append(normalized_item_name)
+
+        for group in pending.side_groups:
+            for selected_item_id in context.selected_side_groups.get(group.group_id, []):
+                choice = group.choices_by_item_id.get(selected_item_id)
+                if choice and choice.normalized_name:
+                    ignored.append(choice.normalized_name)
+
+        seen: set[str] = set()
+        result: list[str] = []
+        for value in ignored:
+            if value and value not in seen:
+                seen.add(value)
+                result.append(value)
+        return result
+
     def _prefill_side_groups(
         self,
         *,
         context: ConversationContext,
         normalized_user_text: str,
-    ) -> None:
+    ) -> list[dict]:
         pending = context.pending_add_item
         if pending is None or not pending.side_groups:
-            return
+            return []
 
         slot_values = extract_side_slot_values_normalized(context)
+        feedback: list[dict] = []
 
         for group in pending.side_groups:
             existing_ids = list(context.selected_side_groups.get(group.group_id, []))
@@ -521,12 +775,47 @@ class AddItemHandler(BaseHandler):
                 normalized_slot_values=slot_values,
                 already_selected_ids=existing_ids,
             )
-            if not resolution.matched_item_ids:
+            unmatched_values = self._clean_prefill_unmatched_values(
+                list(resolution.unmatched_values),
+                item_name=pending.item_name,
+            )
+            min_selector, max_selector = effective_group_selector_bounds(group)
+            accepted_limit = max_selector if max_selector > 0 else len(resolution.matched_item_ids)
+
+            if not resolution.matched_item_ids and not unmatched_values:
                 continue
 
-            capped_ids = resolution.matched_item_ids[: int(group.max_selector or 1)]
-            context.selected_side_groups[group.group_id] = capped_ids
-            context.skipped_side_groups.discard(group.group_id)
+            capped_ids = resolution.matched_item_ids[:accepted_limit]
+            dropped_ids = resolution.matched_item_ids[accepted_limit:]
+            accepted_names = [
+                group.choices_by_item_id[item_id].name
+                for item_id in capped_ids
+                if item_id in group.choices_by_item_id
+            ]
+            dropped_names = [
+                group.choices_by_item_id[item_id].name
+                for item_id in dropped_ids
+                if item_id in group.choices_by_item_id
+            ]
+
+            if capped_ids:
+                context.selected_side_groups[group.group_id] = capped_ids
+                context.skipped_side_groups.discard(group.group_id)
+            elif unmatched_values and not getattr(group, "is_required", False):
+                context.skipped_side_groups.add(group.group_id)
+
+            if dropped_names or unmatched_values:
+                feedback.append(
+                    {
+                        "accepted_names": accepted_names,
+                        "dropped_names": dropped_names,
+                        "unmatched_names": unmatched_values,
+                        "max_selector": max_selector,
+                        "min_selector": min_selector,
+                    }
+                )
+
+        return feedback
 
     def _prefill_selected_side_variants(
         self,
@@ -587,12 +876,14 @@ class AddItemHandler(BaseHandler):
         *,
         context: ConversationContext,
         normalized_user_text: str,
-    ) -> None:
+    ) -> list[dict]:
         pending = context.pending_add_item
         if pending is None or not pending.modifier_groups:
-            return
+            return []
 
         slot_values = extract_modifier_slot_values_normalized(context)
+        ignored_values = self._prefill_ignored_modifier_values(context)
+        feedback: list[dict] = []
 
         for group in pending.modifier_groups:
             existing_selections = list(context.selected_modifier_groups.get(group.group_id, []))
@@ -605,13 +896,39 @@ class AddItemHandler(BaseHandler):
                 normalized_user_text=normalized_user_text,
                 normalized_slot_values=slot_values,
                 already_selected_ids=existing_ids,
+                ignored_values=ignored_values,
             )
-            if not resolution.selections:
+            unmatched_values = self._clean_prefill_unmatched_values(
+                list(resolution.unmatched_values),
+                item_name=pending.item_name,
+            )
+            min_selector, max_selector = effective_group_selector_bounds(group)
+            accepted_limit = max_selector if max_selector > 0 else len(resolution.selections)
+
+            if not resolution.selections and not unmatched_values:
                 continue
 
-            capped = resolution.selections[: int(group.max_selector or 1)]
-            context.selected_modifier_groups[group.group_id] = capped
-            context.skipped_modifier_groups.discard(group.group_id)
+            capped = resolution.selections[:accepted_limit]
+            dropped = resolution.selections[accepted_limit:]
+
+            if capped:
+                context.selected_modifier_groups[group.group_id] = capped
+                context.skipped_modifier_groups.discard(group.group_id)
+            elif unmatched_values and not getattr(group, "is_required", False):
+                context.skipped_modifier_groups.add(group.group_id)
+
+            if dropped or unmatched_values:
+                feedback.append(
+                    {
+                        "accepted_names": [sel.name for sel in capped],
+                        "dropped_names": [sel.name for sel in dropped],
+                        "unmatched_names": unmatched_values,
+                        "max_selector": max_selector,
+                        "min_selector": min_selector,
+                    }
+                )
+
+        return feedback
 
     def _prefill_item_variant(
         self,

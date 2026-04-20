@@ -1,13 +1,17 @@
-# app/state_machine/handlers/item/add_item/modifier_group_resolver.py
 from __future__ import annotations
 
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+import re
 
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.models.pending_item_models import ModifierSelection
 from app.utils.candidate_texts import build_candidate_texts_normalized
-from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match, tokenize
+from app.utils.token_matcher import (
+    is_controlled_partial_match,
+    is_strong_token_match,
+    tokenize,
+)
 
 AUTO_ACCEPT_THRESHOLD = 0.80
 CONFIRM_THRESHOLD = 0.60
@@ -17,6 +21,22 @@ REMOVE_PREFIXES = ("no ", "without ")
 EXTRA_WORDS = {"extra", "more", "double"}
 LESS_WORDS = {"less", "light"}
 ON_SIDE_SUFFIXES = ("on the side", "on side")
+GREEDY_CONTEXT_WORDS = {
+    "with",
+    "and",
+    "plus",
+    "also",
+    "extra",
+    "more",
+    "double",
+    "no",
+    "without",
+    "light",
+    "less",
+    "on",
+    "the",
+    "side",
+}
 
 # IMPORTANT: generic words that should NEVER become modifiers
 GENERIC_MODIFIER_WORDS = {
@@ -35,12 +55,12 @@ class ModifierGroupMatch:
 def dedupe_keep_order(values: list[str]) -> list[str]:
     seen = set()
     result = []
-    for v in values:
-        v = (v or "").strip()
-        if not v or v in seen:
+    for value in values:
+        value = (value or "").strip()
+        if not value or value in seen:
             continue
-        seen.add(v)
-        result.append(v)
+        seen.add(value)
+        result.append(value)
     return result
 
 
@@ -53,22 +73,21 @@ def extract_modifier_slot_values_normalized(context) -> list[str]:
         if str(slot.name).upper() not in {"MODIFIER", "ITEM", "MENU_ITEM"}:
             continue
 
-        val = slot.value
-        if not isinstance(val, str):
+        value = slot.value
+        if not isinstance(value, str):
             continue
 
-        norm = normalize_text(val)
-        if not norm or norm in seen:
+        normalized = normalize_text(value)
+        if not normalized or normalized in seen:
             continue
 
-        seen.add(norm)
-        values.append(norm)
+        seen.add(normalized)
+        values.append(normalized)
 
     return values
 
 
 class ModifierGroupResolver:
-
     def resolve(
         self,
         *,
@@ -76,17 +95,23 @@ class ModifierGroupResolver:
         normalized_user_text: str,
         normalized_slot_values: list[str],
         already_selected_ids: list[str] | None = None,
+        ignored_values: list[str] | None = None,
     ) -> ModifierGroupMatch:
-
         already_selected_ids = already_selected_ids or []
+        ignored_values = dedupe_keep_order(list(ignored_values or []))
+        ignored_token_set: set[str] = set()
+        for value in ignored_values:
+            ignored_token_set.update(tokenize(value))
 
         candidates = self._build_candidates(
             normalized_user_text,
             normalized_slot_values,
+            ignored_values=ignored_values,
         )
 
-        selections_by_id = {}
-        unmatched = []
+        selections_by_id: dict[str, ModifierSelection] = {}
+        unmatched: list[str] = []
+        matched_candidate_texts: list[str] = []
 
         for candidate in candidates:
             parsed = self._parse(candidate)
@@ -94,7 +119,6 @@ class ModifierGroupResolver:
             if not parsed["target"]:
                 continue
 
-            # 🚫 block generic words
             if parsed["target"] in GENERIC_MODIFIER_WORDS:
                 continue
 
@@ -103,187 +127,190 @@ class ModifierGroupResolver:
                 unmatched.append(candidate)
                 continue
 
-            mod_id, name, conf = scored
-            if conf < AUTO_ACCEPT_THRESHOLD:
+            mod_id, name, confidence = scored
+            if confidence < AUTO_ACCEPT_THRESHOLD:
                 unmatched.append(candidate)
                 continue
 
             if mod_id in already_selected_ids:
                 continue
 
-            new_sel = ModifierSelection(
+            new_selection = ModifierSelection(
                 modifier_id=mod_id,
                 name=name,
                 action=parsed["action"],
                 instruction=parsed["instruction"],
             )
 
-            prev = selections_by_id.get(mod_id)
-            if prev is None or self._priority(new_sel) > self._priority(prev):
-                selections_by_id[mod_id] = new_sel
+            previous = selections_by_id.get(mod_id)
+            if previous is None or self._priority(new_selection) > self._priority(previous):
+                selections_by_id[mod_id] = new_selection
+                matched_candidate_texts.append(parsed["target"])
 
-        # ── Greedy scan: find modifier names embedded in the full text ──
-        # Handles cases like "red onions fresh mushroom bacon and banana pepper"
-        # where "bacon" is not split out by separators but IS a known modifier.
         self._greedy_scan_for_embedded_modifiers(
             group=group,
             text=normalized_user_text,
             selections_by_id=selections_by_id,
             already_selected_ids=already_selected_ids,
+            ignored_tokens=ignored_token_set,
+            matched_candidate_texts=matched_candidate_texts,
         )
 
-        ordered_ids = []
+        ordered_ids: list[str] = []
         for candidate in candidates:
             parsed = self._parse(candidate)
             scored = self._match(group, parsed["target"])
             if not scored:
                 continue
-            mid = scored[0]
-            if mid in selections_by_id and mid not in ordered_ids:
-                ordered_ids.append(mid)
+            modifier_id = scored[0]
+            if modifier_id in selections_by_id and modifier_id not in ordered_ids:
+                ordered_ids.append(modifier_id)
 
-        # Also include greedy-scan matches that weren't in the original candidates
-        for mid, sel in selections_by_id.items():
-            if mid not in ordered_ids:
-                ordered_ids.append(mid)
+        for modifier_id in selections_by_id:
+            if modifier_id not in ordered_ids:
+                ordered_ids.append(modifier_id)
 
-        # ── Clean up unmatched: remove composite strings whose tokens
-        #    are fully covered by matched + other unmatched tokens ──
         matched_tokens: set[str] = set()
-        for mid in selections_by_id:
-            sel = selections_by_id[mid]
-            matched_tokens.update(tokenize(normalize_text(sel.name)))
+        for selection in selections_by_id.values():
+            matched_tokens.update(tokenize(normalize_text(selection.name)))
+        for candidate_text in matched_candidate_texts:
+            matched_tokens.update(tokenize(candidate_text))
 
-        # First pass: keep only values with at least one non-matched token
         first_pass: list[str] = []
-        for val in unmatched:
-            val_tokens = set(tokenize(val))
-            if val_tokens and not val_tokens.issubset(matched_tokens):
-                first_pass.append(val)
-
-        # Second pass: remove composites that are redundant with shorter values
-        # A value is redundant if all its tokens are covered by matched_tokens
-        # plus the tokens of other shorter unmatched values.
-        all_unmatched_tokens: set[str] = set()
-        for val in first_pass:
-            all_unmatched_tokens.update(tokenize(val))
-        combined_tokens = matched_tokens | all_unmatched_tokens
+        for value in unmatched:
+            value_tokens = set(tokenize(value))
+            if value_tokens and not value_tokens.issubset(matched_tokens | ignored_token_set):
+                first_pass.append(value)
 
         cleaned_unmatched: list[str] = []
-        for val in first_pass:
-            val_tokens = set(tokenize(val))
-            # If this value's unique unmatched tokens are covered by
-            # shorter values, skip it (it's a composite)
-            novel_tokens = val_tokens - matched_tokens
-            other_unmatched_tokens = set()
+        for value in first_pass:
+            value_tokens = set(tokenize(value))
+            novel_tokens = value_tokens - matched_tokens - ignored_token_set
+            other_unmatched_tokens: set[str] = set()
             for other in first_pass:
-                if other != val and len(other) < len(val):
-                    other_unmatched_tokens.update(tokenize(other))
+                if other != value and len(other) < len(value):
+                    other_unmatched_tokens.update(set(tokenize(other)) - ignored_token_set)
             if novel_tokens and novel_tokens.issubset(other_unmatched_tokens):
                 continue
-            cleaned_unmatched.append(val)
+            cleaned_unmatched.append(value)
 
         return ModifierGroupMatch(
-            selections=[selections_by_id[mid] for mid in ordered_ids],
+            selections=[selections_by_id[modifier_id] for modifier_id in ordered_ids],
             unmatched_values=dedupe_keep_order(cleaned_unmatched),
         )
-
-    # -------------------------
 
     def _greedy_scan_for_embedded_modifiers(
         self,
         *,
         group,
         text: str,
-        selections_by_id: dict,
+        selections_by_id: dict[str, ModifierSelection],
         already_selected_ids: list[str],
+        ignored_tokens: set[str] | None = None,
+        matched_candidate_texts: list[str] | None = None,
     ) -> None:
-        """
-        Scan the full user text for modifier choice names that appear as
-        sub-phrases but weren't split out by the separator-based heuristic.
-
-        E.g. "red onions fresh mushroom bacon and banana pepper"
-        → the normal split only yields ["red onions fresh mushroom bacon", "banana pepper"]
-        → this scan detects that "bacon", "red onions", "fresh mushroom" are known modifiers.
-
-        Only adds matches that weren't already found.
-        """
         if not text:
             return
 
+        ignored_tokens = ignored_tokens or set()
+        matched_candidate_texts = matched_candidate_texts if matched_candidate_texts is not None else []
         text_tokens = set(tokenize(text))
         if not text_tokens:
             return
 
         for choice in group.choices:
-            mid = choice.modifier_id
-            if mid in selections_by_id or mid in already_selected_ids:
+            modifier_id = choice.modifier_id
+            if modifier_id in selections_by_id or modifier_id in already_selected_ids:
                 continue
 
-            choice_norm = choice.normalized_name
-            if not choice_norm:
+            choice_normalized = choice.normalized_name
+            if not choice_normalized:
                 continue
 
-            choice_tokens = set(tokenize(choice_norm))
+            choice_tokens = set(tokenize(choice_normalized))
             if not choice_tokens:
                 continue
 
-            # Choice tokens must be fully contained in the user text tokens
+            if ignored_tokens and choice_tokens.issubset(ignored_tokens):
+                continue
+
             if not choice_tokens.issubset(text_tokens):
                 continue
 
-            # Extra check: choice name must appear as a contiguous substring
-            # in the text to avoid spurious matches from scattered tokens
-            if choice_norm not in text:
+            if choice_normalized not in text:
                 continue
 
-            selections_by_id[mid] = ModifierSelection(
-                modifier_id=mid,
+            if not self._has_supported_phrase_context(text, choice_normalized):
+                continue
+
+            selections_by_id[modifier_id] = ModifierSelection(
+                modifier_id=modifier_id,
                 name=choice.name,
                 action="add",
                 instruction=None,
             )
+            matched_candidate_texts.append(choice_normalized)
 
-    def _priority(self, sel: ModifierSelection) -> int:
-        if sel.action == "remove":
+    def _priority(self, selection: ModifierSelection) -> int:
+        if selection.action == "remove":
             return 4
-        if sel.instruction == "extra":
+        if selection.instruction == "extra":
             return 3
-        if sel.instruction == "less":
+        if selection.instruction == "less":
             return 2
-        if sel.instruction == "on_side":
+        if selection.instruction == "on_side":
             return 2
         return 1
 
-    def _build_candidates(self, text, slot_values):
-        candidates = []
+    def _build_candidates(
+        self,
+        text: str,
+        slot_values: list[str],
+        *,
+        ignored_values: list[str] | None = None,
+    ) -> list[str]:
+        candidates: list[str] = []
+        ignored_values = ignored_values or []
+        cleaned_text = self._strip_ignored_values(text, ignored_values)
 
-        # 1️⃣ FULL TEXT FIRST (critical fix)
-        if text:
-            candidates.append(text.strip())
+        if cleaned_text:
+            candidates.append(cleaned_text.strip())
 
-        # 2️⃣ SPLIT TEXT
         splits = build_candidate_texts_normalized(
-            normalized_user_text=text,
+            normalized_user_text=cleaned_text,
             normalized_slot_values=[],
             allow_split=True,
         )
         candidates.extend(splits)
 
-        # 3️⃣ SLOT VALUES LAST (lowest priority)
-        candidates.extend(slot_values)
+        candidates.extend(
+            value
+            for value in slot_values
+            if value and value not in ignored_values
+        )
 
         return dedupe_keep_order(candidates)
+
+    @staticmethod
+    def _strip_ignored_values(text: str, ignored_values: list[str]) -> str:
+        cleaned = (text or "").strip()
+        if not cleaned or not ignored_values:
+            return cleaned
+
+        for value in sorted((v for v in ignored_values if v), key=len, reverse=True):
+            cleaned = re.sub(rf"\b{re.escape(value)}\b", " ", cleaned)
+
+        return re.sub(r"\s+", " ", cleaned).strip()
 
     def _parse(self, text: str):
         text = (text or "").strip()
 
-        for p in REMOVE_PREFIXES:
-            if text.startswith(p):
+        for prefix in REMOVE_PREFIXES:
+            if text.startswith(prefix):
                 return {
                     "action": "remove",
                     "instruction": None,
-                    "target": text[len(p):].strip(),
+                    "target": text[len(prefix):].strip(),
                 }
 
         tokens = text.split()
@@ -311,39 +338,66 @@ class ModifierGroupResolver:
 
     def _match(self, group, candidate):
         best = None
-        best_conf = 0
-        second = 0
+        best_confidence = 0.0
+        second_confidence = 0.0
 
-        for c in group.choices:
-            conf = self._confidence(candidate, c.normalized_name)
-            if conf > best_conf:
-                second = best_conf
-                best_conf = conf
-                best = c
-            elif conf > second:
-                second = conf
+        for choice in group.choices:
+            confidence = self._confidence(candidate, choice.normalized_name)
+            if confidence > best_confidence:
+                second_confidence = best_confidence
+                best_confidence = confidence
+                best = choice
+            elif confidence > second_confidence:
+                second_confidence = confidence
 
         if not best:
             return None
 
-        if best_conf < CONFIRM_THRESHOLD:
+        if best_confidence < CONFIRM_THRESHOLD:
             return None
 
-        if best_conf < AUTO_ACCEPT_THRESHOLD and (best_conf - second) < MIN_CONFIRM_GAP:
+        if (
+            best_confidence < AUTO_ACCEPT_THRESHOLD
+            and (best_confidence - second_confidence) < MIN_CONFIRM_GAP
+        ):
             return None
 
-        return best.modifier_id, best.name, best_conf
+        return best.modifier_id, best.name, best_confidence
 
-    def _confidence(self, a, b):
-        if a == b:
+    def _confidence(self, candidate: str, choice_name: str) -> float:
+        if candidate == choice_name:
             return 1.0
 
-        score = SequenceMatcher(None, a, b).ratio()
+        candidate_tokens = set(tokenize(candidate))
+        choice_tokens = set(tokenize(choice_name))
+        if choice_tokens and choice_tokens < candidate_tokens:
+            return 0.0
 
-        if is_strong_token_match(a, b):
+        score = SequenceMatcher(None, candidate, choice_name).ratio()
+
+        if is_strong_token_match(candidate, choice_name):
             score = max(score, 0.92)
 
-        if is_controlled_partial_match(a, b):
+        if is_controlled_partial_match(candidate, choice_name):
             score = max(score, 0.82)
 
         return score
+
+    @staticmethod
+    def _has_supported_phrase_context(text: str, phrase: str) -> bool:
+        pattern = re.compile(rf"\b{re.escape(phrase)}\b")
+        for match in pattern.finditer(text):
+            prefix = text[:match.start()].rstrip()
+            suffix = text[match.end():].lstrip()
+
+            previous_word = re.search(r"([a-z0-9]+)$", prefix)
+            if previous_word and previous_word.group(1) not in GREEDY_CONTEXT_WORDS:
+                continue
+
+            next_word = re.match(r"([a-z0-9]+)", suffix)
+            if next_word and next_word.group(1) not in GREEDY_CONTEXT_WORDS:
+                continue
+
+            return True
+
+        return False

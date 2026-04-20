@@ -10,57 +10,13 @@ from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
 
 
-DELIVERY_GATING_STATES: set[ConversationState] = {
-    ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
-    ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
-}
-
-ACTIVE_TASK_STATES: set[ConversationState] = {
-    ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
-    ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
-    ConversationState.WAITING_FOR_ORDER_TYPE,
-    ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
-    ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
-    ConversationState.CONFIRMING_ITEM,
-    ConversationState.WAITING_FOR_SIDE,
-    ConversationState.WAITING_FOR_SIDE_SIZE,
-    ConversationState.WAITING_FOR_MODIFIER,
-    ConversationState.WAITING_FOR_SIZE,
-    ConversationState.WAITING_FOR_QUANTITY,
-    ConversationState.REMOVING_ITEM,
-    ConversationState.MODIFYING_ITEM,
-    ConversationState.CONFIRMING_ORDER,
-    ConversationState.WAITING_FOR_PAYMENT,
-    ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
-}
-
-MID_ITEM_BLOCKING_STATES: set[ConversationState] = {
-    ConversationState.CONFIRMING_ITEM,
-    ConversationState.WAITING_FOR_SIDE,
-    ConversationState.WAITING_FOR_SIDE_SIZE,
-    ConversationState.WAITING_FOR_MODIFIER,
-    ConversationState.WAITING_FOR_SIZE,
-    ConversationState.WAITING_FOR_QUANTITY,
-    ConversationState.REMOVING_ITEM,
-    ConversationState.MODIFYING_ITEM,
-}
-
-CHECKOUT_ATTEMPT_INTENTS: set[Intent] = {
-    Intent.START_ORDER,
-    Intent.END_ADDING,
-    Intent.CHECKOUT,
-    Intent.CONFIRM_ORDER,
-    Intent.FINISH_ORDER,
-    Intent.PAYMENT_REQUEST,
-    Intent.REVIEW_ORDER,
-}
-
-READ_ONLY_INTERRUPT_INTENTS: set[Intent] = {
-    Intent.ASK_PRICE,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-    Intent.AVAILABILITY_QUERY,
-}
+from app.state_machine.flow_sets import (
+    ACTIVE_TASK_STATES,
+    CHECKOUT_ATTEMPT_INTENTS,
+    DELIVERY_GATING_STATES,
+    MID_ITEM_BLOCKING_STATES,
+    READ_ONLY_INTERRUPT_INTENTS,
+)
 
 
 @dataclass(frozen=True, slots=True)
