@@ -1,19 +1,4 @@
 # app/cart/models.py
-
-from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
-
-
-@dataclass
-class CartItemView:
-    """
-    Read-only representation of a cart item for presentation layers.
-    """
-
-    cart_item_id: str
-    item_id: str
-    quantity: int
-    variant_id: Optional[str]
-    sides: Dict[str, List[str]]
-    side_variants: Dict[str, str]
-    modifiers: Dict[str, List[Any]]
+#
+# Cart-level shared models. Currently empty after removing unused CartItemView.
+# Add cart-scoped DTOs here as needed (e.g., CartSummary, CartDiff).

@@ -1,6 +1,7 @@
 # app/state_machine/models/conversation_context.py
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
@@ -340,8 +341,9 @@ class ConversationContext:
 
     pending_add_item: Optional[PendingAddItem] = None
 
-    # Multi-item queue: items waiting to be processed after the current one completes
-    pending_item_queue: list[QueuedItemRequest] = field(default_factory=list)
+    # Multi-item queue: items waiting to be processed after the current one completes.
+    # Uses deque for O(1) popleft() during queue drain (avoids O(n) list.pop(0)).
+    pending_item_queue: deque[QueuedItemRequest] = field(default_factory=deque)
 
     order_type: Optional[str] = None
     delivery_address_required: bool = False
@@ -527,7 +529,7 @@ class ConversationContext:
         pending_add_item = data.get("pending_add_item")
         ctx.pending_add_item = _pending_add_item_from_dict(pending_add_item) if pending_add_item else None
 
-        ctx.pending_item_queue = [
+        ctx.pending_item_queue = deque(
             QueuedItemRequest(
                 raw_text=item_data.get("raw_text", ""),
                 item_slot_value=item_data.get("item_slot_value"),
@@ -537,7 +539,7 @@ class ConversationContext:
             )
             for item_data in data.get("pending_item_queue", [])
             if item_data.get("raw_text")
-        ]
+        )
 
         ctx.order_type = data.get("order_type")
         ctx.delivery_address_required = bool(data.get("delivery_address_required", False))

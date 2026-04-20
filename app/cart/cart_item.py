@@ -1,15 +1,16 @@
 # app/cart/cart_item.py
+from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 import uuid
 
 
-@dataclass
+@dataclass(frozen=True)
 class CartItem:
     """
     Represents a single item entry in the cart.
-    Immutable once created (modification = replace).
+    Immutable once created (modification = replace with new instance).
     """
 
     cart_item_id: str
@@ -17,26 +18,26 @@ class CartItem:
     quantity: int
 
     # Optional configuration
-    variant_id: Optional[str] = None
+    variant_id: str | None = None
 
     # group_id -> list[item_id]
-    sides: Dict[str, List[str]] = field(default_factory=dict)
+    sides: dict[str, list[str]] = field(default_factory=dict)
 
     # side item_id -> variant_id
-    side_variants: Dict[str, str] = field(default_factory=dict)
+    side_variants: dict[str, str] = field(default_factory=dict)
 
     # group_id -> list[modifier_id] or richer modifier selection entries
-    modifiers: Dict[str, List[Any]] = field(default_factory=dict)
+    modifiers: dict[str, list[Any]] = field(default_factory=dict)
 
     @staticmethod
     def create(
         item_id: str,
         quantity: int,
-        variant_id: Optional[str],
-        sides: Dict[str, List[str]],
-        side_variants: Dict[str, str],
-        modifiers: Dict[str, List[Any]],
-    ) -> "CartItem":
+        variant_id: str | None,
+        sides: dict[str, list[str]],
+        side_variants: dict[str, str],
+        modifiers: dict[str, list[Any]],
+    ) -> CartItem:
         return CartItem(
             cart_item_id=str(uuid.uuid4()),
             item_id=item_id,
@@ -59,7 +60,7 @@ class CartItem:
         }
 
     @staticmethod
-    def from_dict(data: dict) -> "CartItem":
+    def from_dict(data: dict) -> CartItem:
         return CartItem(
             cart_item_id=data["cart_item_id"],
             item_id=data["item_id"],

@@ -800,7 +800,7 @@ class TurnEngine:
             return None
 
         # Pop the next item from the queue
-        next_item = ctx.pending_item_queue.pop(0)
+        next_item = ctx.pending_item_queue.popleft()
         remaining_count = len(ctx.pending_item_queue)
 
         # Build the previous item's added summary
