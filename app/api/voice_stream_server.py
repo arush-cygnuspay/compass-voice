@@ -14,6 +14,9 @@ from dataclasses import dataclass
 from typing import Any, AsyncGenerator, Callable
 
 from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +25,8 @@ from twilio.twiml.voice_response import Connect, VoiceResponse
 
 from app.api.chat_demo import router as test_chat_router
 from app.api.ui.ui import router as ui_router
+from app.api.checkout_routes import router as checkout_api_router, page_router as checkout_page_router
+from app.api.payment_links_webhook import router as payment_links_webhook_router
 from app.bootstrap.runtime import build_runtime
 from app.logging.realtime_latency_logger import (
     RealtimeLatencyLogger,
@@ -36,10 +41,12 @@ from app.realtime.deepgram_stt_client import (
 from app.realtime.deepgram_tts_client import DeepgramTTSClient
 from app.realtime.realtime_conversation_state import RealtimePhase
 from app.realtime.turn_commit_controller import TurnCommitController
-from app.session.repository import load_session, save_session
+from app.session.repository import load_existing_session, load_session, save_session
 from app.session.session import Session
-
-load_dotenv()
+from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
+    HUMAN_AGENT_TRANSFER_NUMBER,
+)
+from app.state_machine.models.conversation_state import ConversationState
 
 TWILIO_MULAW_FRAME_BYTES = 160
 TWILIO_FRAME_DURATION_SECONDS = 0.02
@@ -53,7 +60,7 @@ TWILIO_BURST_PACING_SECONDS = TWILIO_FRAME_DURATION_SECONDS * TWILIO_BURST_FRAME
 
 WELCOME_AUDIO_WAV_PATH = os.getenv(
     "COMPASS_WELCOME_AUDIO_WAV_PATH",
-    "app/static/audio/compass_welcome_ulaw_8k_0.9x.wav",
+    "app/static/audio/compass_welcome_8k_0.9x_order_type.wav",
 ).strip()
 
 VOICE_DEBUG_ENABLED = os.getenv("COMPASS_VOICE_DEBUG_ENABLED", "0") == "1"
@@ -72,7 +79,36 @@ DYNAMIC_RESPONSE_KEYS = {
     "ask_for_size",
     "ask_for_quantity",
     "ask_for_side_size",
+    "ask_for_caller_device_type",
+    "repeat_caller_device_type",
+    "confirm_landline_pickup_only",
+    "repeat_landline_pickup_only",
+    "transferring_to_human_agent",
+    "ask_for_order_type",
+    "repeat_order_type",
+    "order_type_captured_pickup",
+    "order_type_captured_delivery",
+    "confirm_order_summary",
 }
+
+# Response keys emitted right after sending a checkout/payment link.
+# Any of these arms the auto-confirm timer so the agent silently probes
+# payment status ~50 s later without needing a user prompt.
+PAYMENT_LINK_SENT_KEYS: frozenset[str] = frozenset({
+    "ask_delivery_address_method",
+    "checkout_link_sent",
+    "payment_link_sent",
+})
+
+# States where an automatic payment-status probe is meaningful.
+_PAYMENT_AWAITING_STATES: frozenset[ConversationState] = frozenset({
+    ConversationState.WAITING_FOR_PAYMENT,
+    ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+})
+
+# Seconds to wait before the first (and each repeated) auto-confirm probe.
+# Mid-point of the requested 45-60 s window.
+PAYMENT_AUTO_CHECK_DELAY_SECONDS: int = 50
 
 _WELCOME_AUDIO_BYTES_CACHE: bytes | None = None
 
@@ -331,6 +367,9 @@ app.mount("/static", StaticFiles(directory="app/static", check_dir=False), name=
 
 app.include_router(test_chat_router)
 app.include_router(ui_router)
+app.include_router(checkout_api_router)
+app.include_router(checkout_page_router)
+app.include_router(payment_links_webhook_router)
 
 
 def _build_stream_url(request: Request) -> str:
@@ -360,6 +399,108 @@ def _build_stream_url(request: Request) -> str:
     return f"wss://{host}/ws/twilio-media"
 
 
+def _build_action_url(request: Request) -> str:
+    """Return the HTTPS URL Twilio should POST to when the stream ends.
+
+    Mirrors the logic in ``_build_stream_url`` but produces an HTTP(S) URL
+    instead of a WebSocket URL.  Twilio calls this endpoint after the
+    ``<Connect><Stream>`` block exits so we can return ``<Dial>`` TwiML
+    for landline-to-human-agent transfers.
+    """
+    host = request.headers.get("host", "localhost")
+    explicit_public_base = os.getenv("PUBLIC_WSS_BASE_URL", "").strip()
+    if explicit_public_base:
+        base = explicit_public_base.rstrip("/")
+        # Convert a WebSocket base URL to HTTP(S) if needed.
+        if base.startswith("wss://"):
+            base = "https://" + base[len("wss://"):]
+        elif base.startswith("ws://"):
+            base = "http://" + base[len("ws://"):]
+        return f"{base}/stream-ended"
+
+    forwarded_proto = request.headers.get("x-forwarded-proto", "").strip().lower()
+    scheme = "https" if forwarded_proto != "http" else "http"
+    return f"{scheme}://{host}/stream-ended"
+
+
+@app.post("/stream-ended")
+async def stream_ended(request: Request):
+    """Twilio action callback fired when a ``<Connect><Stream>`` session ends.
+
+    When a landline caller is being transferred to a human agent, closing
+    the WebSocket releases the ``<Connect>`` block and Twilio immediately
+    POSTs here.  We check the persisted session state and return
+    ``<Dial>`` TwiML to bridge the caller to the human-agent number.
+    For all other call endings (normal completion, errors) we return an
+    empty response and let Twilio hang up.
+    """
+    form = await request.form()
+    raw_form = dict(form)
+    call_sid = str(form.get("CallSid", "")).strip()
+
+    print(
+        "[STREAM-ENDED RECEIVED]",
+        {
+            "call_sid": call_sid,
+            "raw_form": raw_form,
+        },
+    )
+
+    vr = VoiceResponse()
+
+    if not call_sid:
+        print("[STREAM-ENDED] No CallSid in request — returning empty TwiML (hang up)")
+        return Response(content=str(vr), media_type="application/xml")
+
+    session = load_existing_session(call_sid, "demo")
+
+    if session is None:
+        print(
+            "[STREAM-ENDED] Session not found in Redis",
+            {"call_sid": call_sid},
+        )
+        return Response(content=str(vr), media_type="application/xml")
+
+    print(
+        "[STREAM-ENDED SESSION]",
+        {
+            "call_sid": call_sid,
+            "conversation_state": session.conversation_state,
+            "caller_device_type": session.conversation_context.caller_device_type,
+        },
+    )
+
+    if session.conversation_state == ConversationState.TRANSFERRING_TO_HUMAN_AGENT:
+        transfer_target = (
+            (
+                (session.last_response_payload or {}).get("transfer_number")
+                if isinstance(session.last_response_payload, dict)
+                else None
+            )
+            or HUMAN_AGENT_TRANSFER_NUMBER
+        )
+        vr.say("Okay. Connecting you to a team member now. One moment please.")
+        vr.dial(transfer_target)
+        twiml_out = str(vr)
+        print(
+            "[STREAM-ENDED TRANSFER]",
+            {
+                "call_sid": call_sid,
+                "target": transfer_target,
+                "twiml": twiml_out,
+            },
+        )
+        session.conversation_state = ConversationState.COMPLETED
+        save_session(session)
+        return Response(content=twiml_out, media_type="application/xml")
+
+    print(
+        "[STREAM-ENDED] State is not TRANSFERRING_TO_HUMAN_AGENT — returning empty TwiML",
+        {"state": session.conversation_state},
+    )
+    return Response(content=str(vr), media_type="application/xml")
+
+
 @app.post("/voice")
 async def voice(request: Request):
     form = await request.form()
@@ -379,12 +520,33 @@ async def voice(request: Request):
         },
     )
 
+    if call_sid:
+        session = load_session(call_sid, "demo")
+        session.conversation_context.delivery_address.customer_phone_number = (
+            from_number or None
+        )
+        save_session(session)
+
+    action_url = _build_action_url(request)
+
+    print(
+        "[VOICE TWIML]",
+        {
+            "call_sid": call_sid,
+            "stream_url": stream_url,
+            "action_url": action_url,
+        },
+    )
+
     vr = VoiceResponse()
-    connect = Connect()
+    connect = Connect(action=action_url)
     connect.stream(url=stream_url, name="compass-voice-stream")
     vr.append(connect)
 
-    return Response(content=str(vr), media_type="application/xml")
+    twiml_str = str(vr)
+    print("[VOICE TWIML RESPONSE]", {"twiml": twiml_str})
+
+    return Response(content=twiml_str, media_type="application/xml")
 
 
 @app.websocket("/ws/twilio-media")
@@ -420,9 +582,67 @@ async def twilio_media_ws(websocket: WebSocket):
         twilio_client = Client(twilio_account_sid, twilio_auth_token)
 
     should_end_call_after_playback = False
+    pending_transfer_number: str | None = None
+    websocket_close_requested = False
+    _payment_check_task: asyncio.Task | None = None
+
+    async def _transfer_live_call(target_number: str) -> None:
+        """Initiate a transfer to ``target_number`` by closing the WebSocket.
+
+        ``<Connect><Stream>`` blocks all TwiML that follows it for as long
+        as the WebSocket stays open.  Calling the Twilio REST API with a
+        new ``<Dial>`` TwiML while the stream is active is silently queued
+        and never executes.
+
+        The correct approach: close the WebSocket from our side.  Twilio
+        then releases the ``<Connect>`` block and immediately POSTs to the
+        ``action`` URL we registered on ``<Connect>`` in the ``/voice``
+        handler.  That endpoint (``/stream-ended``) checks the session
+        state and returns ``<Dial>{target_number}</Dial>`` TwiML, bridging
+        the caller to the human-agent line.
+        """
+        nonlocal websocket_close_requested
+
+        print(
+            "[TRANSFER] _transfer_live_call called",
+            {
+                "call_sid": stream_session.call_sid,
+                "stream_sid": stream_session.stream_sid,
+                "target_number": target_number,
+                "session_state": getattr(app_session, "conversation_state", None),
+            },
+        )
+        # Closing the WebSocket releases the <Connect><Stream> block.
+        # Twilio then POSTs to the action URL (/stream-ended) where we
+        # return <Dial> TwiML to bridge the caller to the human agent.
+        try:
+            websocket_close_requested = True
+            await websocket.close()
+            print(
+                "[TRANSFER] WebSocket closed — Twilio will POST to /stream-ended",
+                {
+                    "call_sid": stream_session.call_sid,
+                    "stream_sid": stream_session.stream_sid,
+                },
+            )
+        except Exception as exc:
+            print(
+                "[TRANSFER] WebSocket close failed",
+                {
+                    "call_sid": stream_session.call_sid,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
 
     async def _end_live_call() -> None:
         if not stream_session.call_sid:
+            print(
+                "[TWILIO CALL END SKIPPED]",
+                {
+                    "reason": "missing_call_sid",
+                    "stream_sid": stream_session.stream_sid,
+                },
+            )
             return
 
         if twilio_client is None:
@@ -436,7 +656,7 @@ async def twilio_media_ws(websocket: WebSocket):
             return
 
         try:
-            await asyncio.to_thread(
+            result = await asyncio.to_thread(
                 twilio_client.calls(stream_session.call_sid).update,
                 status="completed",
             )
@@ -445,6 +665,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 {
                     "call_sid": stream_session.call_sid,
                     "stream_sid": stream_session.stream_sid,
+                    "twilio_status": getattr(result, "status", None),
                 },
             )
         except Exception as exc:
@@ -559,19 +780,18 @@ async def twilio_media_ws(websocket: WebSocket):
         phase = RealtimePhase.LISTENING
 
     async def _send_burst_frames(
-            burst_bytes: bytes,
-            trace: RealtimeTurnTrace | None = None,
+        burst_bytes: bytes,
+        trace: RealtimeTurnTrace | None = None,
     ) -> int:
         sent = 0
 
         for offset in range(0, len(burst_bytes), TWILIO_MULAW_FRAME_BYTES):
-            frame = burst_bytes[offset: offset + TWILIO_MULAW_FRAME_BYTES]
+            frame = burst_bytes[offset : offset + TWILIO_MULAW_FRAME_BYTES]
             if not frame:
                 continue
             await send_twilio_media(frame, trace=trace)
             sent += len(frame)
 
-        # pace one burst = 100 ms when TWILIO_BURST_FRAMES = 5
         await asyncio.sleep(TWILIO_BURST_PACING_SECONDS)
         return sent
 
@@ -606,7 +826,6 @@ async def twilio_media_ws(websocket: WebSocket):
 
                 burst = bytes(buffered[:TWILIO_BURST_BYTES])
                 del buffered[:TWILIO_BURST_BYTES]
-
                 total_bytes_sent += await _send_burst_frames(burst, trace=trace)
 
         if should_abort and should_abort():
@@ -685,55 +904,31 @@ async def twilio_media_ws(websocket: WebSocket):
             should_abort=lambda: generation != playback_generation,
         )
 
-    def _compact_spoken_response(response_key: str, text: str) -> str:
-        compact_map = {
-            "item_added_successfully": "Added. Anything else?",
-            "confirm_order_summary": "Your total is ready. Checkout now?",
-            "payment_link_sent": "Payment link sent. Tell me when done.",
-            "order_completed": "Payment confirmed. Your order is placed. Ready in 25 minutes. Thank you.",
-            "show_cart": text,
-            "show_total": text,
-            "confirm_clear_cart": "Clear your cart? Yes or no.",
-            "cart_cleared": "Cart cleared.",
-            "clear_cart_cancelled": "Okay, keeping your cart.",
-        }
-        return _normalize_response_text(compact_map.get(response_key, text))
-
-    def _build_response_texts(
-        turn_output: Any,
-        app_session: Session,
-    ) -> tuple[str, str]:
-        internal_text = (
+    def _build_response_texts(turn_output: Any) -> tuple[str, str]:
+        internal_text = _normalize_response_text(
             getattr(turn_output, "internal_response_text", None)
-            or app.state.responder.build(
-                response_key=turn_output.response_key,
-                context=app_session.conversation_context,
-                payload=turn_output.response_payload,
+        )
+        spoken_text = _normalize_response_text(
+            getattr(turn_output, "spoken_response_text", None)
+        )
+
+        if not internal_text:
+            raise ValueError(
+                f"TurnEngine returned empty internal_response_text for response_key="
+                f"{getattr(turn_output, 'response_key', 'unknown')}"
             )
-        )
 
-        response_key = turn_output.response_key
-
-        if response_key in DYNAMIC_RESPONSE_KEYS:
+        if not spoken_text:
             spoken_text = internal_text
-        else:
-            spoken_text = getattr(turn_output, "spoken_response_text", None)
-            if not spoken_text:
-                spoken_text = _compact_spoken_response(
-                    response_key,
-                    internal_text,
-                )
 
-        return (
-            _normalize_response_text(internal_text),
-            _normalize_response_text(spoken_text),
-        )
+        return internal_text, spoken_text
 
     async def speak_response_text(
         spoken_text: str,
         trace: RealtimeTurnTrace | None = None,
+        end_call_after_playback: bool = False,
     ) -> None:
-        nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at, playback_generation
+        nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at, playback_generation, pending_transfer_number
 
         cleaned = _normalize_response_text(spoken_text)
         if not cleaned:
@@ -749,6 +944,7 @@ async def twilio_media_ws(websocket: WebSocket):
             _trace_set_attr(trace, "spoken_response_text", cleaned)
             _trace_set_attr(trace, "tts_text_chars", len(cleaned))
             _trace_set_attr(trace, "tts_request_start_monotonic", time.perf_counter())
+            _trace_set_attr(trace, "end_call_after_playback", end_call_after_playback)
 
         streamed_bytes = await _stream_progressive_tts_text(
             cleaned,
@@ -778,7 +974,13 @@ async def twilio_media_ws(websocket: WebSocket):
             phase = RealtimePhase.LISTENING
             bot_playback_started_at = None
 
-            if trace is not None and getattr(trace, "response_key", None) == "order_completed":
+            # Transfer takes precedence over a plain hangup when both
+            # have been requested for the same turn.
+            if pending_transfer_number:
+                target = pending_transfer_number
+                pending_transfer_number = None
+                await _transfer_live_call(target)
+            elif end_call_after_playback:
                 await _end_live_call()
 
             return
@@ -789,6 +991,19 @@ async def twilio_media_ws(websocket: WebSocket):
                 "outbound_audio_duration_ms",
                 round((streamed_bytes / 8000.0) * 1000.0, 3),
             )
+
+        # If a transfer is pending we must NOT end the call here — that
+        # would tear down the leg before Twilio can dial the human agent.
+        # The mark handler will perform the transfer once playback ends.
+        if end_call_after_playback and not pending_transfer_number:
+            _debug_log(
+                "[TWILIO CALL END AFTER PLAYBACK]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "call_sid": stream_session.call_sid,
+                },
+            )
+            await _end_live_call()
 
         mark_counter += 1
         active_mark_name = f"bot-playback-{mark_counter}"
@@ -804,6 +1019,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 "barge_in_disabled": disable_barge_in,
                 "burst_frames": TWILIO_BURST_FRAMES,
                 "generation": generation,
+                "end_call_after_playback": end_call_after_playback,
             },
         )
 
@@ -848,8 +1064,43 @@ async def twilio_media_ws(websocket: WebSocket):
             },
         )
 
+    async def _schedule_payment_auto_check() -> None:
+        """Arm (or re-arm) a background timer that probes payment status.
+
+        Fires once after PAYMENT_AUTO_CHECK_DELAY_SECONDS of silence and
+        silently re-arms itself while the order is still unpaid, so the
+        agent keeps checking every ~50 s until payment clears or the call
+        ends.  Cancelled automatically when the WebSocket closes.
+        """
+        nonlocal _payment_check_task
+
+        if _payment_check_task is not None and not _payment_check_task.done():
+            _payment_check_task.cancel()
+
+        async def _probe() -> None:
+            try:
+                await asyncio.sleep(PAYMENT_AUTO_CHECK_DELAY_SECONDS)
+            except asyncio.CancelledError:
+                return
+            # Only probe when the call is idle and still in a payment state.
+            if (
+                app_session is None
+                or app_session.conversation_state not in _PAYMENT_AWAITING_STATES
+                or phase != RealtimePhase.LISTENING
+            ):
+                return
+            await process_committed_turn("__auto_payment_check__")
+            # Re-arm if payment is still pending after the probe.
+            if (
+                app_session is not None
+                and app_session.conversation_state in _PAYMENT_AWAITING_STATES
+            ):
+                await _schedule_payment_auto_check()
+
+        _payment_check_task = asyncio.create_task(_probe())
+
     async def process_committed_turn(user_text: str) -> None:
-        nonlocal phase, pending_interrupt_text, app_session, should_end_call_after_playback
+        nonlocal phase, pending_interrupt_text, app_session, should_end_call_after_playback, pending_transfer_number
 
         if app_session is None:
             return
@@ -888,15 +1139,6 @@ async def twilio_media_ws(websocket: WebSocket):
             )
             stream_session.active_trace = trace
 
-            _debug_log(
-                "[COMMITTED USER TURN]",
-                {
-                    "stream_sid": stream_session.stream_sid,
-                    "text": cleaned,
-                    "turn_index": stream_session.turn_index,
-                },
-            )
-
             turn_output = app.state.engine.process_turn(
                 session=app_session,
                 user_text=cleaned,
@@ -906,28 +1148,60 @@ async def twilio_media_ws(websocket: WebSocket):
             save_session(app_session)
 
             _trace_set_attr(trace, "responder_start_monotonic", time.perf_counter())
-            internal_response_text, spoken_response_text = _build_response_texts(
-                turn_output=turn_output,
-                app_session=app_session,
-            )
+            internal_response_text, spoken_response_text = _build_response_texts(turn_output)
             _trace_set_attr(trace, "responder_end_monotonic", time.perf_counter())
             _trace_set_attr(trace, "response_key", turn_output.response_key)
             _trace_set_attr(trace, "response_text", internal_response_text)
             _trace_set_attr(trace, "spoken_response_text", spoken_response_text)
+            _trace_set_attr(
+                trace,
+                "end_call_after_playback",
+                bool(getattr(turn_output, "end_call_after_playback", False)),
+            )
 
-            should_end_call_after_playback = turn_output.response_key == "order_completed"
+            should_end_call_after_playback = bool(
+                getattr(turn_output, "end_call_after_playback", False)
+            )
+            pending_transfer_number = (
+                getattr(turn_output, "transfer_call_to_number", None) or None
+            )
 
-            _debug_log(
-                "[BOT RESPONSE TEXT]",
+            print(
+                "[TURN OUTPUT]",
                 {
-                    "stream_sid": stream_session.stream_sid,
-                    "internal_text": internal_response_text,
-                    "spoken_text": spoken_response_text,
+                    "response_key": turn_output.response_key,
+                    "session_state": getattr(app_session, "conversation_state", None),
                     "end_call_after_playback": should_end_call_after_playback,
+                    "pending_transfer_number": pending_transfer_number,
                 },
             )
 
-            await speak_response_text(spoken_response_text, trace=trace)
+            if pending_transfer_number:
+                target = pending_transfer_number
+                pending_transfer_number = None
+                should_end_call_after_playback = False
+                print(
+                    "[TURN OUTPUT] Initiating immediate transfer handoff",
+                    {
+                        "target": target,
+                        "call_sid": stream_session.call_sid,
+                    },
+                )
+                await _transfer_live_call(target)
+                return
+
+            await speak_response_text(
+                spoken_response_text,
+                trace=trace,
+                end_call_after_playback=should_end_call_after_playback,
+            )
+
+            # Arm the silent auto-confirm probe when a payment/checkout
+            # link has just been spoken.  The probe fires after
+            # PAYMENT_AUTO_CHECK_DELAY_SECONDS and re-arms itself while
+            # the order remains unpaid — no user input required.
+            if turn_output.response_key in PAYMENT_LINK_SENT_KEYS:
+                await _schedule_payment_auto_check()
 
             if pending_interrupt_text and phase == RealtimePhase.LISTENING:
                 buffered = pending_interrupt_text
@@ -936,15 +1210,6 @@ async def twilio_media_ws(websocket: WebSocket):
 
     async def on_dg_transcript(transcript: str, is_final: bool, payload: dict) -> None:
         committed = controller.on_transcript(transcript, is_final)
-
-        _debug_transcript_log(
-            "[DEEPGRAM TRANSCRIPT]",
-            {
-                "stream_sid": stream_session.stream_sid,
-                "type": "FINAL" if is_final else "INTERIM",
-                "text": transcript,
-            },
-        )
 
         if is_final:
             stream_session.last_dg_final_transcript_monotonic = time.perf_counter()
@@ -962,15 +1227,6 @@ async def twilio_media_ws(websocket: WebSocket):
     async def on_dg_event(name: str, payload: dict) -> None:
         nonlocal phase, bot_playback_started_at
 
-        _debug_log(
-            "[DEEPGRAM EVENT]",
-            {
-                "stream_sid": stream_session.stream_sid,
-                "event": name,
-                "payload": payload,
-            },
-        )
-
         if name == "message:SpeechStarted":
             controller.on_speech_started()
             now = time.perf_counter()
@@ -982,13 +1238,6 @@ async def twilio_media_ws(websocket: WebSocket):
 
             if phase == RealtimePhase.SPEAKING:
                 if disable_barge_in:
-                    _debug_log(
-                        "[BARGE_IN IGNORED]",
-                        {
-                            "stream_sid": stream_session.stream_sid,
-                            "reason": "disabled",
-                        },
-                    )
                     return
 
                 guard_now = time.monotonic()
@@ -996,28 +1245,9 @@ async def twilio_media_ws(websocket: WebSocket):
                     bot_playback_started_at is not None
                     and guard_now - bot_playback_started_at < bot_barge_in_guard_seconds
                 ):
-                    _debug_log(
-                        "[BARGE_IN IGNORED]",
-                        {
-                            "stream_sid": stream_session.stream_sid,
-                            "reason": "guard_window",
-                            "elapsed_ms": round(
-                                (guard_now - bot_playback_started_at) * 1000.0,
-                                1,
-                            ),
-                        },
-                    )
                     return
 
                 await _interrupt_bot_playback(reason="user_speech_started")
-
-            elif phase == RealtimePhase.PROCESSING:
-                _debug_log(
-                    "[USER_SPEECH_DURING_PROCESSING]",
-                    {
-                        "stream_sid": stream_session.stream_sid,
-                    },
-                )
 
         elif name == "message:UtteranceEnd":
             committed = controller.on_utterance_end()
@@ -1034,18 +1264,6 @@ async def twilio_media_ws(websocket: WebSocket):
             },
         )
 
-        if stream_session.active_trace is not None:
-            _trace_add_note(
-                trace=stream_session.active_trace,
-                key="deepgram_error_event",
-                value=name,
-            )
-            _trace_add_note(
-                trace=stream_session.active_trace,
-                key="deepgram_error_payload",
-                value=payload,
-            )
-
     async def _start_stt_client_in_background() -> bool:
         nonlocal dg_stt_started
 
@@ -1055,12 +1273,7 @@ async def twilio_media_ws(websocket: WebSocket):
         try:
             await dg_stt_client.start()
             dg_stt_started = True
-            print(
-                "[DEEPGRAM STT CONNECTED]",
-                {
-                    "stream_sid": stream_session.stream_sid,
-                },
-            )
+            print("[DEEPGRAM STT CONNECTED]", {"stream_sid": stream_session.stream_sid})
             return True
         except Exception as exc:
             print(
@@ -1075,12 +1288,7 @@ async def twilio_media_ws(websocket: WebSocket):
     async def _connect_tts_in_background() -> bool:
         try:
             await dg_tts_client.connect()
-            print(
-                "[DEEPGRAM TTS CONNECTED]",
-                {
-                    "stream_sid": stream_session.stream_sid,
-                },
-            )
+            print("[DEEPGRAM TTS CONNECTED]", {"stream_sid": stream_session.stream_sid})
             return True
         except Exception as exc:
             print(
@@ -1096,13 +1304,23 @@ async def twilio_media_ws(websocket: WebSocket):
 
     try:
         while True:
-            raw_message = await websocket.receive_json()
+            try:
+                raw_message = await websocket.receive_json()
+            except RuntimeError as exc:
+                if websocket_close_requested and "WebSocket is not connected" in str(exc):
+                    print(
+                        "[WS CLOSED AFTER TRANSFER HANDOFF]",
+                        {
+                            "call_sid": stream_session.call_sid,
+                            "stream_sid": stream_session.stream_sid,
+                        },
+                    )
+                    break
+                raise
+
             event = raw_message.get("event")
 
-            if event == "connected":
-                _debug_log("[TWILIO WS CONNECTED]", raw_message)
-
-            elif event == "start":
+            if event == "start":
                 start = raw_message.get("start", {})
                 stream_session.call_sid = start.get("callSid")
                 stream_session.stream_sid = start.get("streamSid")
@@ -1148,48 +1366,22 @@ async def twilio_media_ws(websocket: WebSocket):
                 tts_connect_task = asyncio.create_task(_connect_tts_in_background())
 
                 if not welcome_sent:
+                    # Always ask the device-type question first via TTS.
+                    # The cached welcome audio still says "pickup or
+                    # delivery" and is no longer the right opener — the
+                    # very first thing we need to know is whether the
+                    # caller is on a landline (so we can hand off to a
+                    # human) or a mobile (so we can text payment links).
                     try:
-                        await speak_cached_welcome_audio()
-                        welcome_sent = True
-                    except Exception as exc:
-                        print(
-                            "[WELCOME STATIC AUDIO FAILED]",
-                            {
-                                "stream_sid": stream_session.stream_sid,
-                                "error": f"{type(exc).__name__}: {exc}",
-                            },
+                        await speak_response_text(
+                            "Welcome to Compass. Before we get started, "
+                            "are you calling from a landline or a mobile phone?"
                         )
-                        try:
-                            await speak_response_text(
-                                "Thank you for calling Compass. What would you like to order today?"
-                            )
-                            welcome_sent = True
-                        except Exception as fallback_exc:
-                            print(
-                                "[WELCOME TTS FAILED]",
-                                {
-                                    "stream_sid": stream_session.stream_sid,
-                                    "error": f"{type(fallback_exc).__name__}: {fallback_exc}",
-                                },
-                            )
-                            phase = RealtimePhase.LISTENING
                     finally:
+                        welcome_sent = True
                         disable_barge_in = False
 
-                stt_ready, tts_ready = await asyncio.gather(
-                    stt_connect_task,
-                    tts_connect_task,
-                )
-
-                _debug_log(
-                    "[VOICE STARTUP READY]",
-                    {
-                        "stream_sid": stream_session.stream_sid,
-                        "stt_connected": stt_ready,
-                        "tts_connected": tts_ready,
-                        "welcome_sent": welcome_sent,
-                    },
-                )
+                await asyncio.gather(stt_connect_task, tts_connect_task)
 
             elif event == "media":
                 media = raw_message.get("media", {})
@@ -1214,31 +1406,9 @@ async def twilio_media_ws(websocket: WebSocket):
                 if dg_stt_started and dg_stt_client is not None:
                     await dg_stt_client.send_audio(audio_bytes)
 
-                if stream_session.inbound_chunks % 50 == 0:
-                    _debug_media_log(
-                        "[TWILIO MEDIA PROGRESS]",
-                        {
-                            "stream_sid": stream_session.stream_sid,
-                            "chunks": stream_session.inbound_chunks,
-                            "payload_b64_chars": stream_session.inbound_bytes_b64,
-                            "audio_bytes": stream_session.inbound_audio_bytes,
-                            "track": media.get("track"),
-                            "chunk": media.get("chunk"),
-                            "timestamp": media.get("timestamp"),
-                        },
-                    )
-
             elif event == "mark":
                 mark = raw_message.get("mark", {})
                 mark_name = mark.get("name")
-
-                _debug_log(
-                    "[TWILIO MARK RECEIVED]",
-                    {
-                        "stream_sid": stream_session.stream_sid,
-                        "mark_name": mark_name,
-                    },
-                )
 
                 if active_mark_name and mark_name == active_mark_name:
                     active_mark_name = None
@@ -1261,6 +1431,27 @@ async def twilio_media_ws(websocket: WebSocket):
 
                     _finalize_active_trace(app=app, stream_session=stream_session)
 
+                    print(
+                        "[MARK HANDLER]",
+                        {
+                            "mark_name": mark_name,
+                            "pending_transfer_number": pending_transfer_number,
+                            "should_end_call_after_playback": should_end_call_after_playback,
+                            "session_state": getattr(app_session, "conversation_state", None),
+                        },
+                    )
+
+                    if pending_transfer_number:
+                        target = pending_transfer_number
+                        pending_transfer_number = None
+                        should_end_call_after_playback = False
+                        print(
+                            "[MARK HANDLER] Triggering transfer",
+                            {"target": target},
+                        )
+                        await _transfer_live_call(target)
+                        continue
+
                     if should_end_call_after_playback:
                         should_end_call_after_playback = False
                         await _end_live_call()
@@ -1272,28 +1463,15 @@ async def twilio_media_ws(websocket: WebSocket):
                         await process_committed_turn(buffered)
 
             elif event == "stop":
-                stop = raw_message.get("stop", {})
                 print(
                     "[TWILIO STREAM STOP]",
                     {
                         "call_sid": stream_session.call_sid,
                         "stream_sid": stream_session.stream_sid,
-                        "reason": stop,
-                        "chunks_received": stream_session.inbound_chunks,
-                        "payload_b64_chars": stream_session.inbound_bytes_b64,
-                        "audio_bytes": stream_session.inbound_audio_bytes,
-                        "outbound_audio_bytes": stream_session.outbound_audio_bytes,
-                        "outbound_media_messages": stream_session.outbound_media_messages,
                     },
                 )
 
                 if stream_session.active_trace is not None:
-                    _trace_add_note(stream_session.active_trace, "stream_stop", stop)
-                    _trace_add_note(
-                        stream_session.active_trace,
-                        "finalized_without_mark",
-                        True,
-                    )
                     _finalize_active_trace(app=app, stream_session=stream_session)
 
                 if dg_stt_client is not None:
@@ -1301,52 +1479,12 @@ async def twilio_media_ws(websocket: WebSocket):
 
                 break
 
-            else:
-                _debug_log("[TWILIO UNKNOWN EVENT]", raw_message)
-
     except WebSocketDisconnect:
-        print(
-            "[WS CLOSED]",
-            {
-                "call_sid": stream_session.call_sid,
-                "stream_sid": stream_session.stream_sid,
-                "chunks_received": stream_session.inbound_chunks,
-            },
-        )
-
         if stream_session.active_trace is not None:
-            _trace_add_note(stream_session.active_trace, "websocket_disconnect", True)
-            _trace_add_note(
-                stream_session.active_trace,
-                "finalized_without_mark",
-                True,
-            )
             _finalize_active_trace(app=app, stream_session=stream_session)
-
-    except Exception as exc:
-        print(
-            "[WS ERROR]",
-            {
-                "call_sid": stream_session.call_sid,
-                "stream_sid": stream_session.stream_sid,
-                "error": str(exc),
-            },
-        )
-
-        if stream_session.active_trace is not None:
-            _trace_add_note(stream_session.active_trace, "websocket_error", str(exc))
-            _trace_add_note(
-                stream_session.active_trace,
-                "finalized_without_mark",
-                True,
-            )
-            _finalize_active_trace(app=app, stream_session=stream_session)
-
-        try:
-            await websocket.close()
-        except Exception:
-            pass
     finally:
+        if _payment_check_task is not None and not _payment_check_task.done():
+            _payment_check_task.cancel()
         if dg_stt_client is not None:
             await dg_stt_client.close()
         await dg_tts_client.close()

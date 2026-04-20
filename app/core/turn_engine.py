@@ -9,6 +9,7 @@ from typing import Any
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.core.flow_control.flow_decision import FlowAction
 from app.core.flow_control.flow_control_policy import FlowControlPolicy
+from app.core.response_builder import ResponseBuilder
 from app.logging.nlu_csv_logger import NluCsvLogger
 from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository
@@ -18,12 +19,28 @@ from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.nlu_resolver import resolve_nlu
 from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
+from app.services.checkout_service import CheckoutService
+from app.services.sms_service import SmsSendRequest, SmsSendResult, SmsService
 from app.session.session import Session
-from app.state_machine.conversation_state import ConversationState
+from app.state_machine.handlers.delivery.waiting_for_delivery_address_collection_handler import (
+    WaitingForDeliveryAddressCollectionHandler,
+)
+from app.state_machine.handlers.delivery.waiting_for_delivery_eligibility_handler import (
+    WaitingForDeliveryEligibilityHandler,
+)
+from app.state_machine.handlers.payment.waiting_for_checkout_completion_handler import (
+    WaitingForCheckoutCompletionHandler,
+)
+from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.cart.cart_handlers import CartHandler
 from app.state_machine.handlers.common.cancellation_confirmation_handler import (
     CancellationConfirmationHandler,
+)
+from app.state_machine.handlers.order.waiting_for_order_type_handler import WaitingForOrderTypeHandler
+from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
+    HUMAN_AGENT_TRANSFER_NUMBER,
+    WaitingForCallerDeviceTypeHandler,
 )
 from app.state_machine.handlers.common.waiting_for_quantity_handler import (
     WaitingForQuantityHandler,
@@ -44,10 +61,12 @@ from app.state_machine.handlers.item.add_item.waiting_for_size_handler import (
     WaitingForSizeHandler,
 )
 from app.state_machine.handlers.item.confirming_handler import ConfirmingHandler
+from app.state_machine.handlers.item.modifying_item_handler import ModifyingItemHandler
 from app.state_machine.handlers.item.remove_item_handler import RemoveItemHandler
 from app.state_machine.handlers.item.removing_item_handler import RemovingItemHandler
 from app.state_machine.handlers.order.confirm_order_handler import ConfirmOrderHandler
 from app.state_machine.handlers.order.start_order_handler import StartOrderHandler
+from app.state_machine.handlers.payment.payment_flow_support import verify_payment_for_order
 from app.state_machine.handlers.payment.waiting_for_payment_handler import (
     WaitingForPaymentHandler,
 )
@@ -61,6 +80,11 @@ class TurnOutput:
     response_payload: dict[str, Any] | None = None
     internal_response_text: str | None = None
     spoken_response_text: str | None = None
+    end_call_after_playback: bool = False
+    # If set, the voice transport layer should redirect the live call to
+    # this PSTN number after the spoken response finishes playing. Used
+    # to hand landline callers off to a human agent.
+    transfer_call_to_number: str | None = None
 
 
 INTENT_MIN_CONF = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
@@ -70,6 +94,9 @@ ROUTE_DEBUG_ENABLED = os.getenv("COMPASS_ROUTE_DEBUG_ENABLED", "0") == "1"
 CONFIRMING_ORDER_EXIT_TO_IDLE_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
     Intent.REMOVE_ITEM,
+    Intent.REPLACE_ITEM,
+    Intent.MODIFY_ITEM,
+    Intent.UNDO_LAST,
     Intent.ASK_ITEM_INFO,
     Intent.ASK_MENU_INFO,
     Intent.ASK_OPTIONS,
@@ -95,25 +122,40 @@ WAITING_STATE_ALLOWED_CONTROL_INTENTS = {
     Intent.BROWSE_CATEGORY,
     Intent.RECOMMENDATION_QUERY,
     Intent.SHOW_MENU,
+    # allow true task-switch requests to reach the waiting handlers
+    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,
+    Intent.MODIFY_ITEM,
 }
 
+DELIVERY_GATING_ALLOWED_CONTROL_INTENTS = {
+    Intent.AFFIRM,
+    Intent.CONFIRM,
+    Intent.DENY,
+    Intent.CANCEL,
+    Intent.CANCEL_ORDER,
+    # Ordering intents pass through so handlers can redirect gracefully
+    # instead of treating food names as delivery area / zip input.
+    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,
+    Intent.MODIFY_ITEM,
+    Intent.SHOW_MENU,
+    Intent.ASK_MENU_INFO,
+    Intent.ASK_PRICE,
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+}
+
+
 class TurnEngine:
-    """
-    Stateless turn processor.
-
-    Orchestration only:
-      input -> preprocess -> NLU -> flow guard -> route -> handler -> commands -> response
-
-    The optional ``trace`` argument is intentionally duck-typed so the engine can enrich
-    realtime latency traces without taking a hard dependency on a specific logger model.
-    """
-
     def __init__(
         self,
         router: StateRouter,
         menu_repo: MenuRepository,
         intent_bundle: IntentBundle,
         slot_bundle: SlotBundle,
+        responder: ResponseBuilder,
+        sms_service: SmsService,
         nlu_logger: NluCsvLogger | None = None,
     ) -> None:
         self.router = router
@@ -124,6 +166,9 @@ class TurnEngine:
         self.flow_policy = FlowControlPolicy()
         self.nlu_logger = nlu_logger or NluCsvLogger()
         self.resume_prompt_builder = ResumePromptBuilder()
+        self.responder = responder
+        self.sms_service = sms_service
+        self.checkout_service = CheckoutService()
 
         self.handlers: dict[str, Any] = {
             "add_item_handler": AddItemHandler(menu_repo=menu_repo),
@@ -133,15 +178,33 @@ class TurnEngine:
             "waiting_for_side_size_handler": WaitingForSideSizeHandler(menu_repo),
             "waiting_for_quantity_handler": WaitingForQuantityHandler(),
             "confirming_handler": ConfirmingHandler(menu_repo),
+            "modifying_item_handler": ModifyingItemHandler(menu_repo),
             "remove_item_handler": RemoveItemHandler(menu_repo),
             "removing_item_handler": RemovingItemHandler(),
             "start_order_handler": StartOrderHandler(self.cart_summary_builder),
-            "confirming_order_handler": ConfirmOrderHandler(self.cart_summary_builder),
-            "waiting_for_payment_handler": WaitingForPaymentHandler(),
+            "confirming_order_handler": ConfirmOrderHandler(
+                self.cart_summary_builder,
+                self.sms_service,
+                self.checkout_service,
+            ),
+            "waiting_for_payment_handler": WaitingForPaymentHandler(
+                self.cart_summary_builder,
+                self.checkout_service,
+            ),
+            "waiting_for_checkout_completion_handler": WaitingForCheckoutCompletionHandler(
+                self.checkout_service,
+            ),
             "cart_handler": CartHandler(self.cart_summary_builder),
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
+            "waiting_for_caller_device_type_handler": WaitingForCallerDeviceTypeHandler(),
+            "waiting_for_order_type_handler": WaitingForOrderTypeHandler(),
+            "waiting_for_delivery_eligibility_handler": WaitingForDeliveryEligibilityHandler(),
+            "waiting_for_delivery_address_collection_handler": WaitingForDeliveryAddressCollectionHandler(
+                self.cart_summary_builder,
+                self.checkout_service,
+            ),
         }
 
     def process_turn(
@@ -151,8 +214,110 @@ class TurnEngine:
         trace: Any | None = None,
     ) -> TurnOutput:
         t_total_start = time.perf_counter()
-
         ctx = session.conversation_context
+
+        if session.conversation_state == ConversationState.COMPLETED:
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key="order_completed",
+                    response_payload=session.last_response_payload,
+                    end_call_after_playback=True,
+                ),
+            )
+
+        # Once a landline caller has been handed off to a human agent the
+        # voice transport layer will tear down the WebSocket / call. If a
+        # spurious turn still arrives in this state we just acknowledge
+        # and tell the bridge to end the agent's side of the call.
+        if session.conversation_state == ConversationState.TRANSFERRING_TO_HUMAN_AGENT:
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key="transferring_to_human_agent",
+                    response_payload={
+                        "transfer_number": HUMAN_AGENT_TRANSFER_NUMBER,
+                    },
+                    transfer_call_to_number=HUMAN_AGENT_TRANSFER_NUMBER,
+                    end_call_after_playback=True,
+                ),
+            )
+
+        # Caller-device-type gate. Must run BEFORE the order-type gate
+        # because landline callers are routed to a live human and never
+        # reach the pickup / delivery question.
+        if session.conversation_state == ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE:
+            device_handler: WaitingForCallerDeviceTypeHandler = self.handlers[
+                "waiting_for_caller_device_type_handler"
+            ]
+            device_result = device_handler.handle(
+                intent=Intent.UNKNOWN,
+                context=ctx,
+                user_text=user_text,
+                session=session,
+            )
+
+            session.conversation_state = device_result.next_state
+            self._apply_session_response(
+                session=session,
+                intent=Intent.UNKNOWN,
+                response_key=device_result.response_key,
+                response_payload=device_result.response_payload,
+            )
+
+            transfer_number: str | None = None
+            command = device_result.command or {}
+            if command.get("type") == "transfer_call":
+                transfer_number = command.get("transfer_number")
+
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=device_result.response_key,
+                    response_payload=device_result.response_payload,
+                    transfer_call_to_number=transfer_number,
+                    # Once we hand the call off there is nothing for the
+                    # voice agent to do, so end the agent leg cleanly
+                    # after the goodbye plays. The transfer command is
+                    # carried out by the transport layer and supersedes
+                    # a plain hangup if both are set.
+                    end_call_after_playback=transfer_number is not None,
+                ),
+            )
+
+        # Auto payment-check probe injected by the transport layer after
+        # PAYMENT_AUTO_CHECK_DELAY_SECONDS of silence.  Bypass NLU entirely
+        # and call the payment verifier directly — O(1) path, no model inference.
+        if user_text == "__auto_payment_check__":
+            return self._handle_auto_payment_check(session)
+
+        self._normalize_order_type_gate_state(session)
+
+        if session.conversation_state == ConversationState.WAITING_FOR_ORDER_TYPE:
+            handler: WaitingForOrderTypeHandler = self.handlers["waiting_for_order_type_handler"]
+            gate_result = handler.handle(
+                intent=Intent.UNKNOWN,
+                context=ctx,
+                user_text=user_text,
+                session=session,
+            )
+
+            session.conversation_state = gate_result.next_state
+            self._apply_session_response(
+                session=session,
+                intent=Intent.UNKNOWN,
+                response_key=gate_result.response_key,
+                response_payload=gate_result.response_payload,
+            )
+
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=gate_result.response_key,
+                    response_payload=gate_result.response_payload,
+                ),
+            )
+
         state_before = session.conversation_state
         ctx.last_user_text = user_text
 
@@ -197,13 +362,30 @@ class TurnEngine:
             raw_text=nlu.normalized_text,
         )
 
-        if session.conversation_state in {
+        delivery_gating_states = {
+            ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+            ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+        }
+
+        generic_waiting_states = {
             ConversationState.WAITING_FOR_SIDE,
             ConversationState.WAITING_FOR_SIDE_SIZE,
             ConversationState.WAITING_FOR_MODIFIER,
             ConversationState.WAITING_FOR_SIZE,
             ConversationState.WAITING_FOR_QUANTITY,
-        } and intent_result.intent not in WAITING_STATE_ALLOWED_CONTROL_INTENTS:
+        }
+
+        if session.conversation_state in delivery_gating_states:
+            allowed_control_intents = DELIVERY_GATING_ALLOWED_CONTROL_INTENTS
+        elif session.conversation_state in generic_waiting_states:
+            allowed_control_intents = WAITING_STATE_ALLOWED_CONTROL_INTENTS
+        else:
+            allowed_control_intents = set()
+
+        if (
+                session.conversation_state in delivery_gating_states | generic_waiting_states
+                and intent_result.intent not in allowed_control_intents
+        ):
             intent_result = IntentResult(
                 intent=Intent.UNKNOWN,
                 raw_text=nlu.normalized_text,
@@ -244,7 +426,10 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-            return shortcut_output
+            return self._hydrate_output(
+                session=session,
+                output=shortcut_output,
+            )
 
         intent_result = self._rewrite_idle_unknown_menu_followup(
             session=session,
@@ -292,9 +477,12 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-            return TurnOutput(
-                response_key=response_key,
-                response_payload=payload,
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=response_key,
+                    response_payload=payload,
+                ),
             )
 
         if flow.action == FlowAction.CANCEL:
@@ -334,9 +522,12 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
             )
-            return TurnOutput(
-                response_key=response_key,
-                response_payload=response_payload,
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key=response_key,
+                    response_payload=response_payload,
+                ),
             )
 
         if flow.action == FlowAction.HANDLE_READONLY_INTERRUPT:
@@ -418,9 +609,12 @@ class TurnEngine:
                 route_ms=t_route * 1000.0,
                 handler_ms=0.0,
             )
-            return TurnOutput(
-                response_key="intent_not_allowed",
-                response_payload=payload,
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(
+                    response_key="intent_not_allowed",
+                    response_payload=payload,
+                ),
             )
 
         handler = self.handlers.get(route.handler_name)
@@ -436,13 +630,106 @@ class TurnEngine:
         )
         t_handler = time.perf_counter() - t0
 
+        command_result: dict[str, Any] | None = None
+        transfer_number: str | None = None
+
         if result.command:
-            self._apply_command(session, result.command)
+            command_type = result.command.get("type")
+            if command_type == "transfer_call":
+                transfer_number = result.command.get("transfer_number")
+                command_result = {
+                    "ok": True,
+                    "transport_only": True,
+                    "transfer_number": transfer_number,
+                }
+            else:
+                command_result = self._apply_command(session, result.command)
+
+            print(
+                "[COMMAND RESULT]",
+                {
+                    "command": result.command,
+                    "result": command_result,
+                },
+            )
+
+            if not command_result.get("ok", False):
+                command_type = result.command.get("type")
+                command_payload = result.command.get("payload") or {}
+
+                if command_type == "SEND_SMS":
+                    template = command_payload.get("template")
+                    delivery = session.conversation_context.delivery_address
+                    attempts_made = int(command_result.get("attempts_made", 1) or 1)
+
+                    if template == "checkout_link":
+                        # _apply_command already retried internally.
+                        # If it still failed after those attempts, fall back to voice immediately.
+                        if attempts_made >= 2:
+                            delivery.source = "voice"
+                            session.conversation_context.current_prompt_field = "delivery_seed_confirmation"
+                            result = HandlerResult(
+                                next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+                                response_key="checkout_link_failed_fallback_voice",
+                                response_payload={
+                                    "area": delivery.area,
+                                    "postal_code": delivery.postal_code,
+                                    "order_number": delivery.order_number,
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
+                        else:
+                            result = HandlerResult(
+                                next_state=ConversationState.CONFIRMING_ORDER,
+                                response_key="checkout_link_send_failed",
+                                response_payload={
+                                    "order_number": delivery.order_number,
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
+
+                    elif template == "payment_link":
+                        # Payment-link flow also retried internally.
+                        # If still failed, apologize and stop progression.
+                        if attempts_made >= 2:
+                            result = HandlerResult(
+                                next_state=session.conversation_state,
+                                response_key="payment_link_unavailable_now",
+                                response_payload={
+                                    "order_number": delivery.order_number,
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
+                        else:
+                            result = HandlerResult(
+                                next_state=session.conversation_state,
+                                response_key="payment_link_send_failed",
+                                response_payload={
+                                    "order_number": delivery.order_number,
+                                    "error_code": command_result.get("error_code"),
+                                    "error_message": command_result.get("error_message"),
+                                },
+                            )
 
         if result.reset_context:
             ctx.reset()
 
         session.conversation_state = result.next_state
+
+        # ── Multi-item queue drain ────────────────────────────
+        # When an item was just added to cart and we return to IDLE,
+        # check if there are queued items from a multi-item utterance.
+        # If so, auto-start the next queued item.
+        queue_drain_result = self._try_drain_item_queue(
+            session=session,
+            current_result=result,
+        )
+        if queue_drain_result is not None:
+            result = queue_drain_result
+
         self._apply_session_response(
             session=session,
             intent=intent_result.intent,
@@ -473,11 +760,138 @@ class TurnEngine:
             command=result.command,
         )
 
-        return TurnOutput(
-            response_key=result.response_key,
-            response_payload=result.response_payload,
-            internal_response_text=getattr(result, "internal_response_text", None),
-            spoken_response_text=getattr(result, "spoken_response_text", None),
+        return self._hydrate_output(
+            session=session,
+            output=TurnOutput(
+                response_key=result.response_key,
+                response_payload=result.response_payload,
+                internal_response_text=getattr(result, "internal_response_text", None),
+                spoken_response_text=getattr(result, "spoken_response_text", None),
+                end_call_after_playback=(
+                    result.next_state == ConversationState.COMPLETED
+                    or transfer_number is not None
+                ),
+                transfer_call_to_number=transfer_number,
+            ),
+        )
+
+    def _try_drain_item_queue(
+        self,
+        *,
+        session: Session,
+        current_result: HandlerResult,
+    ) -> HandlerResult | None:
+        """
+        After an item is added to cart, check if there are queued items
+        from a multi-item utterance. If so, dequeue the next item and
+        start its add-item flow.
+
+        Returns a new HandlerResult if a queued item was started,
+        or None if no queue drain is needed.
+        """
+        ctx = session.conversation_context
+
+        # Only drain when item was just successfully added and we'd go to IDLE
+        if current_result.response_key != "item_added_successfully":
+            return None
+        if session.conversation_state != ConversationState.IDLE:
+            return None
+        if not ctx.pending_item_queue:
+            return None
+
+        # Pop the next item from the queue
+        next_item = ctx.pending_item_queue.pop(0)
+        remaining_count = len(ctx.pending_item_queue)
+
+        # Build the previous item's added summary
+        prev_payload = current_result.response_payload or {}
+        prev_item_name = prev_payload.get("item_name", "item")
+        prev_quantity = prev_payload.get("quantity", 1)
+
+        # Feed the queued item through AddItemHandler
+        add_handler: Any = self.handlers.get("add_item_handler")
+        if add_handler is None:
+            return None
+
+        # Set up context for the new item
+        ctx.reset_task()
+        ctx.pending_action = None
+
+        # Provide the queued item's quantity
+        if next_item.quantity and next_item.quantity > 0:
+            ctx.quantity = next_item.quantity
+
+        # Inject the preserved segment slots from multi-item parsing so
+        # that modifier/side/size prefilling has full NLU context.
+        # Falls back to a synthetic ITEM slot when no segment slots exist.
+        if next_item.segment_slots:
+            ctx.last_slots = next_item.segment_slots
+        elif next_item.item_slot_value:
+            from app.nlu.nlu_result import SlotValue as SlotValueClass
+            ctx.last_slots = (
+                SlotValueClass(
+                    name="ITEM",
+                    value=next_item.item_slot_value,
+                    raw=next_item.item_slot_value,
+                    start=None,
+                    end=None,
+                    confidence=1.0,
+                ),
+            )
+
+        # Run the handler with the queued item's text
+        from app.nlu.intent_resolution.intent import Intent as IntentEnum
+        next_result: HandlerResult = add_handler.handle(
+            intent=IntentEnum.ADD_ITEM,
+            context=ctx,
+            user_text=next_item.raw_text,
+            session=session,
+        )
+
+        # Apply any command from the next item (e.g., instant add)
+        if next_result.command:
+            self._apply_command(session, next_result.command)
+
+        if next_result.reset_context:
+            ctx.reset()
+
+        session.conversation_state = next_result.next_state
+
+        # Build a combined response: "Added X. Now for Y..."
+        next_payload = dict(next_result.response_payload or {})
+        next_payload["queue_transition"] = True
+        next_payload["prev_item_name"] = prev_item_name
+        next_payload["prev_quantity"] = prev_quantity
+        next_payload["next_item_name"] = next_item.item_slot_value or next_item.raw_text
+        next_payload["remaining_queue_count"] = remaining_count
+
+        # If the next item was also instantly added (all slots prefilled),
+        # recursively drain the queue
+        if next_result.response_key == "item_added_successfully" and ctx.pending_item_queue:
+            deeper = self._try_drain_item_queue(
+                session=session,
+                current_result=next_result,
+            )
+            if deeper is not None:
+                # Chain: "Added X. Added Y. Now for Z..."
+                deeper_payload = dict(deeper.response_payload or {})
+                deeper_payload["chain_prev_items"] = next_payload.get("chain_prev_items", []) + [
+                    {"name": prev_item_name, "quantity": prev_quantity}
+                ]
+                return HandlerResult(
+                    next_state=deeper.next_state,
+                    response_key=deeper.response_key,
+                    response_payload=deeper_payload,
+                    command=deeper.command,
+                    reset_context=False,
+                )
+
+        return HandlerResult(
+            next_state=next_result.next_state,
+            response_key=next_result.response_key,
+            response_payload=next_payload,
+            command=None,  # command already applied above
+            reset_context=False,
         )
 
     def _apply_session_response(
@@ -697,7 +1111,7 @@ class TurnEngine:
 
         return None
 
-    def _apply_command(self, session: Session, command: dict[str, Any]) -> None:
+    def _apply_command(self, session: Session, command: dict[str, Any]) -> dict[str, Any]:
         cmd_type = command.get("type")
         payload = command.get("payload") or {}
 
@@ -713,15 +1127,51 @@ class TurnEngine:
                 modifiers=payload.get("modifiers", {}),
             )
             session.cart.add_item(cart_item)
-            return
+            return {"ok": True}
 
         if cmd_type == "CLEAR_CART":
             session.cart.clear()
-            return
+            return {"ok": True}
 
         if cmd_type == "REMOVE_ITEM_FROM_CART":
             session.cart.remove_item(payload["cart_item_id"])
-            return
+            return {"ok": True}
+
+        if cmd_type == "SEND_SMS":
+            template = payload["template"]
+
+            sms_request = SmsSendRequest(
+                template=template,
+                phone_number=payload["phone_number"],
+                order_number=payload.get("order_number", ""),
+                link=payload.get("link", ""),
+                area=payload.get("area", ""),
+            )
+
+            sms_result: SmsSendResult | None = None
+            attempts_made = 0
+
+            for _ in range(2):
+                attempts_made += 1
+                sms_result = self.sms_service.send(sms_request)
+                if sms_result.ok:
+                    break
+
+            return {
+                "ok": bool(sms_result and sms_result.ok),
+                "sid": sms_result.sid if sms_result else None,
+                "error_code": sms_result.error_code if sms_result else "sms_send_failed",
+                "error_message": sms_result.error_message if sms_result else "SMS send failed.",
+                "template": template,
+                "attempts_made": attempts_made,
+            }
+
+        if cmd_type == "transfer_call":
+            return {
+                "ok": True,
+                "transport_only": True,
+                "transfer_number": command.get("transfer_number"),
+            }
 
         raise ValueError(f"Unknown command type: {cmd_type}")
 
@@ -784,12 +1234,7 @@ class TurnEngine:
                 normalized_text=getattr(nlu, "normalized_text", "") or "",
                 pred_main_intent=getattr(nlu, "model_main_intent", "") or "",
                 pred_sub_intent=getattr(nlu, "model_sub_intent", "") or "",
-                pred_intent=getattr(
-                    getattr(nlu, "effective_intent", None),
-                    "value",
-                    "",
-                )
-                or "",
+                pred_intent=getattr(getattr(nlu, "effective_intent", None), "value", "") or "",
                 pred_intent_confidence=getattr(nlu, "intent_confidence", None),
                 slot_model_ran=bool(getattr(nlu, "slot_model_ran", False)),
                 response_key=response_key,
@@ -967,7 +1412,6 @@ class TurnEngine:
         command: dict[str, Any] | None = None,
     ) -> None:
         engine_end = time.perf_counter()
-
         ctx = session.conversation_context
 
         self._trace_set_attr(trace, "response_key", response_key)
@@ -983,11 +1427,7 @@ class TurnEngine:
         self._trace_set_attr(trace, "flow_ms", round(flow_ms, 3))
         self._trace_set_attr(trace, "route_ms", round(route_ms, 3))
         self._trace_set_attr(trace, "handler_ms", round(handler_ms, 3))
-        self._trace_set_attr(
-            trace,
-            "engine_total_ms",
-            round((engine_end - total_start_monotonic) * 1000.0, 3),
-        )
+        self._trace_set_attr(trace, "engine_total_ms", round((engine_end - total_start_monotonic) * 1000.0, 3))
         if command is not None:
             self._trace_set_attr(trace, "command", command)
 
@@ -998,3 +1438,130 @@ class TurnEngine:
             setattr(trace, attr_name, value)
         except Exception:
             return
+
+    def _handle_auto_payment_check(self, session: Session) -> TurnOutput:
+        """Verify payment status without going through the NLU pipeline.
+
+        Called when the transport layer fires the ``__auto_payment_check__``
+        sentinel.  Only meaningful in WAITING_FOR_PAYMENT and
+        WAITING_FOR_CHECKOUT_COMPLETION states; all other states return a
+        silent no-op so the call flow is never disrupted.
+        """
+        ctx = session.conversation_context
+        state = session.conversation_state
+
+        if state == ConversationState.WAITING_FOR_PAYMENT:
+            pending_state = ConversationState.WAITING_FOR_PAYMENT
+            pending_key = "waiting_for_payment"
+        elif state == ConversationState.WAITING_FOR_CHECKOUT_COMPLETION:
+            pending_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
+            pending_key = "waiting_for_checkout_completion"
+        else:
+            # State changed between scheduling and firing — do nothing.
+            return self._hydrate_output(
+                session=session,
+                output=TurnOutput(response_key=session.last_response_key or "waiting_for_payment"),
+            )
+
+        delivery = ctx.delivery_address
+        order_number = getattr(delivery, "order_number", None)
+
+        result = verify_payment_for_order(
+            checkout_service=self.checkout_service,
+            order_number=order_number,
+            pending_state=pending_state,
+            pending_response_key=pending_key,
+        )
+
+        if result.reset_context:
+            ctx.reset()
+        if result.command:
+            self._apply_command(session, result.command)
+
+        session.conversation_state = result.next_state
+        self._apply_session_response(
+            session=session,
+            intent=Intent.PAYMENT_STATUS,
+            response_key=result.response_key,
+            response_payload=result.response_payload,
+        )
+
+        return self._hydrate_output(
+            session=session,
+            output=TurnOutput(
+                response_key=result.response_key,
+                response_payload=result.response_payload,
+                end_call_after_playback=(result.next_state == ConversationState.COMPLETED),
+            ),
+        )
+
+    def _order_type_required(self, session: Session) -> bool:
+        ctx = session.conversation_context
+        return ctx.order_type not in {"pickup", "delivery"}
+
+    def _normalize_order_type_gate_state(self, session: Session) -> None:
+        if session.conversation_state == ConversationState.COMPLETED:
+            return
+        # Don't clobber the device-type gate or the human-handoff state.
+        if session.conversation_state in {
+            ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
+            ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
+            ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
+        }:
+            return
+        if self._order_type_required(session):
+            session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+
+    def _combine_order_type_and_followup_response(
+        self,
+        *,
+        order_type_key: str,
+        followup_output: TurnOutput,
+    ) -> TurnOutput:
+        prefix = "Got it. Pickup." if order_type_key == "order_type_captured_pickup" else "Got it. Delivery."
+
+        if followup_output.spoken_response_text:
+            spoken = f"{prefix} {followup_output.spoken_response_text}"
+        else:
+            spoken = None
+
+        internal = spoken
+
+        return TurnOutput(
+            response_key=followup_output.response_key,
+            response_payload=followup_output.response_payload,
+            internal_response_text=internal,
+            spoken_response_text=spoken,
+        )
+
+    @staticmethod
+    def _normalize_response_text(text: str | None) -> str:
+        return " ".join((text or "").split()).strip()
+
+    def _hydrate_output(
+        self,
+        *,
+        session: Session,
+        output: TurnOutput,
+    ) -> TurnOutput:
+        internal_text = self._normalize_response_text(
+            output.internal_response_text
+            or self.responder.build(
+                response_key=output.response_key,
+                context=session.conversation_context,
+                payload=output.response_payload,
+            )
+        )
+
+        spoken_text = self._normalize_response_text(
+            output.spoken_response_text or internal_text
+        )
+
+        return TurnOutput(
+            response_key=output.response_key,
+            response_payload=output.response_payload,
+            internal_response_text=internal_text,
+            spoken_response_text=spoken_text,
+            end_call_after_playback=output.end_call_after_playback,
+            transfer_call_to_number=output.transfer_call_to_number,
+        )
