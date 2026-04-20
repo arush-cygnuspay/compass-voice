@@ -950,12 +950,20 @@ class CheckoutService:
         logger.info("Payment completed for order %s (token=%s)", order_number, session.token)
 
         if session.customer_phone_number:
+            # Prefer the actual payment/checkout link over the static
+            # restaurant website so the customer can track their order.
+            latest_payment = self._find_latest_payment_link_session(session.token)
+            order_link = (
+                (latest_payment.public_link_url if latest_payment else None)
+                or session.confirmation_link
+                or ""
+            )
             sms_result = self.sms_service.send(
                 SmsSendRequest(
                     template="order_confirmation",
                     phone_number=session.customer_phone_number,
                     order_number=order_number,
-                    link=session.confirmation_link or "",
+                    link=order_link,
                 )
             )
             if sms_result.ok:
@@ -1038,6 +1046,10 @@ class CheckoutService:
         latest_payment_link = self._find_latest_payment_link_session(checkout_session.token)
         if latest_payment_link and latest_payment_link.public_link_url:
             delivery.payment_link = latest_payment_link.public_link_url
+            # Keep confirmation_link in sync with the actual checkout
+            # URL so voice responses reference the real link, not the
+            # static restaurant website.
+            delivery.confirmation_link = latest_payment_link.public_link_url
 
         if checkout_session.address_completed:
             delivery.source = "sms_form"

@@ -10,11 +10,13 @@ from app.menu.query_result import MenuQueryResult, MenuQueryType
 from app.menu.repository import MenuRepository
 from app.menu.slot_helpers import first_slot_value
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.multi_item_parser import parse_multi_item_utterance, ParsedItemSegment
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
+from app.state_machine.models.pending_item_models import QueuedItemRequest
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.item.add_item.add_item_flow import (
@@ -86,6 +88,33 @@ class AddItemHandler(BaseHandler):
 
         normalized_user_text = self._normalize_item_request_text(user_text)
         slots = self._get_last_slots(context)
+
+        # ── Multi-item detection ──────────────────────────────
+        # If the user said multiple items in one go, queue the extras
+        # and process only the first item now.
+        multi_segments = parse_multi_item_utterance(normalized_user_text, slots)
+        if len(multi_segments) >= 2:
+            return self._handle_multi_item_utterance(
+                context=context,
+                segments=multi_segments,
+                full_user_text=normalized_user_text,
+            )
+
+        # ── Single-item path (unchanged) ─────────────────────
+        return self._handle_single_item(
+            context=context,
+            normalized_user_text=normalized_user_text,
+            slots=slots,
+        )
+
+    def _handle_single_item(
+        self,
+        *,
+        context: ConversationContext,
+        normalized_user_text: str,
+        slots: tuple[SlotValue, ...] | list[SlotValue],
+    ) -> HandlerResult:
+        """Original single-item add flow."""
         item_slot_value = first_slot_value(slots, "ITEM", "MENU_ITEM")
         category_slot_value = first_slot_value(slots, "CATEGORY", "MENU_CATEGORY")
 
@@ -124,6 +153,121 @@ class AddItemHandler(BaseHandler):
             original_user_text=normalized_user_text,
             slots=slots,
         )
+
+    def _handle_multi_item_utterance(
+        self,
+        *,
+        context: ConversationContext,
+        segments: list[ParsedItemSegment],
+        full_user_text: str,
+    ) -> HandlerResult:
+        """
+        Handle a multi-item utterance.
+
+        Strategy:
+        1. Queue all items after the first one (preserving their slots).
+        2. Build an acknowledgment summary of everything heard (with details).
+        3. Start the add-item flow for the first item.
+        """
+        first_segment = segments[0]
+        remaining_segments = segments[1:]
+
+        # Queue the remaining items — preserve segment slots for better
+        # modifier/side prefilling when dequeued.
+        context.pending_item_queue = [
+            QueuedItemRequest(
+                raw_text=seg.raw_text,
+                item_slot_value=seg.item_slot_value,
+                quantity=seg.quantity,
+                acknowledged=False,
+                segment_slots=seg.slots or (),
+            )
+            for seg in remaining_segments
+        ]
+
+        # Build detailed summary of what we heard (include modifiers/sides)
+        item_summaries = []
+        for seg in segments:
+            item_summaries.append(self._build_segment_summary(seg))
+
+        # Now process the first item through the normal single-item flow
+        first_slots = first_segment.slots if first_segment.slots else self._get_last_slots(context)
+
+        context.reset_task()
+        context.pending_action = PendingAction.ADD_ITEM
+        context.awaiting_flow_confirmation = False
+        context.interrupt_proposal = None
+        context.awaiting_confirmation_for = None
+
+        if first_segment.quantity and first_segment.quantity > 0:
+            context.quantity = first_segment.quantity
+
+        # Resolve the first item
+        first_text = first_segment.raw_text
+        item_slot_value = first_segment.item_slot_value
+        category_slot_value = first_slot_value(first_slots, "CATEGORY", "MENU_CATEGORY")
+
+        if item_slot_value:
+            result = self.menu_repo.resolve_menu_query_from_slots_normalized(
+                normalized_user_text=first_text,
+                slots=first_slots,
+                fallback_to_text=True,
+                limit=5,
+            )
+            requested_item_text = normalize_text(item_slot_value)
+        else:
+            result = self.menu_repo.resolve_menu_query_normalized(first_text, limit=5)
+            requested_item_text = first_text
+
+        handler_result = self._route_menu_query_result(
+            context=context,
+            result=result,
+            requested_item_text=requested_item_text,
+            original_user_text=first_text,
+            slots=first_slots,
+        )
+
+        # Wrap the response with a multi-item acknowledgment prefix
+        queue_count = len(context.pending_item_queue)
+        payload = dict(handler_result.response_payload or {})
+        payload["multi_item_ack"] = True
+        payload["heard_items_summary"] = item_summaries
+        payload["queue_count"] = queue_count
+        payload["current_item_name"] = first_segment.item_slot_value or payload.get("item_name", "")
+        payload["queued_item_names"] = [
+            seg.item_slot_value or seg.raw_text for seg in remaining_segments
+        ]
+
+        return HandlerResult(
+            next_state=handler_result.next_state,
+            response_key=handler_result.response_key,
+            response_payload=payload,
+            command=handler_result.command,
+            reset_context=handler_result.reset_context,
+        )
+
+    @staticmethod
+    def _build_segment_summary(seg: ParsedItemSegment) -> str:
+        """Build a spoken summary like '2 chicken tacos with coke and bacon'."""
+        qty_prefix = f"{seg.quantity} " if seg.quantity and seg.quantity > 1 else ""
+        item_name = seg.item_slot_value or ""
+
+        # Extract detail tokens from raw_text that are NOT the item name
+        # e.g. "chicken taco with coke and extra american cheese" → "with coke and extra american cheese"
+        raw = (seg.raw_text or "").strip()
+        detail_suffix = ""
+        if item_name and raw:
+            norm_item = normalize_text(item_name)
+            norm_raw = normalize_text(raw)
+            # Strip quantity prefix from raw for matching
+            stripped = re.sub(r"^\d+\s+", "", norm_raw).strip()
+            idx = stripped.find(norm_item)
+            if idx >= 0:
+                after = stripped[idx + len(norm_item):].strip()
+                if after:
+                    detail_suffix = f" {after}"
+
+        return f"{qty_prefix}{item_name}{detail_suffix}".strip() or raw
 
     def _route_menu_query_result(
         self,
@@ -269,6 +413,9 @@ class AddItemHandler(BaseHandler):
             normalized_user_text=user_text,
         )
 
+        # Build a spoken summary of everything that was pre-captured
+        prefilled_summary = self._build_prefilled_summary(context)
+
         step = determine_next_add_item_step(context)
 
         if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
@@ -278,16 +425,78 @@ class AddItemHandler(BaseHandler):
                 response_payload={
                     "item_name": item.name,
                     "quantity": context.quantity or 1,
+                    "prefilled_summary": prefilled_summary,
                 },
                 command=build_add_item_command(context),
                 reset_context=True,
             )
 
+        payload = dict(step.response_payload or {})
+        if prefilled_summary:
+            payload["prefilled_summary"] = prefilled_summary
+            payload["prefilled_item_name"] = item.name
+
         return HandlerResult(
             next_state=step.next_state,
             response_key=step.response_key,
-            response_payload=step.response_payload,
+            response_payload=payload,
         )
+
+    @staticmethod
+    def _build_prefilled_summary(context: ConversationContext) -> str:
+        """
+        Build a short spoken summary of what was auto-captured from the
+        user's utterance, e.g. "with Coke, extra Cheese, Bacon".
+
+        Returns empty string if nothing was prefilled.
+        """
+        pending = context.pending_add_item
+        if pending is None:
+            return ""
+
+        parts: list[str] = []
+
+        # Variant / size
+        if context.selected_variant_id and pending.item_variants_by_id:
+            variant = pending.item_variants_by_id.get(context.selected_variant_id)
+            if variant:
+                parts.append(variant.name)
+
+        # Side items
+        for group in pending.side_groups:
+            selected_ids = context.selected_side_groups.get(group.group_id, [])
+            for sid in selected_ids:
+                choice = group.choices_by_item_id.get(sid)
+                if choice:
+                    # Include side size if also prefilled
+                    side_variant_id = context.selected_side_variants.get(sid)
+                    if side_variant_id and choice.variants_by_id:
+                        sv = choice.variants_by_id.get(side_variant_id)
+                        if sv:
+                            parts.append(f"{sv.name} {choice.name}")
+                            continue
+                    parts.append(choice.name)
+
+        # Modifiers
+        for group in pending.modifier_groups:
+            for sel in context.selected_modifier_groups.get(group.group_id, []):
+                if sel.action == "remove":
+                    parts.append(f"no {sel.name}")
+                elif sel.instruction == "extra":
+                    parts.append(f"extra {sel.name}")
+                elif sel.instruction == "less":
+                    parts.append(f"less {sel.name}")
+                else:
+                    parts.append(sel.name)
+
+        if not parts:
+            return ""
+
+        if len(parts) == 1:
+            return f"with {parts[0]}"
+        if len(parts) == 2:
+            return f"with {parts[0]} and {parts[1]}"
+        return f"with {', '.join(parts[:-1])}, and {parts[-1]}"
 
     def _prefill_side_groups(
         self,

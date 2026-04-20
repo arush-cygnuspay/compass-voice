@@ -134,7 +134,7 @@ class SmsService:
                 f"Thank you for ordering with us. 🙏"
             )
             if request.link:
-                body += f"\n\nTrack your order here:\n{request.link}"
+                body += f"\n\nView your order here:\n{request.link}"
             return body
 
         raise ValueError(f"Unsupported SMS template: {request.template}")

@@ -5,12 +5,12 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Optional
 
 from app.core.pending_action import PendingAction
-from app.nlu.nlu_result import NLUResult
+from app.nlu.nlu_result import NLUResult, SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.models.delivery_address import DeliveryAddress
 from app.state_machine.models.pending_item_models import PendingVariantChoice, PendingSideChoice, PendingModifierChoice, \
-    PendingSideGroup, PendingModifierGroup, PendingAddItem, InterruptProposal, ModifierSelection
+    PendingSideGroup, PendingModifierGroup, PendingAddItem, InterruptProposal, ModifierSelection, QueuedItemRequest
 
 
 def _append_bucket_value(mapping: dict[str, list[Any]], key: str, value: Any) -> None:
@@ -262,6 +262,23 @@ def _pending_add_item_from_dict(data: dict) -> PendingAddItem:
     )
 
 
+def _deserialize_segment_slots(slot_list: list[dict]) -> tuple:
+    """Rebuild a tuple of SlotValue from serialised dicts."""
+    if not slot_list:
+        return ()
+    result = []
+    for s in slot_list:
+        result.append(SlotValue(
+            name=s.get("name", ""),
+            value=s.get("value", ""),
+            raw=s.get("raw", ""),
+            start=s.get("start"),
+            end=s.get("end"),
+            confidence=s.get("confidence"),
+        ))
+    return tuple(result)
+
+
 def _modifier_selection_to_dict(value: ModifierSelection) -> dict:
     return {
         "modifier_id": value.modifier_id,
@@ -323,6 +340,9 @@ class ConversationContext:
 
     pending_add_item: Optional[PendingAddItem] = None
 
+    # Multi-item queue: items waiting to be processed after the current one completes
+    pending_item_queue: list[QueuedItemRequest] = field(default_factory=list)
+
     order_type: Optional[str] = None
     delivery_address_required: bool = False
     delivery_address_confirmed: bool = False
@@ -382,8 +402,12 @@ class ConversationContext:
         self.group_prompt_cursors.clear()
         self.group_multi_select_announced.clear()
 
+    def clear_item_queue(self) -> None:
+        self.pending_item_queue.clear()
+
     def reset_all(self) -> None:
         self.reset_task()
+        self.pending_item_queue.clear()
         self.last_user_text = None
         self.last_nlu = None
         self.last_intent_confidence = None
@@ -424,6 +448,26 @@ class ConversationContext:
             "awaiting_flow_confirmation": self.awaiting_flow_confirmation,
             "interrupt_proposal": self.interrupt_proposal.to_dict() if self.interrupt_proposal else None,
             "pending_add_item": _pending_add_item_to_dict(self.pending_add_item) if self.pending_add_item else None,
+            "pending_item_queue": [
+                {
+                    "raw_text": item.raw_text,
+                    "item_slot_value": item.item_slot_value,
+                    "quantity": item.quantity,
+                    "acknowledged": item.acknowledged,
+                    "segment_slots": [
+                        {
+                            "name": getattr(s, "name", ""),
+                            "value": getattr(s, "value", ""),
+                            "raw": getattr(s, "raw", ""),
+                            "start": getattr(s, "start", None),
+                            "end": getattr(s, "end", None),
+                            "confidence": getattr(s, "confidence", None),
+                        }
+                        for s in (item.segment_slots or ())
+                    ],
+                }
+                for item in self.pending_item_queue
+            ],
             "order_type": self.order_type,
             "delivery_address_required": self.delivery_address_required,
             "delivery_address_confirmed": self.delivery_address_confirmed,
@@ -482,6 +526,18 @@ class ConversationContext:
 
         pending_add_item = data.get("pending_add_item")
         ctx.pending_add_item = _pending_add_item_from_dict(pending_add_item) if pending_add_item else None
+
+        ctx.pending_item_queue = [
+            QueuedItemRequest(
+                raw_text=item_data.get("raw_text", ""),
+                item_slot_value=item_data.get("item_slot_value"),
+                quantity=item_data.get("quantity"),
+                acknowledged=bool(item_data.get("acknowledged", False)),
+                segment_slots=_deserialize_segment_slots(item_data.get("segment_slots", [])),
+            )
+            for item_data in data.get("pending_item_queue", [])
+            if item_data.get("raw_text")
+        ]
 
         ctx.order_type = data.get("order_type")
         ctx.delivery_address_required = bool(data.get("delivery_address_required", False))

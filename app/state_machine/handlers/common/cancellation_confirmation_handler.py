@@ -50,6 +50,9 @@ class CancellationConfirmationHandler(BaseHandler):
             interrupt_proposal = context.interrupt_proposal
 
             context.reset_task()
+            # Clear the multi-item queue on cancellation — user is
+            # abandoning the whole multi-item request.
+            context.clear_item_queue()
             context.interrupt_proposal = interrupt_proposal
 
             return HandlerResult(

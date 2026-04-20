@@ -122,6 +122,16 @@ class ModifierGroupResolver:
             if prev is None or self._priority(new_sel) > self._priority(prev):
                 selections_by_id[mod_id] = new_sel
 
+        # ── Greedy scan: find modifier names embedded in the full text ──
+        # Handles cases like "red onions fresh mushroom bacon and banana pepper"
+        # where "bacon" is not split out by separators but IS a known modifier.
+        self._greedy_scan_for_embedded_modifiers(
+            group=group,
+            text=normalized_user_text,
+            selections_by_id=selections_by_id,
+            already_selected_ids=already_selected_ids,
+        )
+
         ordered_ids = []
         for candidate in candidates:
             parsed = self._parse(candidate)
@@ -132,12 +142,107 @@ class ModifierGroupResolver:
             if mid in selections_by_id and mid not in ordered_ids:
                 ordered_ids.append(mid)
 
+        # Also include greedy-scan matches that weren't in the original candidates
+        for mid, sel in selections_by_id.items():
+            if mid not in ordered_ids:
+                ordered_ids.append(mid)
+
+        # ── Clean up unmatched: remove composite strings whose tokens
+        #    are fully covered by matched + other unmatched tokens ──
+        matched_tokens: set[str] = set()
+        for mid in selections_by_id:
+            sel = selections_by_id[mid]
+            matched_tokens.update(tokenize(normalize_text(sel.name)))
+
+        # First pass: keep only values with at least one non-matched token
+        first_pass: list[str] = []
+        for val in unmatched:
+            val_tokens = set(tokenize(val))
+            if val_tokens and not val_tokens.issubset(matched_tokens):
+                first_pass.append(val)
+
+        # Second pass: remove composites that are redundant with shorter values
+        # A value is redundant if all its tokens are covered by matched_tokens
+        # plus the tokens of other shorter unmatched values.
+        all_unmatched_tokens: set[str] = set()
+        for val in first_pass:
+            all_unmatched_tokens.update(tokenize(val))
+        combined_tokens = matched_tokens | all_unmatched_tokens
+
+        cleaned_unmatched: list[str] = []
+        for val in first_pass:
+            val_tokens = set(tokenize(val))
+            # If this value's unique unmatched tokens are covered by
+            # shorter values, skip it (it's a composite)
+            novel_tokens = val_tokens - matched_tokens
+            other_unmatched_tokens = set()
+            for other in first_pass:
+                if other != val and len(other) < len(val):
+                    other_unmatched_tokens.update(tokenize(other))
+            if novel_tokens and novel_tokens.issubset(other_unmatched_tokens):
+                continue
+            cleaned_unmatched.append(val)
+
         return ModifierGroupMatch(
             selections=[selections_by_id[mid] for mid in ordered_ids],
-            unmatched_values=dedupe_keep_order(unmatched),
+            unmatched_values=dedupe_keep_order(cleaned_unmatched),
         )
 
     # -------------------------
+
+    def _greedy_scan_for_embedded_modifiers(
+        self,
+        *,
+        group,
+        text: str,
+        selections_by_id: dict,
+        already_selected_ids: list[str],
+    ) -> None:
+        """
+        Scan the full user text for modifier choice names that appear as
+        sub-phrases but weren't split out by the separator-based heuristic.
+
+        E.g. "red onions fresh mushroom bacon and banana pepper"
+        → the normal split only yields ["red onions fresh mushroom bacon", "banana pepper"]
+        → this scan detects that "bacon", "red onions", "fresh mushroom" are known modifiers.
+
+        Only adds matches that weren't already found.
+        """
+        if not text:
+            return
+
+        text_tokens = set(tokenize(text))
+        if not text_tokens:
+            return
+
+        for choice in group.choices:
+            mid = choice.modifier_id
+            if mid in selections_by_id or mid in already_selected_ids:
+                continue
+
+            choice_norm = choice.normalized_name
+            if not choice_norm:
+                continue
+
+            choice_tokens = set(tokenize(choice_norm))
+            if not choice_tokens:
+                continue
+
+            # Choice tokens must be fully contained in the user text tokens
+            if not choice_tokens.issubset(text_tokens):
+                continue
+
+            # Extra check: choice name must appear as a contiguous substring
+            # in the text to avoid spurious matches from scattered tokens
+            if choice_norm not in text:
+                continue
+
+            selections_by_id[mid] = ModifierSelection(
+                modifier_id=mid,
+                name=choice.name,
+                action="add",
+                instruction=None,
+            )
 
     def _priority(self, sel: ModifierSelection) -> int:
         if sel.action == "remove":

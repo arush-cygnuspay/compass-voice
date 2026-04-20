@@ -35,22 +35,38 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.SHOW_CART,
     Intent.SHOW_TOTAL,
     Intent.START_ORDER,
-    Intent.END_ADDING,
-    Intent.CHECKOUT,
-    Intent.CONFIRM_ORDER,
-    Intent.FINISH_ORDER,
-    Intent.REVIEW_ORDER,
     Intent.PAYMENT_REQUEST,
     Intent.CANCEL_ORDER,
+    # NOTE: END_ADDING, CHECKOUT, FINISH_ORDER, CONFIRM_ORDER, REVIEW_ORDER
+    # are handled by GROUP_DONE_INTENTS — they mean "done with this group"
+    # in the side/modifier context, not "interrupt the current item".
 }
 
 DONE_WORDS = {
     "done",
     "thats all",
     "that's all",
+    "thats it",
+    "that's it",
     "finished",
     "continue",
     "next",
+    "no more",
+    "nothing else",
+    "i'm good",
+    "im good",
+    "i dont want anymore",
+    "i don't want anymore",
+    "i dont want any more",
+    "i don't want any more",
+    "thats enough",
+    "that's enough",
+    "i'm done",
+    "im done",
+    "all good",
+    "good",
+    "nah thats it",
+    "nah that's it",
 }
 
 SKIP_WORDS = {
@@ -62,9 +78,38 @@ SKIP_WORDS = {
     "no thanks",
 }
 
+MORE_OPTIONS_WORDS = {
+    "other options",
+    "more options",
+    "what else",
+    "what else do you have",
+    "what else you got",
+    "next options",
+    "show me more",
+    "any others",
+    "anything else available",
+    "what are my options",
+    "options",
+}
+
+# Intents that mean "I'm done ordering" but in side/modifier context
+# should be treated as "done with this group" — NOT as a flow interruption.
+GROUP_DONE_INTENTS: set[Intent] = {
+    Intent.END_ADDING,
+    Intent.CHECKOUT,
+    Intent.FINISH_ORDER,
+    Intent.CONFIRM_ORDER,
+    Intent.REVIEW_ORDER,
+}
+
 
 def _looks_like_done_answer(normalized_user_text: str) -> bool:
     return (normalized_user_text or "").strip() in DONE_WORDS
+
+
+def _looks_like_more_options(normalized_user_text: str) -> bool:
+    text = (normalized_user_text or "").strip()
+    return text in MORE_OPTIONS_WORDS
 
 
 def _looks_like_skip_modifier_answer(normalized_user_text: str, group: PendingModifierGroup) -> bool:
@@ -129,13 +174,15 @@ class WaitingForModifierHandler(BaseHandler):
 
         min_selector, max_selector = effective_group_selector_bounds(group)
 
-        if intent == Intent.ASK_OPTIONS:
+        # ── "What else?" / "more options" → show option listing ──
+        if intent == Intent.ASK_OPTIONS or _looks_like_more_options(normalized_user_text):
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="list_modifier_options",
                 response_payload=self._choice_payload(group, existing_selections),
             )
 
+        # ── Skip / deny → skip group if optional ──
         if (
             (intent == Intent.DENY and not _looks_like_specific_modifier_removal(normalized_user_text))
             or _looks_like_skip_modifier_answer(normalized_user_text, group)
@@ -154,7 +201,10 @@ class WaitingForModifierHandler(BaseHandler):
             step = determine_next_add_item_step(context)
             return self._step_to_result(context, step)
 
-        if _looks_like_done_answer(normalized_user_text):
+        # ── "That's it" / "done" / "no more" → done with THIS GROUP ──
+        if _looks_like_done_answer(normalized_user_text) or (
+            intent in GROUP_DONE_INTENTS
+        ):
             if len(existing_selections) < min_selector:
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_MODIFIER,
@@ -180,6 +230,7 @@ class WaitingForModifierHandler(BaseHandler):
                 context=context,
                 group=group,
                 matched_selections=resolution.selections,
+                unmatched_values=resolution.unmatched_values,
             )
 
         if intent in SOFT_SWITCH_INTENTS:
@@ -211,6 +262,7 @@ class WaitingForModifierHandler(BaseHandler):
         context: ConversationContext,
         group: PendingModifierGroup,
         matched_selections: list[ModifierSelection],
+        unmatched_values: list[str] | None = None,
     ) -> HandlerResult:
         existing = list(context.selected_modifier_groups.get(group.group_id, []))
         proposed = list(existing)
@@ -223,11 +275,30 @@ class WaitingForModifierHandler(BaseHandler):
 
         min_selector, max_selector = effective_group_selector_bounds(group)
 
+        # Build feedback lists
+        _unmatched = [v for v in (unmatched_values or []) if v]
+        newly_added = [sel for sel in proposed if sel.modifier_id not in {s.modifier_id for s in existing}]
+        newly_added_names = [sel.name for sel in newly_added]
+
+        # ── Over-max: accept up to limit, tell user what was capped ──
         if max_selector > 0 and len(proposed) > max_selector:
+            accepted = proposed[:max_selector]
+            dropped = proposed[max_selector:]
+            accepted_names = [sel.name for sel in accepted if sel not in existing]
+            dropped_names = [sel.name for sel in dropped]
+
+            context.selected_modifier_groups[group.group_id] = accepted
+            context.skipped_modifier_groups.discard(group.group_id)
+
+            payload = self._choice_payload(group, accepted)
+            payload["accepted_names"] = accepted_names
+            payload["dropped_names"] = dropped_names
+            payload["unmatched_names"] = _unmatched
+            payload["over_max"] = True
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="too_many_modifier_choices",
-                response_payload=self._choice_payload(group, proposed),
+                response_payload=payload,
             )
 
         context.selected_modifier_groups[group.group_id] = proposed
@@ -240,6 +311,8 @@ class WaitingForModifierHandler(BaseHandler):
                 response_payload={
                     **self._choice_payload(group, proposed),
                     "repeat_reason": "need_more",
+                    "matched_names": newly_added_names,
+                    "unmatched_names": _unmatched,
                 },
             )
 
@@ -250,11 +323,17 @@ class WaitingForModifierHandler(BaseHandler):
                 response_payload={
                     **self._choice_payload(group, proposed),
                     "repeat_reason": "optional_more",
+                    "matched_names": newly_added_names,
+                    "unmatched_names": _unmatched,
                 },
             )
 
         step = determine_next_add_item_step(context)
-        return self._step_to_result(context, step)
+        return self._step_to_result(
+            context, step,
+            matched_names=newly_added_names,
+            unmatched_names=_unmatched,
+        )
 
     def _choice_payload(
         self,
@@ -295,7 +374,14 @@ class WaitingForModifierHandler(BaseHandler):
             "remaining_to_max": max(max_selector - selected_count, 0),
         }
 
-    def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
+    def _step_to_result(
+        self,
+        context: ConversationContext,
+        step,
+        *,
+        matched_names: list[str] | None = None,
+        unmatched_names: list[str] | None = None,
+    ) -> HandlerResult:
         pending = context.pending_add_item
         if pending is None:
             return HandlerResult(
@@ -304,19 +390,29 @@ class WaitingForModifierHandler(BaseHandler):
             )
 
         if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
+            payload = {
+                "item_name": pending.item_name,
+                "quantity": context.quantity or 1,
+            }
+            if matched_names:
+                payload["matched_names"] = matched_names
+            if unmatched_names:
+                payload["unmatched_names"] = unmatched_names
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
-                response_payload={
-                    "item_name": pending.item_name,
-                    "quantity": context.quantity or 1,
-                },
+                response_payload=payload,
                 command=build_add_item_command(context),
                 reset_context=True,
             )
 
+        payload = step.response_payload or {}
+        if matched_names:
+            payload["matched_names"] = matched_names
+        if unmatched_names:
+            payload["unmatched_names"] = unmatched_names
         return HandlerResult(
             next_state=step.next_state,
             response_key=step.response_key,
-            response_payload=step.response_payload,
+            response_payload=payload,
         )

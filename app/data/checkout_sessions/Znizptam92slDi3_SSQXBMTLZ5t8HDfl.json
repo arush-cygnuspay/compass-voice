@@ -1,0 +1,59 @@
+{
+  "token": "Znizptam92slDi3_SSQXBMTLZ5t8HDfl",
+  "restaurant_id": "demo",
+  "call_sid": "ui-1776356829956",
+  "order_number": "8287192",
+  "customer_phone_number": "+923204711572",
+  "address_required": false,
+  "confirmation_link": "https://www.shakeshack.com",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Chicken Burger",
+        "base_name": "Chicken Burger",
+        "variant_label": null,
+        "sides": [
+          "American Cheese",
+          "Beef Meat",
+          "Potato Bun"
+        ],
+        "modifiers": [
+          "Red Onions",
+          "Fresh Mushroom",
+          "Bacon",
+          "Banana Pepper",
+          "Shredded Cheese",
+          "Swiss Cheese",
+          "American Cheese",
+          "Whole Wheat Bun"
+        ],
+        "quantity": 2,
+        "unit_price": "$20.90",
+        "line_total": "$41.80"
+      }
+    ],
+    "item_count": 2,
+    "total": "$41.80"
+  },
+  "area": null,
+  "postal_code": null,
+  "house_number": null,
+  "street": null,
+  "secondary_address": null,
+  "city": null,
+  "state": null,
+  "full_address_raw": null,
+  "address_source": "voice",
+  "latitude": null,
+  "longitude": null,
+  "location_permission_granted": null,
+  "address_completed": true,
+  "payment_started": true,
+  "payment_completed": true,
+  "payment_reference": "01KPBHXPHPZ2W9MV0P1XPV3QSP",
+  "payment_provider": "datacap",
+  "status": "completed",
+  "created_at": "2026-04-16T16:27:51.923097+00:00",
+  "updated_at": "2026-04-16T16:28:31.253174+00:00",
+  "expires_at": "2026-04-16T18:27:51.923097+00:00"
+}

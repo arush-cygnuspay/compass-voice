@@ -139,20 +139,53 @@ function renderBotResponse(data, options = {}) {
   scrollToBottom();
 }
 
-function renderQuickReplies(items) {
+let currentQuickReplyMode = "single";
+
+function renderQuickReplies(items, mode = "single") {
   quickReplies.innerHTML = "";
+  currentQuickReplyMode = mode;
 
   if (!Array.isArray(items) || items.length === 0) {
     return;
   }
 
+  if (mode === "single") {
+    items.forEach(item => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "quick-reply";
+      button.textContent = item;
+      button.disabled = requestInFlight;
+      button.onclick = () => sendMessage(item);
+      quickReplies.appendChild(button);
+    });
+    return;
+  }
+
+  // ── Multi-select mode: toggle options, send on Done/Skip ──
   items.forEach(item => {
+    const isDone = item.toLowerCase() === "done";
+    const isSkip = item.toLowerCase() === "skip";
+    const isAction = isDone || isSkip;
+
     const button = document.createElement("button");
     button.type = "button";
-    button.className = "quick-reply";
-    button.textContent = item;
     button.disabled = requestInFlight;
-    button.onclick = () => sendMessage(item);
+
+    if (isAction) {
+      button.className = "quick-reply quick-reply-action" + (isDone ? " quick-reply-done" : "");
+      button.textContent = item;
+      button.onclick = () => sendMessage(item.toLowerCase());
+    } else {
+      button.className = "quick-reply quick-reply-option";
+      button.textContent = item;
+      button.dataset.selected = "false";
+      button.onclick = () => {
+        if (requestInFlight) return;
+        // Send the option name directly — the FSM handles one selection at a time
+        sendMessage(item);
+      };
+    }
     quickReplies.appendChild(button);
   });
 }
@@ -243,7 +276,7 @@ async function sendTurn(text, options = {}) {
     const data = await response.json();
     removeTypingIndicator();
     renderBotResponse(data, { suppressDuplicate: suppressDuplicateBot || autoCheck });
-    renderQuickReplies(data.quick_replies);
+    renderQuickReplies(data.quick_replies, data.quick_reply_mode || "single");
     updateStatusFromResponse(data);
     syncAutoCheck(data);
   } catch (error) {
