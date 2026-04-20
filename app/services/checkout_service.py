@@ -51,7 +51,7 @@ for _directory in (
 
 PUBLIC_CHECKOUT_BASE_URL = os.getenv(
     "COMPASS_PUBLIC_CHECKOUT_BASE_URL",
-    "https://44f2-2407-aa80-116-fb4-88e4-257f-fb50-9f83.ngrok-free.app/checkout",
+    "https://0d97-2407-aa80-116-fb4-100e-7680-b0be-c01.ngrok-free.app/checkout",
 ).rstrip("/")
 
 REVERSE_GEOCODE_URL = os.getenv(
