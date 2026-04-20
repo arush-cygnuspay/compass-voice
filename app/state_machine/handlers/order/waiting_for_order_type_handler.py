@@ -27,6 +27,18 @@ DELIVERY_WORDS = {
 }
 
 
+_ORDER_TYPE_ORDERING_INTENTS = {
+    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,
+    Intent.MODIFY_ITEM,
+    Intent.SHOW_MENU,
+    Intent.ASK_MENU_INFO,
+    Intent.ASK_PRICE,
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+}
+
+
 class WaitingForOrderTypeHandler(BaseHandler):
     def handle(
         self,
@@ -36,6 +48,13 @@ class WaitingForOrderTypeHandler(BaseHandler):
         session: Session | None = None,
     ) -> HandlerResult:
         normalized = " ".join((user_text or "").strip().lower().split())
+
+        # ── Ordering intents before order type selected → redirect ──
+        if intent in _ORDER_TYPE_ORDERING_INTENTS:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_ORDER_TYPE,
+                response_key="ordering_blocked_need_order_type",
+            )
 
         order_type = self._resolve_order_type(normalized)
         if order_type is None:

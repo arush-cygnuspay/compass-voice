@@ -14,6 +14,18 @@ from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
 
 
+_ADDRESS_ORDERING_INTENTS = {
+    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,
+    Intent.MODIFY_ITEM,
+    Intent.SHOW_MENU,
+    Intent.ASK_MENU_INFO,
+    Intent.ASK_PRICE,
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+}
+
+
 class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
     YES_WORDS = {
         "yes", "yeah", "yep", "correct", "right",
@@ -48,6 +60,14 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
         delivery = context.delivery_address
         text = self._normalize(user_text)
         step = context.current_prompt_field or "delivery_seed_confirmation"
+
+        # ── Ordering intents during address collection → redirect gracefully ──
+        if intent in _ADDRESS_ORDERING_INTENTS:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+                response_key="ordering_blocked_need_delivery_address",
+                response_payload={"step": step},
+            )
 
         if intent in {Intent.CANCEL, Intent.CANCEL_ORDER}:
             payload = (

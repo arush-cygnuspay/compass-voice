@@ -117,3 +117,20 @@ class ModifierSelection:
     name: str
     action: str = "add"         # add | remove
     instruction: Optional[str] = None  # extra | less | light | on_side | None
+
+
+@dataclass(slots=True)
+class QueuedItemRequest:
+    """
+    A lightweight snapshot of a parsed item from a multi-item utterance.
+
+    Stored in the item queue until its turn to enter the add-item flow.
+    The raw_text is re-fed to AddItemHandler when dequeued.
+    """
+    raw_text: str                       # the text segment for this item
+    item_slot_value: Optional[str] = None  # ITEM slot value if detected
+    quantity: Optional[int] = None      # quantity if detected
+    acknowledged: bool = False          # whether user has been told we heard this item
+    # Preserved NLU slots from the multi-item parser so queued items
+    # retain their modifier/side/size context when dequeued.
+    segment_slots: tuple = ()           # tuple[SlotValue, ...]

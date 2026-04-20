@@ -58,6 +58,7 @@ class ChatResponse(BaseModel):
     order_number: str | None = None
     sms_phone_number: str | None = None
     quick_replies: list[str] = Field(default_factory=list)
+    quick_reply_mode: str = "single"   # "single" = click sends, "multi" = toggle + Done
     links: list[ChatLink] = Field(default_factory=list)
 
 
@@ -101,24 +102,42 @@ def _default_response_key_for_state(session: Session) -> str:
     return session.last_response_key or "handler_not_implemented"
 
 
-def _quick_replies_for_session(session: Session) -> list[str]:
+def _quick_replies_for_session(session: Session) -> tuple[list[str], str]:
+    """Return (quick_reply_labels, mode).
+
+    mode is "single" (click sends immediately) or "multi" (toggle + Done).
+    """
     state = session.conversation_state
     context = session.conversation_context
 
-    if context.available_choices_values:
-        return list(context.available_choices_values[:4])
+    # ── Multi-select states: show ALL options + Done ──
+    if context.available_choices_values and context.available_choices_kind in {
+        "side", "modifier",
+    }:
+        choices = list(context.available_choices_values)
+        choices.append("Done")
+        choices.append("Skip")
+        return choices, "multi"
 
+    # ── Single-select states: show all options (no Done needed) ──
+    if context.available_choices_values:
+        return list(context.available_choices_values), "single"
+
+    if state == ConversationState.CONFIRMING_ITEM:
+        return ["Yes", "No", "Cancel"], "single"
+    if state == ConversationState.CANCELLATION_CONFIRMATION:
+        return ["Yes", "No"], "single"
     if state == ConversationState.WAITING_FOR_ORDER_TYPE:
-        return ["Pickup", "Delivery"]
+        return ["Pickup", "Delivery"], "single"
     if state == ConversationState.CONFIRMING_ORDER:
-        return ["Checkout", "Show cart", "Cancel order"]
+        return ["Checkout", "Show cart", "Cancel order"], "single"
     if state == ConversationState.WAITING_FOR_CHECKOUT_COMPLETION:
-        return ["I completed it", "Send the link again", "Check status"]
+        return ["I completed it", "Send the link again", "Check status"], "single"
     if state == ConversationState.WAITING_FOR_PAYMENT:
-        return ["I completed payment", "Send the link again", "Check status"]
+        return ["I completed payment", "Send the link again", "Check status"], "single"
     if state == ConversationState.IDLE and not session.cart.is_empty():
-        return ["Show cart", "Checkout"]
-    return []
+        return ["Show cart", "Checkout"], "single"
+    return [], "single"
 
 
 def _links_for_session(session: Session) -> list[ChatLink]:
@@ -143,12 +162,15 @@ def _links_for_session(session: Session) -> list[ChatLink]:
             )
         )
 
-    if delivery.confirmation_link:
+    # Prefer the real checkout/payment link over the static
+    # restaurant confirmation_link for order confirmation.
+    confirmation_url = delivery.confirmation_link or delivery.payment_link
+    if confirmation_url:
         links.append(
             ChatLink(
                 kind="confirmation",
                 label="Open order confirmation",
-                url=delivery.confirmation_link,
+                url=confirmation_url,
             )
         )
 
@@ -168,6 +190,7 @@ def _build_chat_response(
         payload=response_payload,
     )
     delivery = session.conversation_context.delivery_address
+    quick_reply_labels, quick_reply_mode = _quick_replies_for_session(session)
 
     return ChatResponse(
         response=response_text,
@@ -182,7 +205,8 @@ def _build_chat_response(
         order_type=session.conversation_context.order_type,
         order_number=delivery.order_number,
         sms_phone_number=delivery.customer_phone_number,
-        quick_replies=_quick_replies_for_session(session),
+        quick_replies=quick_reply_labels,
+        quick_reply_mode=quick_reply_mode,
         links=_links_for_session(session),
     )
 

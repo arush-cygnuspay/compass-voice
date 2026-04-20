@@ -16,6 +16,7 @@ from app.responses.flow_control_responses import (
 )
 from app.responses.intent_not_allowed import handle_intent_not_allowed
 from app.responses.item_responses import *
+from app.responses.item_responses import _format_item_summary_list, _added_text
 from app.responses.menu_responses import (
     menu_ambiguity_response,
     menu_not_found_response,
@@ -49,7 +50,37 @@ class ResponseBuilder:
         renderer = self._registry.get(response_key)
         if renderer is None:
             return "Sorry, I didn’t understand that."
-        return renderer(context, self.menu_repo, payload)
+
+        base_response = renderer(context, self.menu_repo, payload)
+
+        # ── Multi-item acknowledgment prefix ──
+        # When the user said multiple items in one go, prefix the first
+        # item’s prompt with a summary of what we heard.
+        if payload.get("multi_item_ack"):
+            prefix = self._build_multi_item_ack_prefix(payload)
+            if prefix:
+                base_response = f"{prefix} {base_response}"
+
+        # ── Queue transition prefix ──
+        # When auto-advancing from one queued item to the next,
+        # prefix with "Added X. Now for Y."
+        if payload.get("queue_transition"):
+            prefix = self._build_queue_transition_prefix(payload)
+            if prefix:
+                base_response = f"{prefix} {base_response}"
+
+        # ── Prefilled confirmation ──
+        # When the handler pre-captured sides/modifiers/size from the
+        # user’s utterance, confirm what was heard before asking the
+        # next question.  e.g. "Chicken Taco with Coke, extra Cheese — got it."
+        prefilled = payload.get("prefilled_summary")
+        if prefilled:
+            item_name = payload.get("prefilled_item_name") or payload.get("item_name") or ""
+            confirm = self._build_prefilled_confirmation(item_name, prefilled)
+            if confirm:
+                base_response = f"{confirm} {base_response}"
+
+        return base_response
 
     def _build_registry(self) -> dict[str, ResponseFn]:
         return {
@@ -92,25 +123,23 @@ class ResponseBuilder:
             "size_not_applicable": size_not_applicable,
             "item_added_successfully": lambda c, m, p: item_added_successfully(p),
             "confirm_remove_item": lambda c, m, p: (
-                f"Do you want to remove {p.get('item_name', 'that item')} from your cart? Please say yes or no."
+                f"Remove {p.get('item_name', 'that item')}?"
             ),
             "confirm_modify_item": lambda c, m, p: (
-                f"Do you want to update {p.get('item_name', 'that item')}? "
-                "I will remove the current one and add the updated version. Please say yes or no."
+                f"Update {p.get('item_name', 'that item')}? I'll swap it with the new version."
             ),
             "confirm_replace_item": lambda c, m, p: (
-                f"Do you want to replace {p.get('item_name', 'that item')} "
-                f"with {p.get('replacement_item_name', 'that item')}? Please say yes or no."
+                f"Replace {p.get('item_name', 'that item')} with {p.get('replacement_item_name', 'the new one')}?"
             ),
             "ask_replacement_item": lambda c, m, p: (
                 f"What would you like instead of {p.get('item_name', 'that item')}?"
             ),
             "item_removed_successfully": lambda c, m, p: (
-                f"Removed {p.get('item_name', 'that item')} from your cart. What would you like next?"
+                f"Removed {p.get('item_name', 'that item')}. Anything else?"
             ),
-            "item_removal_cancelled": lambda *_: "Okay, I kept that item in your cart.",
-            "item_replacement_cancelled": lambda *_: "Okay, I did not replace that item.",
-            "item_modification_cancelled": lambda *_: "Okay, I left that item as it is.",
+            "item_removal_cancelled": lambda *_: "Okay, keeping it.",
+            "item_replacement_cancelled": lambda *_: "Okay, no changes.",
+            "item_modification_cancelled": lambda *_: "Okay, leaving it as is.",
             "action_cancelled": lambda *_: "Okay, cancelled.",
             "confirm_cancel_current_item": confirm_cancel_current_item,
             "confirm_cancel_current_item_for_new_request": confirm_cancel_current_item_for_new_request,
@@ -128,7 +157,7 @@ class ResponseBuilder:
             ),
             "price_not_found": lambda *_: "I couldn’t find that item. Say the item name again.",
             "modifier_requires_item_context": lambda *_: (
-                "That option is only available with certain items. Ask with the item name, like extra cheese on burger."
+                "That goes with a specific item. Which item would you like it on?"
             ),
             "readonly_interrupt_with_resume": self._readonly_interrupt_with_resume,
             "show_cart": lambda c, m, p: render_cart_summary(p),
@@ -139,7 +168,7 @@ class ResponseBuilder:
             "clear_cart_cancelled": lambda *_: clear_cart_cancelled_response(),
             "confirm_order_summary": self._confirm_order_summary,
             "waiting_for_payment": lambda *_: (
-                "Waiting for payment confirmation. I will confirm it automatically as soon as it clears."
+                "Waiting for payment. I'll confirm it as soon as it goes through."
             ),
 
             "no_active_order_to_cancel": lambda *_: "There’s no active order to cancel.",
@@ -152,37 +181,47 @@ class ResponseBuilder:
             "confirm_side_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')} for {p.get('side_item_name', 'that side')}? Yes or no.",
 
             "ask_for_caller_device_type": lambda *_: (
-                "Welcome to Compass. Before we get started, are you calling "
-                "from a landline or a mobile phone?"
+                "Welcome to Compass. Are you calling from a landline or a mobile phone?"
             ),
             "repeat_caller_device_type": lambda *_: (
-                "Sorry, I missed that. Are you calling from a landline or a mobile phone?"
+                "Sorry, are you on a landline or mobile phone?"
             ),
             "confirm_landline_pickup_only": lambda *_: (
-                "For Landline user you need to connect with our team member. Would you like to proceed and place your order with a team member?"
+                "I'll connect you with a team member to place your order. Would you like to proceed?"
             ),
             "repeat_landline_pickup_only": lambda *_: (
-                "Would you like to connect with a team member?. Please say yes to proceed or no to cancel."
+                "Would you like to connect with a team member? Yes or no."
             ),
             "transferring_to_human_agent": lambda c, m, p: (
-                "Okay. Connecting you to a team member now. One moment please."
+                "Connecting you now. One moment."
             ),
             "landline_pickup_declined": lambda *_: (
-                "Okay. No problem. Feel free to call us again anytime. Goodbye."
+                "No problem. Call us anytime. Goodbye."
             ),
 
-            "ask_for_order_type": lambda *_: "Got it. Is this for pickup or delivery today?",
+            "ask_for_order_type": lambda *_: "Is this for pickup or delivery?",
             "repeat_order_type": lambda *_: "Is this for pickup or delivery?",
-            "order_type_captured_pickup": lambda *_: "Got it. Pickup. What would you like to order?",
-            "order_type_captured_delivery": lambda *_: "Got it. Delivery. What would you like to order?",
+            "order_type_captured_pickup": lambda *_: "Pickup. What would you like to order?",
+            "order_type_captured_delivery": lambda *_: "Delivery. What would you like to order?",
+
+            # Ordering intents during pre-order setup
+            "ordering_blocked_need_order_type": lambda *_: (
+                "I'll get to your order right away. First, is this for pickup or delivery?"
+            ),
+            "ordering_blocked_need_delivery_info": lambda c, m, p: (
+                self._ordering_blocked_delivery_info(p)
+            ),
+            "ordering_blocked_need_delivery_address": lambda c, m, p: (
+                self._ordering_blocked_delivery_address(p)
+            ),
 
             "checkout_blocked_finish_current_item": lambda *_: "Please finish this item first, or say cancel.",
 
             "payment_link_send_failed": lambda *_: (
-                "I could not send the payment link right now. Your order is saved as a draft, so please try again in a few minutes."
+                "I couldn't send the payment link. Your order is saved. Please try again shortly."
             ),
             "checkout_link_send_failed": lambda *_: (
-                "I could not send the checkout link right now. Your order is saved as a draft, so please try again in a few minutes."
+                "I couldn't send the checkout link. Your order is saved. Please try again shortly."
             ),
 
             "ask_for_delivery_area": lambda *_: "Got it. Delivery. Please say your delivery area.",
@@ -198,10 +237,10 @@ class ResponseBuilder:
             "delivery_area_confirmed": lambda *_: "Great, we deliver there. What would you like to order?",
 
             "ask_delivery_address_method": lambda *_: (
-                "I have sent you one secure checkout link. Please fill in your delivery address and complete payment. I will confirm the order automatically as soon as payment clears."
+                "I've sent you a checkout link. Fill in your address and pay there. I'll confirm once it goes through."
             ),
             "waiting_for_checkout_completion": lambda *_: (
-                "I am waiting for the checkout link to finish. I will confirm the payment automatically as soon as it clears."
+                "Still waiting on checkout. I'll confirm as soon as payment goes through."
             ),
 
             "confirm_delivery_house_number": lambda c, m, p: (
@@ -216,50 +255,106 @@ class ResponseBuilder:
             ),
 
             "payment_link_unavailable_now": lambda *_: (
-                "I’m sorry, I couldn’t send the payment link right now. Your order is saved as a draft, so please try again in a few minutes."
+                "I couldn’t send the payment link. Your order is saved. Please try again shortly."
             ),
 
             "checkout_link_sent": lambda *_: (
-                "I have sent you a secure checkout link. Please enter your delivery address there and complete payment. I will confirm the order automatically as soon as payment clears."
+                "Checkout link sent. Enter your address and pay there. I’ll confirm once it goes through."
             ),
             "checkout_link_unavailable_fallback_voice": lambda *_: (
-                "I can’t send the checkout link right now, so I’ll take your delivery address here. Please say your house number."
+                "I’ll take your address here instead. What’s your house number?"
             ),
             "checkout_link_failed_fallback_voice": lambda *_: (
-                "I couldn’t send the checkout link right now, so I’ll take your delivery address here. Please say your house number."
+                "I’ll take your address here instead. What’s your house number?"
             ),
             "ask_for_delivery_house_number": lambda *_: "Please say your house number.",
             "repeat_delivery_house_number": lambda *_: "Please say your house number.",
             "ask_for_delivery_street": lambda *_: "Please say your street name or street number.",
             "repeat_delivery_street": lambda *_: "Please say your street name or street number.",
             "ask_for_delivery_secondary_address": lambda *_: (
-                "Please say your apartment, suite, unit, building, or block. If there is none, say none."
+                "Apartment or suite number? Say none if there isn’t one."
             ),
             "delivery_address_captured_resume_checkout": lambda *_: (
-                "Got it. I have your delivery address. I’m sending your payment link now."
+                "Got your address. Sending payment link now."
             ),
             "payment_link_sent": lambda *_: (
-                "I have sent you the payment link. Please complete payment. I will confirm the order automatically as soon as payment clears."
+                "Payment link sent. I’ll confirm once payment goes through."
             ),
             "payment_draft_saved_retry_later": lambda *_: (
-                "Payment did not go through. Your order is still saved as a draft, so please try checkout again in a few minutes."
+                "Payment didn’t go through. Your order is saved. Try again shortly."
             ),
             "order_completed": self._order_completed,
 
-            # Returned when a customer says "I paid" but Datacap has not yet
-            # confirmed the payment — we stay in WAITING_FOR_PAYMENT.
+            # Returned when a customer says "I paid" but Datacap has not yet confirmed
             "payment_not_confirmed_yet": lambda *_: (
-                "We have not received payment confirmation from our provider just yet. "
-                "Please give it a moment and complete the payment on the link we sent. "
-                "I will confirm the order automatically as soon as it clears."
+                "I haven't received confirmation yet. Please complete payment on the link. I'll confirm as soon as it goes through."
             ),
 
             # Returned when the Datacap verification call itself throws an error.
             "payment_verification_error": lambda *_: (
-                "I had trouble checking your payment status right now. "
-                "Please wait a moment while I keep checking for the payment confirmation."
+                "Having trouble checking payment. Give it a moment, I'm still checking."
             ),
         }
+
+    def _build_multi_item_ack_prefix(self, payload: dict) -> str:
+        """Build prefix like: 'Got it, chicken taco and 2 chicken burgers. Starting with the chicken taco.'"""
+        summaries = payload.get("heard_items_summary", [])
+        current = str(payload.get("current_item_name") or "").strip()
+
+        if not summaries:
+            return ""
+
+        items_text = _format_item_summary_list(summaries)
+        if current:
+            return f"Got it, {items_text}. Starting with the {current}."
+        return f"Got it, {items_text}."
+
+    def _build_queue_transition_prefix(self, payload: dict) -> str:
+        """Build prefix like: 'Added Chicken Taco. Now for the Chicken Burger.'"""
+        prev_name = str(payload.get("prev_item_name") or "").strip()
+        prev_qty = int(payload.get("prev_quantity", 1) or 1)
+        next_name = str(payload.get("next_item_name") or "").strip()
+
+        if not prev_name:
+            return ""
+
+        added = _added_text(prev_name, prev_qty)
+        if next_name:
+            return f"{added}. Now for the {next_name}."
+        return f"{added}. Next item."
+
+    @staticmethod
+    def _build_prefilled_confirmation(item_name: str, prefilled_summary: str) -> str:
+        """Build confirmation like: 'Chicken Taco with Coke, extra Cheese — got it.'"""
+        if not prefilled_summary:
+            return ""
+        item_name = item_name.strip() if item_name else ""
+        if item_name:
+            return f"{item_name} {prefilled_summary} — got it."
+        return f"Got it, {prefilled_summary}."
+
+    # ── Pre-order redirect helpers ──
+
+    @staticmethod
+    def _ordering_blocked_delivery_info(payload: dict) -> str:
+        step = payload.get("step", "delivery_area")
+        if step == "delivery_postal_code":
+            return "I'll get your order started right after. What's your ZIP code?"
+        if step == "delivery_eligibility_confirmation":
+            return "Almost there. Please confirm your delivery area first."
+        return "I'll get your order started right after. What's your delivery area?"
+
+    @staticmethod
+    def _ordering_blocked_delivery_address(payload: dict) -> str:
+        step = payload.get("step", "delivery_house_number")
+        if step == "delivery_street":
+            return "I'll get your order started right after. What's your street name?"
+        if step == "delivery_secondary_address":
+            return "Almost done with your address. Apartment or suite number?"
+        if step in {"delivery_house_number_confirmation", "delivery_street_confirmation",
+                     "delivery_secondary_address_confirmation", "delivery_seed_confirmation"}:
+            return "Let me finish confirming your address first. Is that correct?"
+        return "I'll get your order started right after. What's your house number?"
 
     def _intent_not_allowed(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
         return handle_intent_not_allowed(payload)
@@ -346,7 +441,7 @@ class ResponseBuilder:
         return self._repeat_side_size_options(_, __, payload)
 
     def _invalid_side_size_option(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
-        return self._repeat_side_size_op
+        return self._repeat_side_size_options(_, __, payload)
 
     def _readonly_interrupt_with_resume(
         self,

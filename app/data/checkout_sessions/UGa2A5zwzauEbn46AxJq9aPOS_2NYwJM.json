@@ -1,0 +1,70 @@
+{
+  "token": "UGa2A5zwzauEbn46AxJq9aPOS_2NYwJM",
+  "restaurant_id": "demo",
+  "call_sid": "ui-1776354724424",
+  "order_number": "3882709",
+  "customer_phone_number": "+923204711572",
+  "address_required": true,
+  "confirmation_link": "https://www.shakeshack.com",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Chicken Taco",
+        "base_name": "Chicken Taco",
+        "variant_label": null,
+        "sides": [
+          "Coke (12 oz.)"
+        ],
+        "modifiers": [
+          "Steak",
+          "Jelly"
+        ],
+        "quantity": 2,
+        "unit_price": "$8.88",
+        "line_total": "$17.76"
+      },
+      {
+        "name": "Chicken Burger",
+        "base_name": "Chicken Burger",
+        "variant_label": null,
+        "sides": [
+          "American Cheese",
+          "Beef Meat",
+          "Plain Bun"
+        ],
+        "modifiers": [
+          "Fresh Mushroom",
+          "Banana Pepper",
+          "Red Onions",
+          "Gluten-Free Bun"
+        ],
+        "quantity": 2,
+        "unit_price": "$14.90",
+        "line_total": "$29.80"
+      }
+    ],
+    "item_count": 4,
+    "total": "$47.56"
+  },
+  "area": "a chicken taco and 2 chicken burgers",
+  "postal_code": "21000",
+  "house_number": null,
+  "street": null,
+  "secondary_address": null,
+  "city": null,
+  "state": null,
+  "full_address_raw": null,
+  "address_source": null,
+  "latitude": null,
+  "longitude": null,
+  "location_permission_granted": null,
+  "address_completed": false,
+  "payment_started": false,
+  "payment_completed": false,
+  "payment_reference": null,
+  "payment_provider": "datacap",
+  "status": "pending_address",
+  "created_at": "2026-04-16T15:53:47.094186+00:00",
+  "updated_at": "2026-04-16T15:53:47.094186+00:00",
+  "expires_at": "2026-04-16T17:53:47.094186+00:00"
+}

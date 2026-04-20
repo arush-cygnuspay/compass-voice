@@ -146,10 +146,36 @@ class SideGroupResolver:
             matched_item_ids.append(item_id)
             matched_names.append(choice_name)
 
+        # ── Clean up unmatched: remove composite strings whose tokens
+        #    are fully covered by matched + other unmatched tokens ──
+        matched_tokens: set[str] = set()
+        for name in matched_names:
+            matched_tokens.update(tokenize(normalize_text(name)))
+
+        # First pass: keep only values with at least one non-matched token
+        first_pass: list[str] = []
+        for val in unmatched_values:
+            val_tokens = set(tokenize(val))
+            if val_tokens and not val_tokens.issubset(matched_tokens):
+                first_pass.append(val)
+
+        # Second pass: remove composites redundant with shorter values
+        cleaned_unmatched: list[str] = []
+        for val in first_pass:
+            val_tokens = set(tokenize(val))
+            novel_tokens = val_tokens - matched_tokens
+            other_unmatched_tokens = set()
+            for other in first_pass:
+                if other != val and len(other) < len(val):
+                    other_unmatched_tokens.update(tokenize(other))
+            if novel_tokens and novel_tokens.issubset(other_unmatched_tokens):
+                continue
+            cleaned_unmatched.append(val)
+
         return SideGroupMatch(
             matched_item_ids=matched_item_ids,
             matched_names=matched_names,
-            unmatched_values=dedupe_keep_order(unmatched_values),
+            unmatched_values=dedupe_keep_order(cleaned_unmatched),
         )
 
     def _build_candidate_values(

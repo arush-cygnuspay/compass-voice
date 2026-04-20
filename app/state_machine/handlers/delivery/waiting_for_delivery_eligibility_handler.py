@@ -11,6 +11,25 @@ from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
 
 
+_ORDERING_INTENTS = {
+    Intent.ADD_ITEM,
+    Intent.REMOVE_ITEM,
+    Intent.MODIFY_ITEM,
+    Intent.SHOW_MENU,
+    Intent.ASK_MENU_INFO,
+    Intent.ASK_PRICE,
+    Intent.SHOW_CART,
+    Intent.SHOW_TOTAL,
+}
+
+# Maps delivery step → the reprompt response key to use after redirecting
+_STEP_REPROMPT_KEY = {
+    "delivery_area": "repeat_delivery_area",
+    "delivery_postal_code": "repeat_delivery_zip",
+    "delivery_eligibility_confirmation": "repeat_delivery_area_zip_confirmation",
+}
+
+
 class WaitingForDeliveryEligibilityHandler(BaseHandler):
     YES_WORDS = {"yes", "yeah", "yep", "correct", "right", "that is correct", "thats correct", "yes it is", "yeah its correct"}
     NO_WORDS = {"no", "nope", "wrong", "incorrect"}
@@ -25,6 +44,14 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
         text = self._normalize(user_text)
         delivery = context.delivery_address
         step = context.current_prompt_field or "delivery_area"
+
+        # ── Ordering intents during delivery setup → redirect gracefully ──
+        if intent in _ORDERING_INTENTS:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+                response_key="ordering_blocked_need_delivery_info",
+                response_payload={"step": step},
+            )
 
         if intent in {Intent.CANCEL, Intent.CANCEL_ORDER}:
             context.order_type = None
