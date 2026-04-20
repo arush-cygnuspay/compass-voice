@@ -1,7 +1,7 @@
 # app/cart/models.py
 
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
@@ -16,4 +16,4 @@ class CartItemView:
     variant_id: Optional[str]
     sides: Dict[str, List[str]]
     side_variants: Dict[str, str]
-    modifiers: Dict[str, List[str]]
+    modifiers: Dict[str, List[Any]]

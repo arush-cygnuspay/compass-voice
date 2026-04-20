@@ -6,9 +6,12 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Form, Request
 from fastapi.responses import Response
+from fastapi.staticfiles import StaticFiles
 from twilio.twiml.voice_response import Gather, VoiceResponse
 
 from app.api.chat_demo import router as test_chat_router
+from app.api.checkout_routes import router as checkout_api_router, page_router as checkout_page_router
+from app.api.payment_links_webhook import router as payment_links_webhook_router
 from app.api.ui.ui import router as ui_router
 from app.bootstrap.runtime import build_runtime
 from app.core.response_builder import ResponseBuilder
@@ -31,8 +34,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+app.mount("/static", StaticFiles(directory="app/static", check_dir=False), name="static")
 app.include_router(test_chat_router)
 app.include_router(ui_router)
+app.include_router(checkout_api_router)
+app.include_router(checkout_page_router)
+app.include_router(payment_links_webhook_router)
 
 
 def gather(action_url: str, say: str | None = None) -> Gather:
@@ -66,7 +73,7 @@ async def voice(request: Request):
     vr.append(
         gather(
             action_url=str(request.url_for("process_speech")),
-            say="Hello! Thank you for calling Compass. What would you like to order?",
+            say="Welcome to Compass. Before we get started, are you calling from a landline or a mobile phone?",
         )
     )
 
@@ -128,6 +135,16 @@ async def process_speech(
     print(f"[BOT → CALLER] {response_text}")
 
     vr.say(response_text)
+
+    transfer_number = getattr(turn_output, "transfer_call_to_number", None)
+    if transfer_number:
+        vr.dial(transfer_number)
+        return Response(str(vr), media_type="application/xml")
+
+    if getattr(turn_output, "end_call_after_playback", False):
+        vr.hangup()
+        return Response(str(vr), media_type="application/xml")
+
     vr.append(gather(str(request.url_for("process_speech"))))
 
     return Response(str(vr), media_type="application/xml")

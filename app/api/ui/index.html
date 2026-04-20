@@ -2,45 +2,39 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Compass Voice – Test Chat</title>
+  <title>Compass Voice Test Chat</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
-  <!-- Inter font (optional but recommended) -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-
   <link rel="stylesheet" href="/ui/styles.css" />
 </head>
-
 <body>
+  <div class="bg-layer"></div>
 
-  <!-- Glassy sky-blue background layer -->
-  <div class="bg-glass"></div>
-
-  <!-- Chat UI -->
   <div class="chat-shell">
     <div class="chat-container">
-
       <header class="chat-header">
-        <div class="title">
-          <span class="logo">🧭</span>
-          <span>Compass Voice</span>
+        <div>
+          <p class="eyebrow">Compass Voice</p>
+          <h1>Order by chat</h1>
         </div>
-        <button id="new-chat-btn" class="ghost-btn">New Chat</button>
+        <button id="new-chat-btn" class="ghost-btn" type="button">New chat</button>
       </header>
 
-      <main id="chat-window" class="chat-window"></main>
+      <section class="chat-status-bar">
+        <div id="chat-status" class="status-pill">Starting a new order...</div>
+      </section>
+
+      <main id="chat-window" class="chat-window" aria-live="polite"></main>
+
+      <section id="quick-replies" class="quick-replies" aria-label="Suggested replies"></section>
 
       <footer class="input-area">
         <input
           id="message-input"
-          placeholder="Type your message…"
+          placeholder="Type pickup, delivery, or your order..."
           autocomplete="off"
         />
-        <button id="send-btn" class="send-btn">Send</button>
+        <button id="send-btn" class="send-btn" type="button">Send</button>
       </footer>
-
     </div>
   </div>
 
