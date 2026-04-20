@@ -133,7 +133,7 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     (SlotValue(name="ITEM", value="Steak"),),
                     "repeat_modifier_options",
                 ),
-                ("no", Intent.DENY, (), "ask_for_modifier"),
+                ("no", Intent.DENY, (), "required_modifier_cannot_skip"),
                 (
                     "Plain Gravy",
                     Intent.ADD_ITEM,
@@ -287,7 +287,7 @@ def test_real_menu_pickup_add_item_flows(item_name, turns):
                     (SlotValue(name="ITEM", value="Steak"),),
                     "repeat_modifier_options",
                 ),
-                ("no", Intent.DENY, (), "ask_for_modifier"),
+                ("no", Intent.DENY, (), "required_modifier_cannot_skip"),
                 (
                     "Plain Gravy",
                     Intent.ADD_ITEM,

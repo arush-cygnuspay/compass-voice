@@ -20,6 +20,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Sequence
 
+from app.menu.store import MenuStore
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 
@@ -31,6 +32,23 @@ QUANTITY_WORDS = {
 # Connectors that MAY separate distinct items
 _ITEM_SEPARATORS = re.compile(
     r"\band\b|\bplus\b|\balso\b|\bwith\s+(?:a|an|\d+|two|three|four|five|six|seven|eight|nine|ten)\b",
+    re.IGNORECASE,
+)
+
+_ATTACHMENT_PREFIXES = (
+    "with ",
+    "extra ",
+    "more ",
+    "double ",
+    "no ",
+    "without ",
+    "light ",
+    "less ",
+    "on the side ",
+)
+
+_RESTART_WITH_QUANTITY = re.compile(
+    r"(?:and|plus|also)(?:\s+also)?\s+(?:a|an|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*$",
     re.IGNORECASE,
 )
 
@@ -53,6 +71,93 @@ def _extract_item_slot_values(slots: Sequence[SlotValue]) -> list[SlotValue]:
     ]
 
 
+def _slot_key(slot: SlotValue) -> tuple[object, ...]:
+    if slot.start is not None and slot.end is not None:
+        return (str(slot.name).upper(), slot.start, slot.end)
+    return (
+        str(slot.name).upper(),
+        normalize_text(str(slot.value)),
+        slot.start,
+        slot.end,
+    )
+
+
+def _is_explicit_item_value(normalized_value: str, menu_store: MenuStore | None) -> bool:
+    if menu_store is None or not normalized_value:
+        return True
+
+    if menu_store.find_entity(normalized_value, allowed_types={"item"}):
+        return True
+
+    if menu_store.find_item_exact(normalized_value) is not None:
+        return True
+
+    if menu_store.find_item_ids_by_alias(normalized_value):
+        return True
+
+    if menu_store.find_item_ids_by_voice_label(normalized_value):
+        return True
+
+    return False
+
+
+def _collect_candidate_item_slots(
+    normalized_text: str,
+    slots: Sequence[SlotValue],
+    menu_store: MenuStore | None,
+) -> list[SlotValue]:
+    candidates: list[SlotValue] = []
+    seen: set[tuple[object, ...]] = set()
+
+    def add(slot: SlotValue) -> None:
+        key = _slot_key(slot)
+        if key in seen:
+            return
+        seen.add(key)
+        candidates.append(slot)
+
+    for slot in _extract_item_slot_values(slots):
+        normalized_value = normalize_text(str(slot.value))
+        if not normalized_value:
+            continue
+        if not _is_explicit_item_value(normalized_value, menu_store):
+            continue
+        add(slot)
+
+    if menu_store is None:
+        return candidates
+
+    for mention in menu_store.find_discoverable_item_mentions(normalized_text):
+        add(
+            SlotValue(
+                name="ITEM",
+                value=mention["item_name"],
+                raw=mention["matched_text"],
+                start=mention["start"],
+                end=mention["end"],
+                confidence=1.0,
+            )
+        )
+
+    return candidates
+
+
+def _slot_looks_attached(text: str, slot: SlotValue) -> bool:
+    if slot.start is None:
+        return False
+
+    lookback = text[max(0, slot.start - 60):slot.start].lower()
+    compact = re.sub(r"\s+", " ", lookback).lstrip()
+    if _RESTART_WITH_QUANTITY.search(compact):
+        return False
+
+    return (
+        any(compact.endswith(prefix) for prefix in _ATTACHMENT_PREFIXES)
+        or compact.startswith("with ")
+        or " with " in compact
+    )
+
+
 def _extract_leading_quantity(text: str) -> tuple[int | None, str]:
     """Extract a leading quantity from text, return (quantity, remaining_text)."""
     text = text.strip()
@@ -72,6 +177,7 @@ def _extract_leading_quantity(text: str) -> tuple[int | None, str]:
 def parse_multi_item_utterance(
     normalized_text: str,
     slots: Sequence[SlotValue],
+    menu_store: MenuStore | None = None,
 ) -> list[ParsedItemSegment]:
     """
     Parse a single utterance into multiple item segments.
@@ -83,24 +189,29 @@ def parse_multi_item_utterance(
 
     Each segment inherits the non-ITEM slots that fall within its character range.
     """
-    item_slots = _extract_item_slot_values(slots)
+    item_slots = _collect_candidate_item_slots(normalized_text, slots, menu_store)
+    split_item_slots = [
+        slot for slot in item_slots
+        if not _slot_looks_attached(normalized_text, slot)
+    ]
 
     # ── Fast path: 0 or 1 item → no multi-item parsing needed ──
-    if len(item_slots) <= 1:
+    if len(split_item_slots) <= 1:
         return []
 
     # ── Check we have character offsets for splitting ──
     items_with_offsets = [
-        s for s in item_slots
+        s for s in split_item_slots
         if s.start is not None and s.end is not None
     ]
     if len(items_with_offsets) <= 1:
         # No offset info → fall back to regex-based heuristic splitting
-        return _split_by_heuristic(normalized_text, item_slots)
+        return _split_by_heuristic(normalized_text, split_item_slots)
 
     # ── Split by ITEM slot offsets ──
     items_with_offsets.sort(key=lambda s: s.start)
     segments: list[ParsedItemSegment] = []
+    boundary_slot_keys = {_slot_key(slot) for slot in items_with_offsets}
 
     for i, item_slot in enumerate(items_with_offsets):
         # Determine segment boundaries
@@ -112,9 +223,9 @@ def parse_multi_item_utterance(
             prev_end = items_with_offsets[i - 1].end
             # Find the "and" or separator between prev item and this one
             between = normalized_text[prev_end:item_slot.start]
-            sep_match = re.search(r"\band\b|\bplus\b|\balso\b|,", between)
-            if sep_match:
-                seg_start = prev_end + sep_match.end()
+            sep_matches = list(re.finditer(r"\band\b|\bplus\b|\balso\b|,", between))
+            if sep_matches:
+                seg_start = prev_end + sep_matches[-1].end()
             else:
                 seg_start = prev_end
 
@@ -123,9 +234,9 @@ def parse_multi_item_utterance(
             next_start = items_with_offsets[i + 1].start
             # Look backward to find separator
             between = normalized_text[item_slot.end:next_start]
-            sep_match = re.search(r"\band\b|\bplus\b|\balso\b|,", between)
-            if sep_match:
-                seg_end = item_slot.end + sep_match.start()
+            sep_matches = list(re.finditer(r"\band\b|\bplus\b|\balso\b|,", between))
+            if sep_matches:
+                seg_end = item_slot.end + sep_matches[-1].start()
             else:
                 seg_end = next_start
         else:
@@ -138,12 +249,19 @@ def parse_multi_item_utterance(
 
         raw_segment = normalized_text[seg_start:seg_end].strip()
         raw_segment = re.sub(r"^(and|plus|also|,)\s*", "", raw_segment, flags=re.IGNORECASE).strip()
+        raw_segment = re.sub(r"\s*(and|plus|also|,)\s*$", "", raw_segment, flags=re.IGNORECASE).strip()
 
         # Extract quantity from segment
         quantity, _ = _extract_leading_quantity(raw_segment)
 
-        # Collect non-ITEM slots that belong to this segment
-        seg_slots = _slots_in_range(slots, seg_start, seg_end, exclude_labels={"ITEM", "MENU_ITEM"})
+        # Collect all in-range slots except the boundary item anchors for split segments.
+        seg_slots = _slots_in_range(
+            slots,
+            seg_start,
+            seg_end,
+            exclude_slot_keys=boundary_slot_keys,
+            include_offsetless=i == 0,
+        )
 
         # Re-inject the ITEM slot so downstream handlers can use it for slot-based resolution
         item_slot_copy = SlotValue(
@@ -184,18 +302,20 @@ def _slots_in_range(
     slots: Sequence[SlotValue],
     start: int,
     end: int,
-    exclude_labels: set[str] | None = None,
+    exclude_slot_keys: set[tuple[object, ...]] | None = None,
+    include_offsetless: bool = False,
 ) -> list[SlotValue]:
     """Return slots whose offsets fall within [start, end)."""
-    exclude = {label.upper() for label in (exclude_labels or set())}
+    excluded = exclude_slot_keys or set()
     result = []
     for slot in slots:
-        if str(slot.name).upper() in exclude:
+        if _slot_key(slot) in excluded:
             continue
         if slot.start is not None and slot.end is not None:
             if slot.start >= start and slot.end <= end:
                 result.append(slot)
-        # Slots without offsets get assigned to the first segment by default
+        elif include_offsetless:
+            result.append(slot)
     return result
 
 
@@ -218,6 +338,8 @@ def _split_by_heuristic(
     for part in parts:
         part = part.strip()
         if not part:
+            continue
+        if any(part.lower().startswith(prefix) for prefix in _ATTACHMENT_PREFIXES):
             continue
 
         matched_item = None

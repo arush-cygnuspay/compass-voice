@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from app.menu.repository import MenuRepository
 from app.responses.cart_responses import (
     cart_cleared_response,
     clear_cart_cancelled_response,
@@ -15,8 +16,40 @@ from app.responses.flow_control_responses import (
     flow_guard_finish_current_step,
 )
 from app.responses.intent_not_allowed import handle_intent_not_allowed
-from app.responses.item_responses import *
-from app.responses.item_responses import _format_item_summary_list, _added_text
+from app.responses.item_responses import (
+    ask_for_modifier,
+    ask_for_side,
+    ask_for_size,
+    ask_item_quantity,
+    clarify_modifier_choice,
+    clarify_side_choice,
+    confirm_cancel_current_item,
+    confirm_cancel_current_item_for_new_request,
+    confirm_item_ambiguous,
+    confirm_item_from_category,
+    continue_current_item_after_cancel_denied,
+    invalid_quantity_option,
+    invalid_size_option,
+    item_added_successfully,
+    item_cancelled_successfully,
+    item_context_missing,
+    item_not_found,
+    list_modifier_options,
+    list_side_options,
+    repeat_item_request,
+    repeat_modifier_options,
+    repeat_side_options,
+    repeat_size_options,
+    required_modifier_cannot_skip,
+    required_side_cannot_skip,
+    required_size_cannot_skip,
+    size_not_applicable,
+    too_many_modifier_choices,
+    too_many_side_choices,
+    _build_entity_feedback,
+    _added_text,
+    _format_item_summary_list,
+)
 from app.responses.menu_responses import (
     menu_ambiguity_response,
     menu_not_found_response,
@@ -73,12 +106,21 @@ class ResponseBuilder:
         # When the handler pre-captured sides/modifiers/size from the
         # user’s utterance, confirm what was heard before asking the
         # next question.  e.g. "Chicken Taco with Coke, extra Cheese — got it."
+        prefix_parts: list[str] = []
+
         prefilled = payload.get("prefilled_summary")
         if prefilled:
             item_name = payload.get("prefilled_item_name") or payload.get("item_name") or ""
             confirm = self._build_prefilled_confirmation(item_name, prefilled)
             if confirm:
-                base_response = f"{confirm} {base_response}"
+                prefix_parts.append(confirm)
+
+        prefill_feedback = str(payload.get("prefill_feedback") or "").strip()
+        if prefill_feedback:
+            prefix_parts.append(prefill_feedback)
+
+        if prefix_parts:
+            base_response = f"{' '.join(prefix_parts)} {base_response}"
 
         return base_response
 
@@ -416,26 +458,34 @@ class ResponseBuilder:
     def _ask_for_side_size(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
         side_item_name = payload.get("side_item_name") or "that side"
         available_sizes = [str(x).strip() for x in (payload.get("available_sizes") or []) if str(x).strip()]
+        feedback = _build_entity_feedback(payload)
 
         if not available_sizes:
-            return f"What size for {side_item_name}?"
-        if len(available_sizes) == 1:
-            return f"Size for {side_item_name}? {available_sizes[0]}."
-        if len(available_sizes) == 2:
-            return f"Size for {side_item_name}? {available_sizes[0]} or {available_sizes[1]}."
-        return f"Size for {side_item_name}? {available_sizes[0]}, {available_sizes[1]}, or {available_sizes[2]}."
+            prompt = f"What size for {side_item_name}?"
+        elif len(available_sizes) == 1:
+            prompt = f"Size for {side_item_name}? {available_sizes[0]}."
+        elif len(available_sizes) == 2:
+            prompt = f"Size for {side_item_name}? {available_sizes[0]} or {available_sizes[1]}."
+        else:
+            prompt = f"Size for {side_item_name}? {available_sizes[0]}, {available_sizes[1]}, or {available_sizes[2]}."
+
+        return f"{feedback}{prompt}" if feedback else prompt
 
     def _repeat_side_size_options(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
         side_item_name = payload.get("side_item_name") or "that side"
         available_sizes = [str(x).strip() for x in (payload.get("available_sizes") or []) if str(x).strip()]
+        feedback = _build_entity_feedback(payload)
 
         if not available_sizes:
-            return f"What size for {side_item_name}?"
-        if len(available_sizes) == 1:
-            return f"Choose {available_sizes[0]}."
-        if len(available_sizes) == 2:
-            return f"Choose {available_sizes[0]} or {available_sizes[1]}."
-        return f"Choose {available_sizes[0]}, {available_sizes[1]}, or {available_sizes[2]}."
+            prompt = f"What size for {side_item_name}?"
+        elif len(available_sizes) == 1:
+            prompt = f"Choose {available_sizes[0]}."
+        elif len(available_sizes) == 2:
+            prompt = f"Choose {available_sizes[0]} or {available_sizes[1]}."
+        else:
+            prompt = f"Choose {available_sizes[0]}, {available_sizes[1]}, or {available_sizes[2]}."
+
+        return f"{feedback}{prompt}" if feedback else prompt
 
     def _required_side_size_cannot_skip(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
         return self._repeat_side_size_options(_, __, payload)

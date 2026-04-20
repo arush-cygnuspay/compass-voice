@@ -1,9 +1,12 @@
 # app/nlu/nlu_resolver.py
 from __future__ import annotations
 
+import logging
 import os
 import re
 from typing import Optional
+
+logger = logging.getLogger(__name__)
 
 from app.core.pending_action import PendingAction
 from app.ml.intent.inference_intent import IntentBundle
@@ -39,13 +42,17 @@ SLOT_SUBINTENTS: set[str] = {
     "browse_menu",
 }
 
-QUANTITY_PATTERNS = (
-    r"\bhalf dozen\b",
-    r"\ba dozen\b",
-    r"\b(?:\d+|a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+dozen\b",
-    r"\b(?:\d+|a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:pieces|piece|pcs|pc|orders|order)\b",
-    r"\b\d+\b",
-    r"\b(?:a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b",
+# Pre-compiled for hot-path performance (called every turn in waiting states).
+QUANTITY_PATTERNS = tuple(
+    re.compile(p)
+    for p in (
+        r"\bhalf dozen\b",
+        r"\ba dozen\b",
+        r"\b(?:\d+|a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+dozen\b",
+        r"\b(?:\d+|a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\s+(?:pieces|piece|pcs|pc|orders|order)\b",
+        r"\b\d+\b",
+        r"\b(?:a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b",
+    )
 )
 
 SIZE_WORDS = {
@@ -105,7 +112,7 @@ def _dicts_to_slotvalues(slot_dicts: list[dict]) -> tuple[SlotValue, ...]:
 
 def _extract_quantity_rule(normalized: str) -> tuple[SlotValue, ...]:
     for pattern in QUANTITY_PATTERNS:
-        match = re.search(pattern, normalized)
+        match = pattern.search(normalized)
         if not match:
             continue
 
@@ -253,7 +260,7 @@ def _resolve_waiting_state(
                     model_sub_intent=model_sub_intent,
                 )
         except Exception:
-            pass
+            logger.exception("Slot model inference failed for text: %s", normalized_text)
 
     return None
 
@@ -335,3 +342,4 @@ def resolve_nlu(
         slots=slots,
         slot_model_ran=slot_model_ran,
     )
+        
