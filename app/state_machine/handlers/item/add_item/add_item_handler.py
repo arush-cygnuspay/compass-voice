@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import re
+from collections import deque
 from typing import Sequence
 
 from app.core.pending_action import PendingAction
@@ -174,7 +175,7 @@ class AddItemHandler(BaseHandler):
 
         # Queue the remaining items — preserve segment slots for better
         # modifier/side prefilling when dequeued.
-        context.pending_item_queue = [
+        context.pending_item_queue = deque(
             QueuedItemRequest(
                 raw_text=seg.raw_text,
                 item_slot_value=seg.item_slot_value,
@@ -183,7 +184,7 @@ class AddItemHandler(BaseHandler):
                 segment_slots=seg.slots or (),
             )
             for seg in remaining_segments
-        ]
+        )
 
         # Build detailed summary of what we heard (include modifiers/sides)
         item_summaries = []
