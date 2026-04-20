@@ -7,20 +7,14 @@ from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
+from app.state_machine.handlers.common.preorder_redirect_utils import (
+    looks_like_ordering_request,
+)
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
 
 
-_ORDERING_INTENTS = {
-    Intent.ADD_ITEM,
-    Intent.REMOVE_ITEM,
-    Intent.MODIFY_ITEM,
-    Intent.SHOW_MENU,
-    Intent.ASK_MENU_INFO,
-    Intent.ASK_PRICE,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-}
+from app.state_machine.flow_sets import ORDERING_INTENTS as _ORDERING_INTENTS
 
 # Maps delivery step → the reprompt response key to use after redirecting
 _STEP_REPROMPT_KEY = {
@@ -46,7 +40,11 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
         step = context.current_prompt_field or "delivery_area"
 
         # ── Ordering intents during delivery setup → redirect gracefully ──
-        if intent in _ORDERING_INTENTS:
+        if intent in _ORDERING_INTENTS or looks_like_ordering_request(
+            context,
+            text,
+            include_slots=False,
+        ):
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
                 response_key="ordering_blocked_need_delivery_info",

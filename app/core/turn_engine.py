@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
+from app.core.command_executor import CommandExecutor
 from app.core.flow_control.flow_decision import FlowAction
 from app.core.flow_control.flow_control_policy import FlowControlPolicy
 from app.core.response_builder import ResponseBuilder
@@ -17,10 +18,11 @@ from app.ml.intent.inference_intent import IntentBundle
 from app.ml.slot.inference_slot import SlotBundle
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
+from app.nlu.nlu_result import NLUResult
 from app.nlu.nlu_resolver import resolve_nlu
 from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
 from app.services.checkout_service import CheckoutService
-from app.services.sms_service import SmsSendRequest, SmsSendResult, SmsService
+from app.services.sms_service import SmsService
 from app.session.session import Session
 from app.state_machine.handlers.delivery.waiting_for_delivery_address_collection_handler import (
     WaitingForDeliveryAddressCollectionHandler,
@@ -107,44 +109,10 @@ CONFIRMING_ORDER_EXIT_TO_IDLE_INTENTS: set[Intent] = {
     Intent.SHOW_MENU,
 }
 
-WAITING_STATE_ALLOWED_CONTROL_INTENTS = {
-    Intent.DENY,
-    Intent.CANCEL,
-    Intent.CANCEL_ORDER,
-    Intent.ASK_OPTIONS,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-    Intent.ASK_PRICE,
-    Intent.ASK_ITEM_INFO,
-    Intent.ASK_MENU_INFO,
-    Intent.AVAILABILITY_QUERY,
-    Intent.BROWSE_MENU,
-    Intent.BROWSE_CATEGORY,
-    Intent.RECOMMENDATION_QUERY,
-    Intent.SHOW_MENU,
-    # allow true task-switch requests to reach the waiting handlers
-    Intent.ADD_ITEM,
-    Intent.REMOVE_ITEM,
-    Intent.MODIFY_ITEM,
-}
-
-DELIVERY_GATING_ALLOWED_CONTROL_INTENTS = {
-    Intent.AFFIRM,
-    Intent.CONFIRM,
-    Intent.DENY,
-    Intent.CANCEL,
-    Intent.CANCEL_ORDER,
-    # Ordering intents pass through so handlers can redirect gracefully
-    # instead of treating food names as delivery area / zip input.
-    Intent.ADD_ITEM,
-    Intent.REMOVE_ITEM,
-    Intent.MODIFY_ITEM,
-    Intent.SHOW_MENU,
-    Intent.ASK_MENU_INFO,
-    Intent.ASK_PRICE,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-}
+from app.state_machine.flow_sets import (
+    DELIVERY_GATING_ALLOWED_CONTROL_INTENTS,
+    WAITING_STATE_ALLOWED_CONTROL_INTENTS,
+)
 
 
 class TurnEngine:
@@ -168,6 +136,7 @@ class TurnEngine:
         self.resume_prompt_builder = ResumePromptBuilder()
         self.responder = responder
         self.sms_service = sms_service
+        self.command_executor = CommandExecutor(sms_service)
         self.checkout_service = CheckoutService()
 
         self.handlers: dict[str, Any] = {
@@ -295,17 +264,40 @@ class TurnEngine:
 
         if session.conversation_state == ConversationState.WAITING_FOR_ORDER_TYPE:
             handler: WaitingForOrderTypeHandler = self.handlers["waiting_for_order_type_handler"]
+            preprocessed = preprocess_turn_text(user_text)
+            if self.intent_bundle is not None and self.slot_bundle is not None:
+                gate_nlu = resolve_nlu(
+                    raw_text=preprocessed.cleaned_text,
+                    normalized_text=preprocessed.normalized_text,
+                    state=session.conversation_state,
+                    pending_action=ctx.pending_action,
+                    intent_bundle=self.intent_bundle,
+                    slot_bundle=self.slot_bundle,
+                )
+            else:
+                gate_nlu = NLUResult(
+                    effective_intent=Intent.UNKNOWN,
+                    intent_confidence=0.0,
+                    raw_text=preprocessed.cleaned_text,
+                    normalized_text=preprocessed.normalized_text,
+                )
+            ctx.set_last_nlu(user_text=preprocessed.cleaned_text, nlu=gate_nlu)
+            gate_intent = (
+                gate_nlu.effective_intent
+                if gate_nlu.intent_confidence >= INTENT_MIN_CONF
+                else Intent.UNKNOWN
+            )
             gate_result = handler.handle(
-                intent=Intent.UNKNOWN,
+                intent=gate_intent,
                 context=ctx,
-                user_text=user_text,
+                user_text=gate_nlu.normalized_text,
                 session=session,
             )
 
             session.conversation_state = gate_result.next_state
             self._apply_session_response(
                 session=session,
-                intent=Intent.UNKNOWN,
+                intent=gate_intent,
                 response_key=gate_result.response_key,
                 response_payload=gate_result.response_payload,
             )
@@ -1112,68 +1104,7 @@ class TurnEngine:
         return None
 
     def _apply_command(self, session: Session, command: dict[str, Any]) -> dict[str, Any]:
-        cmd_type = command.get("type")
-        payload = command.get("payload") or {}
-
-        if cmd_type == "ADD_ITEM_TO_CART":
-            from app.cart.cart_item import CartItem
-
-            cart_item = CartItem.create(
-                item_id=payload["item_id"],
-                quantity=payload["quantity"],
-                variant_id=payload.get("variant_id"),
-                sides=payload.get("sides", {}),
-                side_variants=payload.get("side_variants", {}),
-                modifiers=payload.get("modifiers", {}),
-            )
-            session.cart.add_item(cart_item)
-            return {"ok": True}
-
-        if cmd_type == "CLEAR_CART":
-            session.cart.clear()
-            return {"ok": True}
-
-        if cmd_type == "REMOVE_ITEM_FROM_CART":
-            session.cart.remove_item(payload["cart_item_id"])
-            return {"ok": True}
-
-        if cmd_type == "SEND_SMS":
-            template = payload["template"]
-
-            sms_request = SmsSendRequest(
-                template=template,
-                phone_number=payload["phone_number"],
-                order_number=payload.get("order_number", ""),
-                link=payload.get("link", ""),
-                area=payload.get("area", ""),
-            )
-
-            sms_result: SmsSendResult | None = None
-            attempts_made = 0
-
-            for _ in range(2):
-                attempts_made += 1
-                sms_result = self.sms_service.send(sms_request)
-                if sms_result.ok:
-                    break
-
-            return {
-                "ok": bool(sms_result and sms_result.ok),
-                "sid": sms_result.sid if sms_result else None,
-                "error_code": sms_result.error_code if sms_result else "sms_send_failed",
-                "error_message": sms_result.error_message if sms_result else "SMS send failed.",
-                "template": template,
-                "attempts_made": attempts_made,
-            }
-
-        if cmd_type == "transfer_call":
-            return {
-                "ok": True,
-                "transport_only": True,
-                "transfer_number": command.get("transfer_number"),
-            }
-
-        raise ValueError(f"Unknown command type: {cmd_type}")
+        return self.command_executor.execute(session, command)
 
     def _safe_session_id(self, session: Session) -> str:
         value = getattr(session, "session_id", None)

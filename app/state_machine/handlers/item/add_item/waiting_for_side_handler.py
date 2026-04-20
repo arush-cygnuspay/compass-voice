@@ -27,82 +27,13 @@ from app.state_machine.handlers.item.add_item.group_collection_utils import (
     effective_group_selector_bounds,
 )
 
-SOFT_SWITCH_INTENTS: set[Intent] = {
-    Intent.ADD_ITEM,
-    Intent.REMOVE_ITEM,
-    Intent.MODIFY_ITEM,
-    Intent.SHOW_MENU,
-    Intent.ASK_MENU_INFO,
-    Intent.ASK_PRICE,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-    Intent.START_ORDER,
-    Intent.PAYMENT_REQUEST,
-    Intent.CANCEL_ORDER,
-    # NOTE: END_ADDING, CHECKOUT, FINISH_ORDER, CONFIRM_ORDER, REVIEW_ORDER
-    # are handled by GROUP_DONE_INTENTS — they mean "done with this group"
-    # in the side/modifier context, not "interrupt the current item".
-}
-
-DONE_WORDS = {
-    "done",
-    "thats all",
-    "that's all",
-    "thats it",
-    "that's it",
-    "finished",
-    "continue",
-    "next",
-    "no more",
-    "nothing else",
-    "i'm good",
-    "im good",
-    "i dont want anymore",
-    "i don't want anymore",
-    "i dont want any more",
-    "i don't want any more",
-    "thats enough",
-    "that's enough",
-    "i'm done",
-    "im done",
-    "all good",
-    "good",
-    "nah thats it",
-    "nah that's it",
-}
-
-SKIP_WORDS = {
-    "no",
-    "none",
-    "nothing",
-    "skip",
-    "skip it",
-    "no thanks",
-}
-
-MORE_OPTIONS_WORDS = {
-    "other options",
-    "more options",
-    "what else",
-    "what else do you have",
-    "what else you got",
-    "next options",
-    "show me more",
-    "any others",
-    "anything else available",
-    "what are my options",
-    "options",
-}
-
-# Intents that mean "I'm done ordering" but in side/modifier context
-# should be treated as "done with this group" — NOT as a flow interruption.
-GROUP_DONE_INTENTS: set[Intent] = {
-    Intent.END_ADDING,
-    Intent.CHECKOUT,
-    Intent.FINISH_ORDER,
-    Intent.CONFIRM_ORDER,
-    Intent.REVIEW_ORDER,
-}
+from app.state_machine.flow_sets import (
+    SOFT_SWITCH_INTENTS_REDUCED as SOFT_SWITCH_INTENTS,
+    DONE_WORDS,
+    SKIP_WORDS,
+    MORE_OPTIONS_WORDS,
+    GROUP_DONE_INTENTS,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,6 +157,17 @@ class WaitingForSideHandler(BaseHandler):
                 group=group,
                 matched_ids=resolution.matched_item_ids,
                 unmatched_values=resolution.unmatched_values,
+            )
+
+        if resolution.unmatched_values:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_SIDE,
+                response_key="repeat_side_options",
+                response_payload={
+                    **self._choice_payload(context, group),
+                    "repeat_reason": "invalid",
+                    "unmatched_names": [value for value in resolution.unmatched_values if value],
+                },
             )
 
         if intent in SOFT_SWITCH_INTENTS:

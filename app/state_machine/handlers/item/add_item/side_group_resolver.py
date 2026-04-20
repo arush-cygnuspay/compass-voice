@@ -248,6 +248,9 @@ class SideGroupResolver:
         candidate_tokens = set(tokenize(candidate))
         choice_tokens = set(tokenize(choice_name))
 
+        if choice_tokens and choice_tokens < candidate_tokens:
+            return 0.0
+
         if candidate_tokens and choice_tokens:
             overlap = len(candidate_tokens & choice_tokens)
             coverage = overlap / len(choice_tokens)

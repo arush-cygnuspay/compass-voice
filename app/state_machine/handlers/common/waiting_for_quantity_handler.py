@@ -13,23 +13,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
 from app.utils.quantity_detection import detect_quantity, normalize_quantity
 
 
-SOFT_SWITCH_INTENTS: set[Intent] = {
-    Intent.ADD_ITEM,
-    Intent.REMOVE_ITEM,
-    Intent.MODIFY_ITEM,
-    Intent.SHOW_MENU,
-    Intent.ASK_MENU_INFO,
-    Intent.ASK_PRICE,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-    Intent.START_ORDER,
-    Intent.END_ADDING,
-    Intent.CHECKOUT,
-    Intent.CONFIRM_ORDER,
-    Intent.FINISH_ORDER,
-    Intent.REVIEW_ORDER,
-    Intent.PAYMENT_REQUEST,
-}
+from app.state_machine.flow_sets import SOFT_SWITCH_INTENTS
 
 
 class WaitingForQuantityHandler(BaseHandler):

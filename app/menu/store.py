@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 from app.menu.exceptions import MenuLoadError
@@ -551,6 +552,60 @@ class MenuStore:
             for item_id in self._discoverable_item_ids
             if item_id in self.items
         ]
+
+    def find_discoverable_item_mentions(self, normalized_text: str) -> list[dict]:
+        if not normalized_text:
+            return []
+
+        mentions: list[dict] = []
+        seen_mentions: set[tuple[int, int, str]] = set()
+
+        for item in self.iter_discoverable_items():
+            labels = sorted(
+                {
+                    item.normalized_name,
+                    *item.normalized_aliases,
+                    *item.voice_labels,
+                },
+                key=len,
+                reverse=True,
+            )
+
+            for label in labels:
+                if not label:
+                    continue
+
+                pattern = re.compile(rf"(?<!\w){re.escape(label)}(?!\w)")
+                for match in pattern.finditer(normalized_text):
+                    key = (match.start(), match.end(), item.item_id)
+                    if key in seen_mentions:
+                        continue
+
+                    seen_mentions.add(key)
+                    mentions.append(
+                        {
+                            "item_id": item.item_id,
+                            "item_name": item.name,
+                            "normalized_name": item.normalized_name,
+                            "matched_text": match.group(0),
+                            "start": match.start(),
+                            "end": match.end(),
+                        }
+                    )
+
+        mentions.sort(key=lambda mention: (mention["start"], -(mention["end"] - mention["start"])))
+
+        pruned: list[dict] = []
+        for mention in mentions:
+            overlaps_existing = any(
+                mention["start"] < existing["end"] and mention["end"] > existing["start"]
+                for existing in pruned
+            )
+            if overlaps_existing:
+                continue
+            pruned.append(mention)
+
+        return pruned
 
     def find_modifier_entities(self, normalized_text: str) -> list[dict]:
         return list(self._modifier_entries_by_name.get(normalized_text, []))

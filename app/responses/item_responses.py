@@ -551,7 +551,6 @@ def _added_text(item_name: str, quantity: int) -> str:
 def item_added_successfully(payload: dict) -> str:
     quantity = int(payload.get("quantity", 1))
     item_name = str(payload.get("item_name") or "").strip()
-    prefilled = str(payload.get("prefilled_summary") or "").strip()
 
     # Entity feedback (unmatched entities from the final step)
     unmatched = payload.get("unmatched_names") or []
@@ -576,13 +575,12 @@ def item_added_successfully(payload: dict) -> str:
 
     # ── Standard single-item response ──
     # Include prefilled details when present so user hears what was captured.
-    detail = f" {prefilled}" if prefilled else ""
     if quantity > 1 and item_name:
-        return f"Added {quantity} {item_name}{detail}.{unmatched_note} Would you like anything else?"
+        return f"Added {quantity} {item_name}.{unmatched_note} Would you like anything else?"
     if quantity > 1:
-        return f"Added {quantity}{detail}.{unmatched_note} Would you like anything else?"
+        return f"Added {quantity}.{unmatched_note} Would you like anything else?"
     if item_name:
-        return f"{item_name}{detail} added.{unmatched_note} Would you like anything else?"
+        return f"{item_name} added.{unmatched_note} Would you like anything else?"
     return f"Added.{unmatched_note} Would you like anything else?"
 
 
