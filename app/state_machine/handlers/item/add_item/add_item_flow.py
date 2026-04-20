@@ -212,7 +212,7 @@ def _find_next_unresolved_side_group_index(
 def _side_group_satisfied(group, selected_item_ids: list[str] | tuple[str, ...], skipped: bool) -> bool:
     selected_count = len(selected_item_ids)
     min_selector, _ = effective_group_selector_bounds(group)
-    if min_selector > 0:
+    if bool(getattr(group, "is_required", False)):
         return selected_count >= min_selector
     return selected_count > 0 or skipped
 
@@ -245,7 +245,7 @@ def _modifier_group_satisfied(group, selected_modifier_selections, skipped: bool
     """
     selected_count = len(selected_modifier_selections or ())
     min_selector, _ = effective_group_selector_bounds(group)
-    if min_selector > 0:
+    if bool(getattr(group, "is_required", False)):
         return selected_count >= min_selector
 
     return selected_count > 0 or skipped

@@ -1,0 +1,71 @@
+{
+  "token": "_IESx4EIksYSAHCMI9N7qXXQZwTLWD_O",
+  "restaurant_id": "demo",
+  "call_sid": "CAf0fe91c417931bb42be99d7e3c9bba72",
+  "order_number": "1254872",
+  "customer_phone_number": "+17036369451",
+  "address_required": true,
+  "confirmation_link": "https://www.cygnuspay.com",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Chicken Burger",
+        "base_name": "Chicken Burger",
+        "variant_label": null,
+        "sides": [
+          "American Cheese",
+          "Beef Meat",
+          "Plain Bun"
+        ],
+        "modifiers": [
+          "Red Onions",
+          "Fresh Mushroom",
+          "Banana Pepper",
+          "Gluten-Free Bun"
+        ],
+        "quantity": 1,
+        "unit_price": "$14.90",
+        "line_total": "$14.90"
+      },
+      {
+        "name": "Chicken Taco",
+        "base_name": "Chicken Taco",
+        "variant_label": null,
+        "sides": [
+          "Coke (12 oz.)"
+        ],
+        "modifiers": [
+          "Cheese"
+        ],
+        "quantity": 1,
+        "unit_price": "$5.58",
+        "line_total": "$5.58"
+      }
+    ],
+    "item_count": 2,
+    "total": "$20.48"
+  },
+  "area": "\u062f\u06be\u0631\u0645 \u067e\u0648\u0631\u0627",
+  "postal_code": "54900",
+  "house_number": null,
+  "street": "Hussain Shaheed Soherwordi Underpass",
+  "secondary_address": null,
+  "city": "\u0644\u0627\u06c1\u0648\u0631 \u06a9\u06cc\u0646\u0679",
+  "state": "\u067e\u0646\u062c\u0627\u0628",
+  "full_address_raw": "Royal Palm Club, Hussain Shaheed Soherwordi Underpass, \u062f\u06be\u0631\u0645 \u067e\u0648\u0631\u0627, \u0644\u0627\u06c1\u0648\u0631 \u06a9\u06cc\u0646\u0679, \u062a\u062d\u0635\u06cc\u0644 \u0644\u0627\u06c1\u0648\u0631 \u06a9\u0646\u0679\u0648\u0646\u0645\u0646\u0679, \u0636\u0644\u0639 \u0644\u0627\u06c1\u0648\u0631, \u0644\u0627\u06c1\u0648\u0631 \u0688\u0648\u06cc\u0698\u0646, \u067e\u0646\u062c\u0627\u0628, 54900, \u067e\u0627\u06a9\u0633\u062a\u0627\u0646",
+  "address_source": "device_location",
+  "latitude": 31.558,
+  "longitude": 74.3587,
+  "location_permission_granted": true,
+  "address_completed": true,
+  "payment_started": false,
+  "payment_completed": true,
+  "payment_reference": "01KPP0CF18FRZVXVNB4898PBG7",
+  "payment_provider": "datacap",
+  "can_retry_payment": false,
+  "last_payment_status": "completed",
+  "status": "completed",
+  "created_at": "2026-04-20T17:52:28.725067+00:00",
+  "updated_at": "2026-04-20T17:53:29.836316+00:00",
+  "expires_at": "2026-04-20T19:52:28.725067+00:00"
+}

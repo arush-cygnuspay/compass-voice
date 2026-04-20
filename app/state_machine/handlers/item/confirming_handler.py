@@ -25,24 +25,7 @@ from app.state_machine.handlers.item.add_item.pending_add_item_factory import (
 )
 from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match, tokenize
 
-SOFT_SWITCH_INTENTS: set[Intent] = {
-    Intent.ADD_ITEM,
-    Intent.REMOVE_ITEM,
-    Intent.MODIFY_ITEM,
-    Intent.SHOW_MENU,
-    Intent.ASK_MENU_INFO,
-    Intent.ASK_PRICE,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-    Intent.START_ORDER,
-    Intent.END_ADDING,
-    Intent.CHECKOUT,
-    Intent.CONFIRM_ORDER,
-    Intent.FINISH_ORDER,
-    Intent.REVIEW_ORDER,
-    Intent.PAYMENT_REQUEST,
-    Intent.CANCEL_ORDER,
-}
+from app.state_machine.flow_sets import SOFT_SWITCH_INTENTS
 
 FILLER_PREFIXES: tuple[str, ...] = (
     "i want ",
