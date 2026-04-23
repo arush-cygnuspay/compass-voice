@@ -14,7 +14,7 @@ catalogue==2.0.10
 certifi==2026.1.4
 charset-normalizer==3.4.4
 click==8.3.1
-cloudflared==1.0.0.2
+# cloudflared==1.0.0.2
 cloudpathlib==0.23.0
 colorama==0.4.6
 confection==0.1.5
