@@ -1,6 +1,63 @@
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+import sys
+import types
+
+
+twilio_module = types.ModuleType("twilio")
+twilio_base_module = types.ModuleType("twilio.base")
+twilio_base_exceptions_module = types.ModuleType("twilio.base.exceptions")
+twilio_rest_module = types.ModuleType("twilio.rest")
+
+
+class _TwilioRestException(Exception):
+    pass
+
+
+class _TwilioClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+twilio_base_exceptions_module.TwilioRestException = _TwilioRestException
+twilio_rest_module.Client = _TwilioClient
+
+sys.modules.setdefault("twilio", twilio_module)
+sys.modules.setdefault("twilio.base", twilio_base_module)
+sys.modules.setdefault("twilio.base.exceptions", twilio_base_exceptions_module)
+sys.modules.setdefault("twilio.rest", twilio_rest_module)
+
+redis_module = types.ModuleType("redis")
+
+
+class _RedisClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+redis_module.Redis = _RedisClient
+sys.modules.setdefault("redis", redis_module)
+
+intent_inference_module = types.ModuleType("app.ml.intent.inference_intent")
+slot_inference_module = types.ModuleType("app.ml.slot.inference_slot")
+
+
+class _IntentBundle:
+    pass
+
+
+class _SlotBundle:
+    pass
+
+
+intent_inference_module.IntentBundle = _IntentBundle
+intent_inference_module.predict_intent = lambda *args, **kwargs: []
+slot_inference_module.SlotBundle = _SlotBundle
+slot_inference_module.predict_slots = lambda *args, **kwargs: []
+
+sys.modules.setdefault("app.ml.intent.inference_intent", intent_inference_module)
+sys.modules.setdefault("app.ml.slot.inference_slot", slot_inference_module)
 
 from app.core.response_builder import ResponseBuilder
 from app.core.turn_engine import TurnEngine
@@ -92,3 +149,73 @@ def test_turn_engine_accepts_delivery_area_when_nlu_emits_noisy_item_slot():
     assert second.response_key == "ask_for_delivery_zip"
     assert session.conversation_context.delivery_address.area == "washington dc"
     assert session.conversation_context.current_prompt_field == "delivery_postal_code"
+
+
+def test_turn_engine_accepts_zip_when_nlu_misclassifies_it_as_ask_price():
+    menu_repo = _build_menu_repo()
+    engine = _build_engine(menu_repo)
+    session = Session(session_id="delivery-zip-regression", restaurant_id="demo")
+    session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+
+    first = _turn(engine, session, "delivery")
+    assert first.response_key == "ask_for_delivery_area"
+
+    second = _turn(
+        engine,
+        session,
+        "washington dc",
+        intent=Intent.UNKNOWN,
+        slots=(SlotValue(name="ITEM", value="washington dc"),),
+    )
+    assert second.response_key == "ask_for_delivery_zip"
+
+    third = _turn(
+        engine,
+        session,
+        "it's 21000",
+        intent=Intent.ASK_PRICE,
+        slots=(),
+    )
+    assert third.response_key == "confirm_delivery_area_zip"
+    assert session.conversation_context.delivery_address.postal_code == "21000"
+    assert session.conversation_context.current_prompt_field == "delivery_eligibility_confirmation"
+
+
+def test_turn_engine_accepts_zip_from_mixed_phrase_when_nlu_misclassifies_it() -> None:
+    menu_repo = _build_menu_repo()
+    engine = _build_engine(menu_repo)
+    session = Session(session_id="delivery-zip-mixed-regression", restaurant_id="demo")
+    session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+
+    assert _turn(engine, session, "delivery").response_key == "ask_for_delivery_area"
+    assert _turn(engine, session, "washington dc").response_key == "ask_for_delivery_zip"
+
+    third = _turn(
+        engine,
+        session,
+        "my zip code is 30000.",
+        intent=Intent.ASK_PRICE,
+        slots=(),
+    )
+    assert third.response_key == "confirm_delivery_area_zip"
+    assert session.conversation_context.delivery_address.postal_code == "30000"
+
+
+def test_turn_engine_accepts_spoken_number_zip_phrase() -> None:
+    menu_repo = _build_menu_repo()
+    engine = _build_engine(menu_repo)
+    session = Session(session_id="delivery-zip-spoken-regression", restaurant_id="demo")
+    session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+
+    assert _turn(engine, session, "delivery").response_key == "ask_for_delivery_area"
+    assert _turn(engine, session, "washington dc").response_key == "ask_for_delivery_zip"
+
+    third = _turn(
+        engine,
+        session,
+        "it's twenty one thousand",
+        intent=Intent.ASK_PRICE,
+        slots=(),
+    )
+    assert third.response_key == "confirm_delivery_area_zip"
+    assert session.conversation_context.delivery_address.postal_code == "21000"

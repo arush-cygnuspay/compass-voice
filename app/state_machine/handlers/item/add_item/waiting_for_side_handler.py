@@ -29,10 +29,10 @@ from app.state_machine.handlers.item.add_item.group_collection_utils import (
 
 from app.state_machine.flow_sets import (
     SOFT_SWITCH_INTENTS_REDUCED as SOFT_SWITCH_INTENTS,
-    DONE_WORDS,
-    SKIP_WORDS,
-    MORE_OPTIONS_WORDS,
     GROUP_DONE_INTENTS,
+    looks_like_done_answer,
+    looks_like_more_options_answer,
+    looks_like_skip_answer,
 )
 
 
@@ -44,12 +44,11 @@ class _ScoredSideChoice:
 
 
 def _looks_like_done_answer(normalized_user_text: str) -> bool:
-    return (normalized_user_text or "").strip() in DONE_WORDS
+    return looks_like_done_answer(normalized_user_text)
 
 
 def _looks_like_more_options(normalized_user_text: str) -> bool:
-    text = (normalized_user_text or "").strip()
-    return text in MORE_OPTIONS_WORDS
+    return looks_like_more_options_answer(normalized_user_text)
 
 
 def _looks_like_skip_side_answer(normalized_user_text: str, group: PendingSideGroup) -> bool:
@@ -57,7 +56,7 @@ def _looks_like_skip_side_answer(normalized_user_text: str, group: PendingSideGr
     if not text:
         return False
 
-    return text in SKIP_WORDS
+    return looks_like_skip_answer(text)
 
 
 class WaitingForSideHandler(BaseHandler):
@@ -139,6 +138,10 @@ class WaitingForSideHandler(BaseHandler):
                         "repeat_reason": "need_more",
                     },
                 )
+
+            if not existing_ids:
+                context.skipped_side_groups.add(group.group_id)
+                context.selected_side_groups.pop(group.group_id, None)
 
             step = determine_next_add_item_step(context)
             return self._step_to_result(context, step)

@@ -17,11 +17,26 @@ class DeepgramTTSClient:
     """
     Persistent Deepgram TTS websocket client.
 
-    Key guarantees:
-    - one websocket can be reused across a call
-    - each utterance starts with clean per-utterance queues/state
-    - stale Flushed/Cleared events from a prior utterance cannot poison the next one
-    - a small post-flush grace period allows late audio frames to be drained
+    Barge-in guarantee (the hard part):
+    ─────────────────────────────────────────────────────────────────────────
+    When the user speaks over the bot we call clear(), which:
+      1. Sets _clear_event  ← internal asyncio.Event
+      2. Sends {"type":"Clear"} to Deepgram over the wire
+
+    The running iter_audio_until_flushed() is watching _clear_event via
+    a clear_task inside _wait_for_audio_or_event().  It exits the moment
+    _clear_event fires — WITHOUT consuming the "Cleared" acknowledgment that
+    Deepgram sends back.
+
+    begin_utterance() for the new response then runs as the SOLE consumer of
+    the Cleared ack.  It waits briefly for it to arrive and drains it along
+    with any stale audio before starting fresh.
+
+    The earlier approach of waiting in begin_utterance() WITHOUT _clear_event
+    caused a fatal race: both the old iter AND begin_utterance() competed for
+    the single Cleared item.  Whichever lost would spin on 1-second timeouts
+    for up to 4 seconds, causing the repetition/latency bug.
+    ─────────────────────────────────────────────────────────────────────────
     """
 
     def __init__(self) -> None:
@@ -49,6 +64,11 @@ class DeepgramTTSClient:
 
         self._utterance_open = False
         self._clear_requested = False
+
+        # Fired by clear() so that iter_audio_until_flushed() exits immediately
+        # without consuming the Deepgram "Cleared" ack from _event_queue.
+        # begin_utterance() resets this after draining the ack.
+        self._clear_event: asyncio.Event = asyncio.Event()
 
     def _websocket_url(self) -> str:
         params = {
@@ -145,16 +165,60 @@ class DeepgramTTSClient:
             except asyncio.QueueEmpty:
                 break
 
+    async def _wait_for_cleared_ack(self, timeout: float = 0.35) -> None:
+        """
+        Wait until a Cleared (or Error) event arrives in _event_queue and discard it.
+
+        Called by begin_utterance() when _clear_requested is True and the queue is
+        currently empty, meaning the Cleared ack from Deepgram is still in-flight.
+        Because iter_audio_until_flushed() exits via _clear_event (not by consuming
+        Cleared), this is now the sole consumer — no race condition.
+
+        Discards any non-Cleared events seen while waiting; they belong to the
+        interrupted utterance.  Returns on timeout so the caller always makes progress.
+        """
+        deadline = asyncio.get_running_loop().time() + timeout
+        while True:
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                return
+            try:
+                event = await asyncio.wait_for(
+                    self._event_queue.get(), timeout=remaining
+                )
+                if str(event.get("type", "")) in ("Cleared", "Error"):
+                    return
+                # Discard stale Flushed or other events from the prior utterance.
+            except asyncio.TimeoutError:
+                return
+
     async def begin_utterance(self) -> None:
         """
         Start a clean logical utterance on the persistent socket.
 
-        This is critical after barge-in because stale Cleared/Flushed events from the
-        previous utterance can otherwise cause false empty-audio results.
+        After barge-in:
+          - _clear_event is set → iter_audio_until_flushed() already exited (or is
+            about to) without touching _event_queue.
+          - _clear_requested is True → Deepgram will send a "Cleared" ack.
+          - We wait briefly for that ack so drain_queue_nowait can remove it before
+            the new iter_audio_until_flushed() starts.  If it never arrives within
+            the deadline we proceed anyway (ack was consumed elsewhere or DG is slow).
+          - _clear_event is reset so the new utterance starts with a clean signal.
         """
         await self.connect()
+
+        if self._clear_requested:
+            # Always wait briefly for the Deepgram Cleared ack after barge-in.
+            # A stale Flushed event may already be queued while the Cleared ack is
+            # still in-flight; skipping this wait lets that late Cleared poison the
+            # new utterance and causes the classic zero-audio retry failure.
+            await self._wait_for_cleared_ack(timeout=0.35)
+
         await self._drain_queue_nowait(self._audio_queue)
         await self._drain_queue_nowait(self._event_queue)
+
+        # Reset the clear signal so the new utterance's iter won't exit immediately.
+        self._clear_event.clear()
         self._utterance_open = True
         self._clear_requested = False
 
@@ -169,7 +233,6 @@ class DeepgramTTSClient:
         async with self._write_lock:
             assert self._ws is not None
             try:
-                # wrapped = f'<prosody rate="1.15">{cleaned}</prosody>'
                 await self._ws.send(json.dumps({"type": "Speak", "text": cleaned}))
             except Exception as exc:
                 self._connected = False
@@ -193,9 +256,15 @@ class DeepgramTTSClient:
 
     async def clear(self) -> None:
         """
-        Interrupt the current utterance.
+        Interrupt the current utterance immediately.
+
+        Sets _clear_event first so that any running iter_audio_until_flushed()
+        exits on its next _wait_for_audio_or_event() call, WITHOUT consuming the
+        Deepgram "Cleared" ack from _event_queue.  begin_utterance() then drains
+        that ack as sole consumer.
         """
         self._clear_requested = True
+        self._clear_event.set()  # Wake up iter_audio_until_flushed() immediately
 
         if not self._connected or self._ws is None:
             self._utterance_open = False
@@ -225,11 +294,24 @@ class DeepgramTTSClient:
         self,
         timeout_seconds: float,
     ) -> tuple[str, bytes | dict[str, Any] | None]:
+        """
+        Wait for the next audio chunk, event, or barge-in signal.
+
+        Returns one of:
+          ("clear",   None)   — _clear_event fired; caller should exit immediately
+          ("audio",   bytes)  — audio chunk from Deepgram
+          ("event",   dict)   — Flushed / Cleared / Error JSON from Deepgram
+          ("timeout", None)   — nothing arrived within timeout_seconds
+
+        clear_task is checked FIRST so barge-in always takes priority over
+        in-flight audio or events.
+        """
         audio_task = asyncio.create_task(self._audio_queue.get())
         event_task = asyncio.create_task(self._event_queue.get())
+        clear_task = asyncio.create_task(self._clear_event.wait())
 
         done, pending = await asyncio.wait(
-            {audio_task, event_task},
+            {audio_task, event_task, clear_task},
             timeout=timeout_seconds,
             return_when=asyncio.FIRST_COMPLETED,
         )
@@ -240,22 +322,32 @@ class DeepgramTTSClient:
         if not done:
             return "timeout", None
 
-        task = next(iter(done))
-        if task is audio_task:
-            return "audio", task.result()
-        return "event", task.result()
+        # Priority: clear > audio > event
+        if clear_task in done:
+            return "clear", None
+        if audio_task in done:
+            return "audio", audio_task.result()
+        return "event", event_task.result()
 
     async def iter_audio_until_flushed(self) -> AsyncGenerator[bytes, None]:
         """
         Yield audio for the current utterance until it is complete.
 
-        Behavior:
-        - emit already-buffered audio first
-        - watch for Flushed/Cleared/Error events
-        - after Flushed, keep draining briefly to catch late-arriving audio
-        - after Clear, terminate this utterance cleanly
+        Exits immediately when _clear_event fires (barge-in) without consuming
+        the Deepgram "Cleared" ack — that is left for begin_utterance() to drain.
+
+        Other exit conditions:
+        - Flushed received  → short grace period to drain any trailing audio
+        - Cleared received  → utterance was cancelled on the wire (fallback path)
+        - Error received    → raises RuntimeError
+        - WS closed         → audio_queue receives None sentinel
         """
         if not self._utterance_open and not self._clear_requested:
+            return
+
+        # Fast exit if barge-in already happened before we even started.
+        if self._clear_event.is_set():
+            self._utterance_open = False
             return
 
         flush_seen = False
@@ -286,6 +378,10 @@ class DeepgramTTSClient:
                 while asyncio.get_running_loop().time() < grace_deadline:
                     kind, payload = await self._wait_for_audio_or_event(0.03)
 
+                    if kind == "clear":
+                        self._utterance_open = False
+                        return
+
                     if kind == "audio":
                         if payload is None:
                             self._utterance_open = False
@@ -308,6 +404,10 @@ class DeepgramTTSClient:
                 return
 
             kind, payload = await self._wait_for_audio_or_event(1.0)
+
+            if kind == "clear":
+                self._utterance_open = False
+                return
 
             if kind == "timeout":
                 if audio_emitted:

@@ -11,6 +11,7 @@ This file is the SINGLE SOURCE OF TRUTH for:
 """
 from __future__ import annotations
 
+from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.nlu.intent_resolution.intent import Intent
 from app.state_machine.models.conversation_state import ConversationState
 
@@ -192,28 +193,27 @@ DELIVERY_GATING_ALLOWED_CONTROL_INTENTS: set[Intent] = {
 DONE_WORDS: set[str] = {
     "done",
     "thats all",
-    "that's all",
     "thats it",
-    "that's it",
     "finished",
     "continue",
     "next",
     "no more",
     "nothing else",
-    "i'm good",
     "im good",
     "i dont want anymore",
-    "i don't want anymore",
     "i dont want any more",
-    "i don't want any more",
     "thats enough",
-    "that's enough",
-    "i'm done",
     "im done",
     "all good",
     "good",
     "nah thats it",
-    "nah that's it",
+    "thats good",
+    "were good",
+    "that should do it",
+    "thatll do it",
+    "that will do it",
+    "should be good",
+    "should be enough",
 }
 
 # User phrases meaning "skip this optional group entirely."
@@ -240,3 +240,77 @@ MORE_OPTIONS_WORDS: set[str] = {
     "what are my options",
     "options",
 }
+
+_SIGNAL_LEADING_FILLERS: tuple[str, ...] = (
+    "no",
+    "nah",
+    "nope",
+    "yeah",
+    "yep",
+    "yup",
+    "ok",
+    "okay",
+    "alright",
+    "all right",
+    "well",
+    "so",
+    "just",
+    "please",
+)
+
+_SIGNAL_TRAILING_FILLERS: tuple[str, ...] = (
+    "please",
+    "thanks",
+    "thank you",
+    "for now",
+)
+
+
+def _strip_signal_wrappers(text: str) -> str:
+    value = normalize_text(text)
+    if not value:
+        return ""
+
+    changed = True
+    while changed and value:
+        changed = False
+
+        for phrase in _SIGNAL_LEADING_FILLERS:
+            prefix = f"{phrase} "
+            if value.startswith(prefix):
+                value = value[len(prefix):].strip()
+                changed = True
+                break
+
+        if changed:
+            continue
+
+        for phrase in _SIGNAL_TRAILING_FILLERS:
+            suffix = f" {phrase}"
+            if value.endswith(suffix):
+                value = value[: -len(suffix)].strip()
+                changed = True
+                break
+
+    return value
+
+
+def _matches_signal_phrase(text: str, phrases: set[str]) -> bool:
+    normalized = normalize_text(text)
+    if not normalized:
+        return False
+
+    candidates = {normalized, _strip_signal_wrappers(normalized)}
+    return any(candidate in phrases for candidate in candidates if candidate)
+
+
+def looks_like_done_answer(text: str) -> bool:
+    return _matches_signal_phrase(text, DONE_WORDS)
+
+
+def looks_like_skip_answer(text: str) -> bool:
+    return _matches_signal_phrase(text, SKIP_WORDS)
+
+
+def looks_like_more_options_answer(text: str) -> bool:
+    return _matches_signal_phrase(text, MORE_OPTIONS_WORDS)
