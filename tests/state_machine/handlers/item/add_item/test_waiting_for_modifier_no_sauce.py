@@ -87,6 +87,20 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
         self.assertEqual(selections[0].modifier_id, "sauce")
         self.assertEqual(selections[0].action, "remove")
 
+    def test_done_like_phrase_finishes_optional_modifier_group(self):
+        handler = WaitingForModifierHandler()
+        context = _build_context()
+
+        result = handler.handle(
+            intent=Intent.UNKNOWN,
+            context=context,
+            user_text="yeah thats good thanks",
+            session=None,
+        )
+
+        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
+        self.assertEqual(result.response_key, "ask_for_quantity")
+
 
 if __name__ == "__main__":
     unittest.main()

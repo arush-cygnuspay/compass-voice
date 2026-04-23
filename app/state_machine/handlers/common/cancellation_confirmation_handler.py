@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+import re
+
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler
+from app.state_machine.handlers.common.waiting_for_quantity_handler import (
+    WaitingForQuantityHandler,
+)
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
+from app.utils.quantity_detection import normalize_quantity
 
 
 class CancellationConfirmationHandler(BaseHandler):
@@ -33,6 +39,19 @@ class CancellationConfirmationHandler(BaseHandler):
             return HandlerResult(
                 next_state=ConversationState.ERROR_RECOVERY,
                 response_key="confirmation_state_error",
+            )
+
+        if (
+            not self._is_clear_cart_confirmation(context)
+            and context.return_state == ConversationState.WAITING_FOR_QUANTITY
+            and self._looks_like_quantity_reply(user_text, context)
+        ):
+            self._clear_flow_confirmation_state(context)
+            return WaitingForQuantityHandler().handle(
+                intent=Intent.UNKNOWN,
+                context=context,
+                user_text=user_text,
+                session=session,
             )
 
         # -------------------------------------------------
@@ -67,14 +86,14 @@ class CancellationConfirmationHandler(BaseHandler):
             resume_state = context.return_state or ConversationState.IDLE
 
             if self._is_clear_cart_confirmation(context):
-                context.awaiting_confirmation_for = None
-                context.awaiting_flow_confirmation = False
-                context.return_state = None
+                self._clear_flow_confirmation_state(context)
 
                 return HandlerResult(
                     next_state=resume_state,
                     response_key="clear_cart_cancelled",
                 )
+
+            self._clear_flow_confirmation_state(context)
 
             return HandlerResult(
                 next_state=resume_state,
@@ -111,3 +130,48 @@ class CancellationConfirmationHandler(BaseHandler):
     def _is_clear_cart_confirmation(self, context: ConversationContext) -> bool:
         confirmation = context.awaiting_confirmation_for or {}
         return confirmation.get("type") == "clear_cart"
+
+    def _clear_flow_confirmation_state(self, context: ConversationContext) -> None:
+        context.awaiting_confirmation_for = None
+        context.awaiting_flow_confirmation = False
+        context.return_state = None
+        context.interrupt_proposal = None
+
+    def _looks_like_quantity_reply(
+        self,
+        user_text: str,
+        context: ConversationContext,
+    ) -> bool:
+        slots = getattr(context, "last_slots", None)
+        if slots:
+            for slot in slots:
+                if str(getattr(slot, "name", "")).upper() == "QUANTITY":
+                    return True
+
+        normalized = " ".join((user_text or "").lower().split())
+        if not normalized:
+            return False
+
+        normalized = re.sub(r"[^\w\s]", " ", normalized)
+        normalized = " ".join(normalized.split())
+
+        for prefix in (
+            "i said ",
+            "its ",
+            "it is ",
+            "just ",
+            "only ",
+            "quantity is ",
+            "make it ",
+        ):
+            if normalized.startswith(prefix):
+                normalized = normalized[len(prefix):].strip()
+                break
+
+        if not normalized:
+            return False
+
+        if len(normalized.split()) > 4:
+            return False
+
+        return normalize_quantity(normalized) is not None

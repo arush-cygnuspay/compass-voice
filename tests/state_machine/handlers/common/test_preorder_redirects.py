@@ -91,6 +91,43 @@ def test_waiting_for_delivery_eligibility_accepts_area_text_despite_noisy_item_s
     assert context.current_prompt_field == "delivery_postal_code"
 
 
+def test_waiting_for_delivery_eligibility_accepts_zip_despite_noisy_ordering_intent():
+    context = ConversationContext()
+    context.current_prompt_field = "delivery_postal_code"
+    context.delivery_address.area = "washington dc"
+
+    result = WaitingForDeliveryEligibilityHandler().handle(
+        intent=Intent.ASK_PRICE,
+        context=context,
+        user_text="it's 21000",
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY
+    assert result.response_key == "confirm_delivery_area_zip"
+    assert context.delivery_address.postal_code == "21000"
+    assert context.current_prompt_field == "delivery_eligibility_confirmation"
+
+
+def test_waiting_for_delivery_confirmation_accepts_zip_correction_despite_noisy_ordering_intent():
+    context = ConversationContext()
+    context.current_prompt_field = "delivery_eligibility_confirmation"
+    context.delivery_address.area = "washington dc"
+    context.delivery_address.postal_code = "20001"
+
+    result = WaitingForDeliveryEligibilityHandler().handle(
+        intent=Intent.ASK_PRICE,
+        context=context,
+        user_text="it's 21000",
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY
+    assert result.response_key == "confirm_delivery_area_zip"
+    assert context.delivery_address.postal_code == "21000"
+    assert context.current_prompt_field == "delivery_eligibility_confirmation"
+
+
 def test_waiting_for_delivery_address_collection_redirects_unknown_item_like_request():
     context = ConversationContext()
     context.current_prompt_field = "delivery_street"

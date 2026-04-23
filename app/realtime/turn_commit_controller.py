@@ -4,6 +4,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import List, Optional
 
+from app.nlu.query_normalization.text_preprocessor import normalize_text
+from app.state_machine.flow_sets import looks_like_done_answer
+
 
 @dataclass(slots=True)
 class CommittedTurn:
@@ -39,6 +42,10 @@ class TurnCommitController:
     last_committed_text: str = ""
 
     def on_speech_started(self) -> None:
+        # Duplicate suppression is only valid within a single utterance.
+        # If the caller repeats the same answer on the next utterance
+        # ("one", "yes", etc.), we must commit it again.
+        self.last_committed_text = ""
         self.speech_started = True
         self.utterance_active = True
         self.committed_in_current_utterance = False
@@ -122,7 +129,7 @@ class TurnCommitController:
         if built == self.last_committed_text:
             return False
 
-        normalized = built.lower().strip()
+        normalized = normalize_text(built)
 
         if built[-1:] in {".", "!", "?"}:
             return True
@@ -141,17 +148,11 @@ class TurnCommitController:
             "nah",
             "cancel",
             "stop",
-            "done",
-            "that's all",
-            "thats all",
-            "i'm done",
-            "im done",
-            "finished",
             "checkout",
             "check out",
         }
 
-        return normalized in safe_exact_replies
+        return normalized in safe_exact_replies or looks_like_done_answer(normalized)
 
     @staticmethod
     def _clean(text: str) -> str:

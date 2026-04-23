@@ -39,6 +39,7 @@ from app.realtime.deepgram_stt_client import (
     DeepgramSTTConfig,
 )
 from app.realtime.deepgram_tts_client import DeepgramTTSClient
+from app.realtime.barge_in_policy import is_actionable_barge_in
 from app.realtime.realtime_conversation_state import RealtimePhase
 from app.realtime.turn_commit_controller import TurnCommitController
 from app.session.repository import load_existing_session, load_session, save_session
@@ -57,6 +58,14 @@ if TWILIO_BURST_FRAMES <= 0:
 
 TWILIO_BURST_BYTES = int(TWILIO_MULAW_FRAME_BYTES * TWILIO_BURST_FRAMES)
 TWILIO_BURST_PACING_SECONDS = TWILIO_FRAME_DURATION_SECONDS * TWILIO_BURST_FRAMES
+TTS_EMPTY_AUDIO_MAX_ATTEMPTS = max(
+    1,
+    int(os.getenv("COMPASS_TTS_EMPTY_AUDIO_MAX_ATTEMPTS", "3")),
+)
+TTS_EMPTY_AUDIO_RETRY_SETTLE_SECONDS = max(
+    0.0,
+    float(os.getenv("COMPASS_TTS_EMPTY_AUDIO_RETRY_SETTLE_SECONDS", "0.12")),
+)
 
 WELCOME_AUDIO_WAV_PATH = os.getenv(
     "COMPASS_WELCOME_AUDIO_WAV_PATH",
@@ -570,7 +579,6 @@ async def twilio_media_ws(websocket: WebSocket):
     mark_counter = 0
 
     bot_playback_started_at: float | None = None
-    bot_barge_in_guard_seconds = 0.35
     disable_barge_in = True
     playback_generation = 0
     welcome_sent = False
@@ -822,6 +830,9 @@ async def twilio_media_ws(websocket: WebSocket):
             while len(buffered) >= TWILIO_BURST_BYTES:
                 if should_abort and should_abort():
                     buffered.clear()
+                    # Close generator to cancel any pending asyncio queue-watcher
+                    # tasks inside iter_audio_until_flushed().
+                    await audio_chunk_stream.aclose()
                     return total_bytes_sent
 
                 burst = bytes(buffered[:TWILIO_BURST_BYTES])
@@ -829,6 +840,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 total_bytes_sent += await _send_burst_frames(burst, trace=trace)
 
         if should_abort and should_abort():
+            await audio_chunk_stream.aclose()
             return total_bytes_sent
 
         remaining_full_frame_bytes = (
@@ -873,10 +885,18 @@ async def twilio_media_ws(websocket: WebSocket):
 
             await dg_tts_client.flush()
 
-            async for audio in dg_tts_client.iter_audio_until_flushed():
-                if generation != playback_generation:
-                    return
-                yield audio
+            # Hold an explicit reference so we can aclose() it on early exit.
+            # Without this, the abandoned generator's internal asyncio.create_task()
+            # queue-watcher tasks stay alive and can steal the next utterance's
+            # Flushed/Cleared events from _event_queue.
+            audio_iter = dg_tts_client.iter_audio_until_flushed()
+            try:
+                async for audio in audio_iter:
+                    if generation != playback_generation:
+                        return
+                    yield audio
+            finally:
+                await audio_iter.aclose()
 
         return await stream_audio_to_twilio(
             audio_stream(),
@@ -903,6 +923,85 @@ async def twilio_media_ws(websocket: WebSocket):
             trace=trace,
             should_abort=lambda: generation != playback_generation,
         )
+
+    async def _stream_single_tts_text(
+        spoken_text: str,
+        trace: RealtimeTurnTrace | None = None,
+        generation: int = 0,
+    ) -> int:
+        cleaned = _normalize_response_text(spoken_text)
+        if not cleaned:
+            return 0
+
+        if trace is not None:
+            _trace_add_note(trace, "tts_retry_mode", "single_chunk")
+
+        async def audio_stream() -> AsyncGenerator[bytes, None]:
+            await dg_tts_client.send_text(cleaned)
+
+            if generation != playback_generation:
+                return
+
+            await dg_tts_client.flush()
+
+            audio_iter = dg_tts_client.iter_audio_until_flushed()
+            try:
+                async for audio in audio_iter:
+                    if generation != playback_generation:
+                        return
+                    yield audio
+            finally:
+                await audio_iter.aclose()
+
+        return await stream_audio_to_twilio(
+            audio_stream(),
+            trace=trace,
+            should_abort=lambda: generation != playback_generation,
+        )
+
+    async def _reconnect_tts_client(reason: str) -> bool:
+        nonlocal dg_tts_client
+
+        _debug_log(
+            "[DEEPGRAM TTS RECONNECT]",
+            {
+                "stream_sid": stream_session.stream_sid,
+                "reason": reason,
+            },
+        )
+
+        try:
+            await dg_tts_client.close()
+        except Exception as exc:
+            _debug_log(
+                "[DEEPGRAM TTS CLOSE ERROR]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+
+        try:
+            dg_tts_client = DeepgramTTSClient()
+            await dg_tts_client.connect()
+            print(
+                "[DEEPGRAM TTS RECONNECTED]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "reason": reason,
+                },
+            )
+            return True
+        except Exception as exc:
+            print(
+                "[DEEPGRAM TTS RECONNECT FAILED]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "reason": reason,
+                    "error": f"{type(exc).__name__}: {exc}",
+                },
+            )
+            return False
 
     def _build_response_texts(turn_output: Any) -> tuple[str, str]:
         internal_text = _normalize_response_text(
@@ -935,55 +1034,95 @@ async def twilio_media_ws(websocket: WebSocket):
             phase = RealtimePhase.LISTENING
             return
 
-        phase = RealtimePhase.SPEAKING
-        bot_playback_started_at = time.monotonic()
-        playback_generation += 1
-        generation = playback_generation
-
         if trace is not None:
             _trace_set_attr(trace, "spoken_response_text", cleaned)
             _trace_set_attr(trace, "tts_text_chars", len(cleaned))
-            _trace_set_attr(trace, "tts_request_start_monotonic", time.perf_counter())
             _trace_set_attr(trace, "end_call_after_playback", end_call_after_playback)
 
-        streamed_bytes = await _stream_progressive_tts_text(
-            cleaned,
-            trace=trace,
-            generation=generation,
-        )
+        max_attempts = TTS_EMPTY_AUDIO_MAX_ATTEMPTS
+        streamed_bytes = 0
+        generation = 0
 
-        if generation != playback_generation:
-            _debug_log(
-                "[TTS PLAYBACK ABORTED]",
-                {
-                    "stream_sid": stream_session.stream_sid,
-                    "generation": generation,
-                },
-            )
-            return
+        for attempt in range(1, max_attempts + 1):
+            phase = RealtimePhase.SPEAKING
+            bot_playback_started_at = time.monotonic()
+            playback_generation += 1
+            generation = playback_generation
 
-        if streamed_bytes <= 0:
+            if trace is not None:
+                if attempt == 1:
+                    _trace_set_attr(trace, "tts_request_start_monotonic", time.perf_counter())
+                _trace_add_note(trace, "tts_attempt", attempt)
+
+            if attempt == 1:
+                streamed_bytes = await _stream_progressive_tts_text(
+                    cleaned,
+                    trace=trace,
+                    generation=generation,
+                )
+            else:
+                streamed_bytes = await _stream_single_tts_text(
+                    cleaned,
+                    trace=trace,
+                    generation=generation,
+                )
+
+            if generation != playback_generation:
+                _debug_log(
+                    "[TTS PLAYBACK ABORTED]",
+                    {
+                        "stream_sid": stream_session.stream_sid,
+                        "generation": generation,
+                        "attempt": attempt,
+                    },
+                )
+                return
+
+            if streamed_bytes > 0:
+                break
+
             print(
                 "[TTS EMPTY AUDIO]",
                 {
                     "stream_sid": stream_session.stream_sid,
                     "text": cleaned,
+                    "attempt": attempt,
                 },
             )
             _trace_add_note(trace, "tts_empty_audio", True)
+            _trace_add_note(trace, "tts_empty_audio_attempt", attempt)
+
+            if attempt >= max_attempts:
+                phase = RealtimePhase.LISTENING
+                bot_playback_started_at = None
+
+                # Transfer takes precedence over a plain hangup when both
+                # have been requested for the same turn.
+                if pending_transfer_number:
+                    target = pending_transfer_number
+                    pending_transfer_number = None
+                    await _transfer_live_call(target)
+                elif end_call_after_playback:
+                    await _end_live_call()
+
+                return
+
             phase = RealtimePhase.LISTENING
             bot_playback_started_at = None
 
-            # Transfer takes precedence over a plain hangup when both
-            # have been requested for the same turn.
-            if pending_transfer_number:
-                target = pending_transfer_number
-                pending_transfer_number = None
-                await _transfer_live_call(target)
-            elif end_call_after_playback:
-                await _end_live_call()
+            reconnected = await _reconnect_tts_client(reason="empty_audio_retry")
+            _trace_add_note(trace, "tts_empty_audio_reconnected", reconnected)
+            if not reconnected:
+                if pending_transfer_number:
+                    target = pending_transfer_number
+                    pending_transfer_number = None
+                    await _transfer_live_call(target)
+                elif end_call_after_playback:
+                    await _end_live_call()
+                return
 
-            return
+            if TTS_EMPTY_AUDIO_RETRY_SETTLE_SECONDS > 0:
+                await asyncio.sleep(TTS_EMPTY_AUDIO_RETRY_SETTLE_SECONDS)
 
         if trace is not None:
             _trace_set_attr(
@@ -1108,6 +1247,23 @@ async def twilio_media_ws(websocket: WebSocket):
         cleaned = " ".join(user_text.split()).strip()
         if not cleaned:
             return
+
+        if phase == RealtimePhase.SPEAKING:
+            if disable_barge_in:
+                return
+
+            if not is_actionable_barge_in(app_session, cleaned):
+                _debug_log(
+                    "[BARGE IN IGNORED]",
+                    {
+                        "stream_sid": stream_session.stream_sid,
+                        "state": getattr(app_session, "conversation_state", None),
+                        "text": cleaned,
+                    },
+                )
+                return
+
+            await _interrupt_bot_playback(reason="actionable_user_turn")
 
         if phase == RealtimePhase.PROCESSING:
             pending_interrupt_text = cleaned
@@ -1240,14 +1396,13 @@ async def twilio_media_ws(websocket: WebSocket):
                 if disable_barge_in:
                     return
 
-                guard_now = time.monotonic()
-                if (
-                    bot_playback_started_at is not None
-                    and guard_now - bot_playback_started_at < bot_barge_in_guard_seconds
-                ):
-                    return
-
-                await _interrupt_bot_playback(reason="user_speech_started")
+                _debug_log(
+                    "[BARGE IN CANDIDATE]",
+                    {
+                        "stream_sid": stream_session.stream_sid,
+                        "active_mark_name": active_mark_name,
+                    },
+                )
 
         elif name == "message:UtteranceEnd":
             committed = controller.on_utterance_end()

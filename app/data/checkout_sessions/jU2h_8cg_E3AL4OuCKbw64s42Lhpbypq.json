@@ -1,0 +1,56 @@
+{
+  "token": "jU2h_8cg_E3AL4OuCKbw64s42Lhpbypq",
+  "restaurant_id": "demo",
+  "call_sid": "CAe3c8b7868c44816e7bf19723fa660eb8",
+  "order_number": "5256358",
+  "customer_phone_number": "+17036369451",
+  "address_required": true,
+  "confirmation_link": "https://www.cygnuspay.com",
+  "order_summary": {
+    "items": [
+      {
+        "name": "Chicken Burger",
+        "base_name": "Chicken Burger",
+        "variant_label": null,
+        "sides": [
+          "American Cheese",
+          "Beef Meat",
+          "Sesame Bun"
+        ],
+        "modifiers": [
+          "Red Onions",
+          "Fresh Mushroom",
+          "Whole Wheat Bun"
+        ],
+        "quantity": 1,
+        "unit_price": "$15.40",
+        "line_total": "$15.40"
+      }
+    ],
+    "item_count": 1,
+    "total": "$15.40"
+  },
+  "area": "washington",
+  "postal_code": "21000",
+  "house_number": null,
+  "street": null,
+  "secondary_address": null,
+  "city": null,
+  "state": null,
+  "full_address_raw": null,
+  "address_source": null,
+  "latitude": null,
+  "longitude": null,
+  "location_permission_granted": null,
+  "address_completed": false,
+  "payment_started": false,
+  "payment_completed": false,
+  "payment_reference": null,
+  "payment_provider": "datacap",
+  "can_retry_payment": false,
+  "last_payment_status": null,
+  "status": "pending_address",
+  "created_at": "2026-04-22T15:09:23.584222+00:00",
+  "updated_at": "2026-04-22T15:09:23.584222+00:00",
+  "expires_at": "2026-04-22T17:09:23.584222+00:00"
+}

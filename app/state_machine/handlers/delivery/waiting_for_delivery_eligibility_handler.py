@@ -39,6 +39,22 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
         delivery = context.delivery_address
         step = context.current_prompt_field or "delivery_area"
 
+        # Raw ZIP replies are often mislabeled by NLU. Accept deterministic ZIP
+        # input before any intent-based redirect logic.
+        if step == "delivery_postal_code":
+            zip_result = self._handle_delivery_postal_code(context, text)
+            if zip_result is not None:
+                return zip_result
+
+        # Allow ZIP corrections while confirming delivery eligibility.
+        if step == "delivery_eligibility_confirmation":
+            zip_correction_result = self._handle_confirmation_zip_correction(
+                context,
+                text,
+            )
+            if zip_correction_result is not None:
+                return zip_correction_result
+
         # ── Ordering intents during delivery setup → redirect gracefully ──
         if intent in _ORDERING_INTENTS or looks_like_ordering_request(
             context,
@@ -78,22 +94,9 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
             )
 
         if step == "delivery_postal_code":
-            zip_code = self._extract_zip(text)
-            if not zip_code:
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
-                    response_key="repeat_delivery_zip",
-                )
-
-            delivery.postal_code = zip_code
-            context.current_prompt_field = "delivery_eligibility_confirmation"
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
-                response_key="confirm_delivery_area_zip",
-                response_payload={
-                    "area": delivery.area,
-                    "postal_code": delivery.postal_code,
-                },
+                response_key="repeat_delivery_zip",
             )
 
         if step == "delivery_eligibility_confirmation":
@@ -166,11 +169,22 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
 
     @staticmethod
     def _extract_zip(text: str) -> str | None:
-        match = re.search(r"\b\d{5}(?:-\d{4})?\b", text)
-        if match:
-            return match.group(0)
+        if not text:
+            return None
 
-        tokens = (text or "").lower().replace("-", " ").split()
+        normalized = re.sub(r"[^a-z0-9\s-]", " ", text.lower())
+
+        match = re.search(r"\b(\d{5})(?:-\d{4})?\b", normalized)
+        if match:
+            return match.group(1)
+
+        spaced_digits_match = re.search(r"(?<!\d)((?:\d[\s-]*){5,9})(?!\d)", normalized)
+        if spaced_digits_match:
+            digits_only = re.sub(r"\D", "", spaced_digits_match.group(1))
+            if len(digits_only) >= 5:
+                return digits_only[:5]
+
+        tokens = normalized.replace("-", " ").split()
         word_to_digit = {
             "zero": "0",
             "oh": "0",
@@ -185,6 +199,69 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
             "eight": "8",
             "nine": "9",
         }
+        number_words = {
+            "zero": 0,
+            "one": 1,
+            "two": 2,
+            "three": 3,
+            "four": 4,
+            "five": 5,
+            "six": 6,
+            "seven": 7,
+            "eight": 8,
+            "nine": 9,
+            "ten": 10,
+            "eleven": 11,
+            "twelve": 12,
+            "thirteen": 13,
+            "fourteen": 14,
+            "fifteen": 15,
+            "sixteen": 16,
+            "seventeen": 17,
+            "eighteen": 18,
+            "nineteen": 19,
+            "twenty": 20,
+            "thirty": 30,
+            "forty": 40,
+            "fifty": 50,
+            "sixty": 60,
+            "seventy": 70,
+            "eighty": 80,
+            "ninety": 90,
+        }
+
+        def parse_number_phrase(candidate_tokens: list[str]) -> int | None:
+            total = 0
+            current = 0
+            used = False
+
+            for candidate in candidate_tokens:
+                if candidate in number_words:
+                    current += number_words[candidate]
+                    used = True
+                    continue
+
+                if candidate == "hundred":
+                    if current == 0:
+                        current = 1
+                    current *= 100
+                    used = True
+                    continue
+
+                if candidate == "thousand":
+                    if current == 0:
+                        current = 1
+                    total += current * 1000
+                    current = 0
+                    used = True
+                    continue
+
+                return None
+
+            if not used:
+                return None
+
+            return total + current
 
         digits: list[str] = []
         i = 0
@@ -215,6 +292,18 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
         if len(joined) >= 5:
             return joined[:5]
 
+        phrase_tokens: list[str] = []
+        for token in tokens + [""]:
+            if token in number_words or token in {"hundred", "thousand"}:
+                phrase_tokens.append(token)
+                continue
+
+            if phrase_tokens:
+                parsed_value = parse_number_phrase(phrase_tokens)
+                if parsed_value is not None and 10000 <= parsed_value <= 99999:
+                    return str(parsed_value)
+                phrase_tokens = []
+
         return None
 
     @staticmethod
@@ -224,3 +313,43 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
         if re.fullmatch(r"\d{5}(?:-\d{4})?", text):
             return False
         return len(text) >= 2
+
+    def _handle_delivery_postal_code(
+        self,
+        context: ConversationContext,
+        text: str,
+    ) -> HandlerResult | None:
+        zip_code = self._extract_zip(text)
+        if not zip_code:
+            return None
+
+        context.delivery_address.postal_code = zip_code
+        context.current_prompt_field = "delivery_eligibility_confirmation"
+        return HandlerResult(
+            next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+            response_key="confirm_delivery_area_zip",
+            response_payload={
+                "area": context.delivery_address.area,
+                "postal_code": context.delivery_address.postal_code,
+            },
+        )
+
+    def _handle_confirmation_zip_correction(
+        self,
+        context: ConversationContext,
+        text: str,
+    ) -> HandlerResult | None:
+        zip_code = self._extract_zip(text)
+        if not zip_code:
+            return None
+
+        context.delivery_address.postal_code = zip_code
+        context.current_prompt_field = "delivery_eligibility_confirmation"
+        return HandlerResult(
+            next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+            response_key="confirm_delivery_area_zip",
+            response_payload={
+                "area": context.delivery_address.area,
+                "postal_code": context.delivery_address.postal_code,
+            },
+        )
