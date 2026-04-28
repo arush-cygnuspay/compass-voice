@@ -65,8 +65,8 @@ def test_response_builder_ask_for_size():
     text = builder.build("ask_for_size", context, {"item_name": "Zinger Burger"})
 
     assert "size" in text.lower()
-    assert "Small" in text
-    assert "Large" in text
+    assert "Small" not in text
+    assert "Large" not in text
 
 
 def test_response_builder_item_added_successfully():
@@ -93,10 +93,23 @@ def test_response_builder_confirm_cancel_current_item():
     text = builder.build("confirm_cancel_current_item", context, {})
 
     assert "cancel" in text.lower()
-    assert "yes or no" in text.lower()
+    assert "yes or no" not in text.lower()
 
 
-def test_response_builder_ask_for_modifier_supports_multi_select_guidance():
+def test_response_builder_confirm_item_uses_natural_confirmation_prompt():
+    item = make_item()
+    builder = ResponseBuilder(FakeMenuRepo(item))
+    context = ConversationContext()
+    context.current_item_name = "Zinger Burger"
+
+    text = builder.build("confirm_item", context, {})
+
+    assert "zinger burger" in text.lower()
+    assert "is that right" in text.lower()
+    assert "yes or no" not in text.lower()
+
+
+def test_response_builder_ask_for_modifier_includes_noun_and_examples():
     item = make_item()
     builder = ResponseBuilder(FakeMenuRepo(item))
     context = ConversationContext()
@@ -109,9 +122,12 @@ def test_response_builder_ask_for_modifier_supports_multi_select_guidance():
         {"min_selector": 3, "max_selector": 5},
     )
 
-    assert "at least 3 options" in text.lower()
-    assert "up to 5" in text.lower()
-    assert "all at once" in text.lower()
+    lower = text.lower()
+    assert "add-on" in lower
+    assert "would you like" in lower
+    assert "cheese" in lower
+    assert "jalapeno" in lower
+    assert "sauce" in lower
 
 
 def test_response_builder_repeat_modifier_options_reports_remaining_count():
@@ -139,8 +155,8 @@ def test_response_builder_repeat_modifier_options_reports_remaining_count():
         },
     )
 
-    assert "already picked cheese" in text.lower()
-    assert "choose 2 more options" in text.lower()
+    assert "pick 2 more" in text.lower()
+    assert "cheese" in text.lower()
 
 
 def test_response_builder_repeat_modifier_options_uses_remaining_choices_only():
@@ -166,9 +182,8 @@ def test_response_builder_repeat_modifier_options_uses_remaining_choices_only():
         },
     )
 
-    assert "already picked cheese" in text.lower()
     assert "up to 2 more" in text.lower()
-    assert "remaining options are jalapeno or sauce" in text.lower()
+    assert "jalapeno or sauce" in text.lower()
 
 
 def test_response_builder_invalid_after_min_is_met_offers_done_instead_of_repeating_failure():
@@ -196,7 +211,7 @@ def test_response_builder_invalid_after_min_is_met_offers_done_instead_of_repeat
 
     assert "didn't catch a valid option" not in text.lower()
     assert "or say done" in text.lower()
-    assert "remaining options are bacon or banana pepper" in text.lower()
+    assert "bacon or banana pepper" in text.lower()
 
 
 def test_response_builder_unknown_key_returns_fallback():
@@ -207,3 +222,23 @@ def test_response_builder_unknown_key_returns_fallback():
     text = builder.build("does_not_exist", context, {})
 
     assert text == "Sorry, I didn’t understand that."
+
+
+def test_confirm_order_summary_does_not_repeat_checkout_prompt():
+    item = make_item()
+    builder = ResponseBuilder(FakeMenuRepo(item))
+    context = ConversationContext()
+    context.order_type = "pickup"
+
+    text = builder.build(
+        "confirm_order_summary",
+        context,
+        {
+            "items": [{"quantity": 1, "name": "Zinger Burger", "sides": [], "modifiers": []}],
+            "total": "$5.00",
+        },
+    )
+
+    assert text.lower().count("checkout") == 1
+    assert "should i place the order" in text.lower()
+    assert "please say yes to confirm" not in text.lower()

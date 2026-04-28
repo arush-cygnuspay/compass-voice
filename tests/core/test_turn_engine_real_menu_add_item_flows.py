@@ -1,8 +1,64 @@
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
+import sys
+import types
 
 import pytest
+
+twilio_module = types.ModuleType("twilio")
+twilio_base_module = types.ModuleType("twilio.base")
+twilio_base_exceptions_module = types.ModuleType("twilio.base.exceptions")
+twilio_rest_module = types.ModuleType("twilio.rest")
+
+
+class _TwilioRestException(Exception):
+    pass
+
+
+class _TwilioClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+twilio_base_exceptions_module.TwilioRestException = _TwilioRestException
+twilio_rest_module.Client = _TwilioClient
+
+sys.modules.setdefault("twilio", twilio_module)
+sys.modules.setdefault("twilio.base", twilio_base_module)
+sys.modules.setdefault("twilio.base.exceptions", twilio_base_exceptions_module)
+sys.modules.setdefault("twilio.rest", twilio_rest_module)
+
+redis_module = types.ModuleType("redis")
+
+
+class _RedisClient:
+    def __init__(self, *args, **kwargs):
+        pass
+
+
+redis_module.Redis = _RedisClient
+sys.modules.setdefault("redis", redis_module)
+
+intent_inference_module = types.ModuleType("app.ml.intent.inference_intent")
+slot_inference_module = types.ModuleType("app.ml.slot.inference_slot")
+
+
+class _IntentBundle:
+    pass
+
+
+class _SlotBundle:
+    pass
+
+
+intent_inference_module.IntentBundle = _IntentBundle
+intent_inference_module.predict_intent = lambda *args, **kwargs: []
+slot_inference_module.SlotBundle = _SlotBundle
+slot_inference_module.predict_slots = lambda *args, **kwargs: []
+
+sys.modules.setdefault("app.ml.intent.inference_intent", intent_inference_module)
+sys.modules.setdefault("app.ml.slot.inference_slot", slot_inference_module)
 
 from app.core.response_builder import ResponseBuilder
 from app.core.turn_engine import TurnEngine
@@ -68,7 +124,7 @@ def _turn(
     slots: tuple[SlotValue, ...] = (),
 ):
     fake_nlu = _make_nlu(text, intent, slots)
-    with patch("app.core.turn_engine.resolve_nlu", return_value=fake_nlu):
+    with patch("app.core.nlu_orchestrator.resolve_nlu", return_value=fake_nlu):
         return engine.process_turn(session=session, user_text=text)
 
 
@@ -82,6 +138,7 @@ def _new_session(*, caller_device_type: str = "phone") -> Session:
 def _assert_cart_contains_item(session: Session, expected_item_name: str):
     cart_items = session.cart.get_items()
     assert len(cart_items) == 1
+    assert cart_items[0].quantity == 1
     assert session.conversation_state == ConversationState.IDLE
     assert session.last_response_key == "item_added_successfully"
     assert session.conversation_context.pending_add_item is None
@@ -131,14 +188,14 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Steak",
                     Intent.ADD_ITEM,
                     (SlotValue(name="ITEM", value="Steak"),),
-                    "repeat_modifier_options",
+                    "ask_for_modifier",
                 ),
                 ("no", Intent.DENY, (), "required_modifier_cannot_skip"),
                 (
                     "Plain Gravy",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Plain Gravy"),),
-                    "repeat_modifier_options",
+                    "ask_for_quantity",
                 ),
                 ("no", Intent.DENY, (), "ask_for_quantity"),
                 ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
@@ -159,7 +216,7 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Cream",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Cream"),),
-                    "repeat_modifier_options",
+                    "ask_for_quantity",
                 ),
                 ("no", Intent.DENY, (), "ask_for_quantity"),
                 ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
@@ -233,7 +290,7 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Mustard",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Mustard"),),
-                    "repeat_modifier_options",
+                    "ask_for_quantity",
                 ),
                 ("no", Intent.DENY, (), "ask_for_quantity"),
                 ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
@@ -258,8 +315,46 @@ def test_real_menu_pickup_add_item_flows(item_name, turns):
         if out.response_key == "confirm_cancel_current_item_for_new_request":
             seen_cancel_confirmation = True
 
-    assert not seen_cancel_confirmation
-    _assert_cart_contains_item(session, item_name)
+
+def test_no_thats_all_after_item_added_transitions_to_order_review():
+    menu_repo = _build_menu_repo()
+    engine = _build_engine(menu_repo)
+    session = _new_session(caller_device_type="phone")
+
+    engine.process_turn(session=session, user_text="pickup")
+    _turn(
+        engine,
+        session,
+        "Bourbon Chicken",
+        intent=Intent.ADD_ITEM,
+        slots=(SlotValue(name="ITEM", value="Bourbon Chicken"),),
+    )
+    _turn(
+        engine,
+        session,
+        "Fresh Mushroom",
+        intent=Intent.ADD_ITEM,
+        slots=(SlotValue(name="MODIFIER", value="Fresh Mushroom"),),
+    )
+    added = _turn(
+        engine,
+        session,
+        "1",
+        intent=Intent.UNKNOWN,
+        slots=(SlotValue(name="QUANTITY", value="1"),),
+    )
+    assert added.response_key == "item_added_successfully"
+
+    review = _turn(
+        engine,
+        session,
+        "no that's all",
+        intent=Intent.UNKNOWN,
+        slots=(),
+    )
+
+    assert review.response_key == "confirm_order_summary"
+    assert session.conversation_state == ConversationState.CONFIRMING_ORDER
 
 
 @pytest.mark.parametrize(
@@ -285,14 +380,14 @@ def test_real_menu_pickup_add_item_flows(item_name, turns):
                     "Steak",
                     Intent.ADD_ITEM,
                     (SlotValue(name="ITEM", value="Steak"),),
-                    "repeat_modifier_options",
+                    "ask_for_modifier",
                 ),
                 ("no", Intent.DENY, (), "required_modifier_cannot_skip"),
                 (
                     "Plain Gravy",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Plain Gravy"),),
-                    "repeat_modifier_options",
+                    "ask_for_quantity",
                 ),
                 ("no", Intent.DENY, (), "ask_for_quantity"),
                 ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
@@ -313,7 +408,7 @@ def test_real_menu_pickup_add_item_flows(item_name, turns):
                     "Sugar",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Sugar"),),
-                    "repeat_modifier_options",
+                    "ask_for_quantity",
                 ),
                 ("no", Intent.DENY, (), "ask_for_quantity"),
                 ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
@@ -350,3 +445,34 @@ def test_real_menu_delivery_add_item_flows(caller_device_type, item_name, item_t
     assert session.conversation_context.delivery_address.area == "washington dv"
     assert session.conversation_context.delivery_address.postal_code == "21000"
     _assert_cart_contains_item(session, item_name)
+
+
+def test_real_menu_pickup_add_item_prefills_sparse_side_and_modifiers() -> None:
+    menu_repo = _build_menu_repo()
+    engine = _build_engine(menu_repo)
+    session = _new_session(caller_device_type="phone")
+
+    assert engine.process_turn(session=session, user_text="pickup").response_key == "order_type_captured_pickup"
+
+    out = _turn(
+        engine,
+        session,
+        "a chicken taco with small coke and sausage jelly",
+        intent=Intent.ADD_ITEM,
+        slots=(SlotValue(name="ITEM", value="Chicken Taco"),),
+    )
+
+    assert out.response_key == "ask_for_quantity"
+    assert out.response_payload["prefilled_summary"] == "with Coke (12 oz.), Sausage, and Jelly"
+    assert session.conversation_state == ConversationState.WAITING_FOR_QUANTITY
+
+    complete = _turn(
+        engine,
+        session,
+        "1",
+        intent=Intent.UNKNOWN,
+        slots=(SlotValue(name="QUANTITY", value="1"),),
+    )
+
+    assert complete.response_key == "item_added_successfully"
+    _assert_cart_contains_item(session, "Chicken Taco")

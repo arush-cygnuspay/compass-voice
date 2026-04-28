@@ -129,7 +129,7 @@ def _turn(
     slots: tuple[SlotValue, ...],
 ):
     fake_nlu = _make_nlu(text, intent, slots)
-    with patch("app.core.turn_engine.resolve_nlu", return_value=fake_nlu):
+    with patch("app.core.nlu_orchestrator.resolve_nlu", return_value=fake_nlu):
         return engine.process_turn(session=session, user_text=text)
 
 

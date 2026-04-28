@@ -83,6 +83,7 @@ class CommandExecutor:
             order_number=payload.get("order_number", ""),
             link=payload.get("link", ""),
             area=payload.get("area", ""),
+            summary_text=payload.get("summary_text", ""),
         )
 
         sms_result: SmsSendResult | None = None
