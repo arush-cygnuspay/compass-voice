@@ -124,7 +124,7 @@ def _turn(
     slots: tuple[SlotValue, ...] = (),
 ):
     fake_nlu = _make_nlu(text, intent, slots)
-    with patch("app.core.turn_engine.resolve_nlu", return_value=fake_nlu):
+    with patch("app.core.nlu_orchestrator.resolve_nlu", return_value=fake_nlu):
         return engine.process_turn(session=session, user_text=text)
 
 
@@ -218,4 +218,26 @@ def test_turn_engine_accepts_spoken_number_zip_phrase() -> None:
         slots=(),
     )
     assert third.response_key == "confirm_delivery_area_zip"
+
+
+def test_turn_engine_accepts_semantic_affirm_for_delivery_eligibility_confirmation() -> None:
+    menu_repo = _build_menu_repo()
+    engine = _build_engine(menu_repo)
+    session = Session(session_id="delivery-confirm-semantic", restaurant_id="demo")
+    session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+
+    assert _turn(engine, session, "delivery").response_key == "ask_for_delivery_area"
+    assert _turn(engine, session, "washington dc").response_key == "ask_for_delivery_zip"
+    assert _turn(engine, session, "21000", intent=Intent.UNKNOWN).response_key == "confirm_delivery_area_zip"
+
+    confirm = _turn(
+        engine,
+        session,
+        "okay",
+        intent=Intent.UNKNOWN,
+        slots=(),
+    )
+
+    assert confirm.response_key == "delivery_area_confirmed"
+    assert session.conversation_state == ConversationState.IDLE
     assert session.conversation_context.delivery_address.postal_code == "21000"
