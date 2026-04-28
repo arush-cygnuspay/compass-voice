@@ -17,6 +17,29 @@ from app.menu.models import (
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 
 
+_PROMPT_NOUN_NOISE_TOKENS = {
+    "modification",
+    "modifications",
+    "mod",
+    "mods",
+    "add-on",
+    "add-ons",
+    "add on",
+    "add ons",
+    "choice",
+    "choices",
+    "options",
+    "selection",
+    "group",
+}
+
+
+def _derive_prompt_noun(name: str) -> str:
+    label = re.sub(r"^choose\s+(your\s+|a\s+|an\s+)?", "", (name or "").strip(), flags=re.IGNORECASE)
+    tokens = [t for t in re.split(r"\s+", label.lower()) if t and t not in _PROMPT_NOUN_NOISE_TOKENS]
+    return " ".join(tokens) or label.lower().strip()
+
+
 class MenuStore:
     """
     Immutable, in-memory menu store.
@@ -197,6 +220,10 @@ class MenuStore:
                     )
                 )
 
+            raw_prompt_noun = str(group.get("prompt_noun") or "").strip()
+            prompt_noun = raw_prompt_noun or _derive_prompt_noun(group["name"]) or None
+            prompt_verb = str(group.get("prompt_verb") or "").strip() or "would you like"
+
             parsed.append(
                 SideGroup(
                     group_id=group["group_id"],
@@ -206,6 +233,8 @@ class MenuStore:
                     min_selector=group["min_selector"],
                     max_selector=group["max_selector"],
                     choices=choices,
+                    prompt_noun=prompt_noun,
+                    prompt_verb=prompt_verb,
                 )
             )
 
@@ -240,6 +269,10 @@ class MenuStore:
                     )
                 )
 
+            raw_prompt_noun = str(group.get("prompt_noun") or "").strip()
+            prompt_noun = raw_prompt_noun or _derive_prompt_noun(group["name"]) or None
+            prompt_verb = str(group.get("prompt_verb") or "").strip() or "would you like"
+
             parsed.append(
                 ModifierGroup(
                     group_id=group["group_id"],
@@ -249,6 +282,8 @@ class MenuStore:
                     min_selector=group["min_selector"],
                     max_selector=group["max_selector"],
                     choices=choices,
+                    prompt_noun=prompt_noun,
+                    prompt_verb=prompt_verb,
                 )
             )
 

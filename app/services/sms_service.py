@@ -29,6 +29,7 @@ class SmsSendRequest:
     order_number: str = ""
     link: str = ""
     area: str = ""
+    summary_text: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -97,6 +98,12 @@ class SmsService:
 
     def _build_body(self, request: SmsSendRequest) -> str:
         if request.template == "payment_link":
+            if request.summary_text:
+                return (
+                    f"Compass order summary:\n"
+                    f"{request.summary_text}\n\n"
+                    f"Review and pay here:\n{request.link}"
+                )
             return (
                 f"Compass Order #{request.order_number}\n\n"
                 f"Please complete your payment securely using the link below:\n"
@@ -105,6 +112,12 @@ class SmsService:
             )
 
         if request.template == "checkout_link":
+            if request.summary_text:
+                return (
+                    f"Compass order summary:\n"
+                    f"{request.summary_text}\n\n"
+                    f"Review, finish checkout, and pay here:\n{request.link}"
+                )
             return (
                 f"Compass Order #{request.order_number}\n\n"
                 f"Please complete your checkout using the secure link below:\n"

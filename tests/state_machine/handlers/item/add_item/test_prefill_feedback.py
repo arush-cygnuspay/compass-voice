@@ -8,6 +8,7 @@ from app.nlu.intent_resolution.intent import Intent
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.handlers.item.add_item.add_item_handler import AddItemHandler
+from app.state_machine.handlers.item.add_item.pending_add_item_factory import build_pending_add_item
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import (
     WaitingForModifierHandler,
 )
@@ -312,12 +313,14 @@ def test_add_item_handler_reports_side_prefill_over_max_and_unmatched_feedback()
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
-    assert context.selected_side_groups == {"drink": ["coke"]}
-    assert result.response_payload["prefilled_summary"] == "with Coke"
+    assert result.next_state == ConversationState.WAITING_FOR_SIDE
+    assert result.response_key == "ask_for_side"
+    assert context.selected_side_groups == {}
+    assert "prefilled_summary" not in result.response_payload
     feedback = result.response_payload["prefill_feedback"]
-    assert "I kept Coke and left off Sprite because you can only pick 1." in feedback
+    assert "you can only pick 1" in feedback
+    assert "coke" in feedback.lower()
+    assert "sprite" in feedback.lower()
     assert "I couldn't find rice." in feedback
 
 
@@ -340,12 +343,14 @@ def test_add_item_handler_reports_modifier_prefill_over_max_and_unmatched_feedba
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
-    assert [sel.modifier_id for sel in context.selected_modifier_groups["mods"]] == ["cheese"]
-    assert result.response_payload["prefilled_summary"] == "with Cheese"
+    assert result.next_state == ConversationState.WAITING_FOR_MODIFIER
+    assert result.response_key == "ask_for_modifier"
+    assert "mods" not in context.selected_modifier_groups
+    assert "prefilled_summary" not in result.response_payload
     feedback = result.response_payload["prefill_feedback"]
-    assert "I kept Cheese and left off Bacon because you can only pick 1." in feedback
+    assert "you can only pick 1" in feedback
+    assert "cheese" in feedback.lower()
+    assert "bacon" in feedback.lower()
     assert "I couldn't find avocado." in feedback
 
 
@@ -368,8 +373,8 @@ def test_add_item_handler_ignores_item_name_tokens_in_modifier_prefill_feedback(
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
+    assert result.next_state == ConversationState.WAITING_FOR_MODIFIER
+    assert result.response_key == "ask_for_modifier"
     assert context.selected_side_groups == {"drink": ["coke_12"]}
     assert "mods" not in context.selected_modifier_groups
     assert result.response_payload["prefilled_summary"] == "with Coke (12 oz.)"
@@ -454,6 +459,183 @@ def test_add_item_handler_uses_real_menu_truth_for_multi_item_boundaries():
     assert "american cheese plus jelly" not in feedback
 
 
+def test_add_item_handler_prefills_side_and_adjacent_modifiers_from_sparse_slots():
+    repo = _build_demo_menu_repo()
+    handler = AddItemHandler(repo)
+    context = ConversationContext()
+    text = normalize_text("a chicken taco with small coke and sausage jelly")
+
+    context.last_slots = (
+        SlotValue(name="ITEM", value="Chicken Taco"),
+    )
+
+    result = handler.handle(
+        intent=Intent.ADD_ITEM,
+        context=context,
+        user_text=text,
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
+    assert result.response_key == "ask_for_quantity"
+    assert context.selected_side_groups == {
+        "d9dcbebe-7d66-4659-940c-3890678834b5": ["5e57e093-8aab-4e93-acec-5a696fadd73e"]
+    }
+    assert {
+        key: [selection.modifier_id for selection in value]
+        for key, value in context.selected_modifier_groups.items()
+    } == {
+        "600e5a6e-96d5-4759-9ca4-d229b0f6b9c2": ["917d4025-7326-4fc7-b801-a6d76f14e0a9"],
+        "1e0fad0b-4d65-4e2d-a8bf-ad9d20696705": ["fce50f96-e4ad-48ff-914a-cb944402a4f1"],
+    }
+    assert result.response_payload["prefilled_summary"] == "with Coke (12 oz.), Sausage, and Jelly"
+    assert "prefill_feedback" not in result.response_payload or "small coke" not in result.response_payload.get("prefill_feedback", "")
+
+
+def test_add_item_handler_prefills_sparse_multi_item_segment_before_missing_groups():
+    repo = _build_demo_menu_repo()
+    handler = AddItemHandler(repo)
+    context = ConversationContext()
+    text = normalize_text(
+        "i want a chicken taco with coke steak and chicken and a chicken burger with american cheese red onions and fresh mushrooms"
+    )
+
+    context.last_slots = (
+        SlotValue(
+            name="ITEM",
+            value="Chicken Taco",
+            raw="chicken taco",
+            start=text.index("chicken taco"),
+            end=text.index("chicken taco") + len("chicken taco"),
+            confidence=1.0,
+        ),
+        SlotValue(
+            name="ITEM",
+            value="Chicken Burger",
+            raw="chicken burger",
+            start=text.index("chicken burger"),
+            end=text.index("chicken burger") + len("chicken burger"),
+            confidence=1.0,
+        ),
+    )
+
+    result = handler.handle(
+        intent=Intent.ADD_ITEM,
+        context=context,
+        user_text=text,
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_MODIFIER
+    assert result.response_key == "ask_for_modifier"
+    assert result.response_payload["group_name"] == "Additional Extras For Biscuits"
+    assert result.response_payload["prefilled_summary"] == "with Coke (12 oz.), Steak, and Chicken"
+    assert result.response_payload["heard_items_summary"] == ["Chicken Taco", "Chicken Burger"]
+
+    pending = context.pending_add_item
+    assert pending is not None
+
+    drink_group = next(group for group in pending.side_groups if group.name == "Can Drinks")
+    selected_drink_names = [
+        drink_group.choices_by_item_id[item_id].name
+        for item_id in context.selected_side_groups.get(drink_group.group_id, [])
+    ]
+    assert selected_drink_names == ["Coke (12 oz.)"]
+
+    meat_group = next(group for group in pending.modifier_groups if group.name == "Additional Meat for Plates")
+    selected_meat_names = [
+        selection.name
+        for selection in context.selected_modifier_groups.get(meat_group.group_id, [])
+    ]
+    assert selected_meat_names == ["Steak", "Chicken"]
+
+    prefill_debug = result.response_payload["prefill_debug"]
+    assert "coke" in prefill_debug["candidate_phrases"]
+    assert "steak" in prefill_debug["candidate_phrases"]
+    assert "chicken" in prefill_debug["candidate_phrases"]
+    assert "Can Drinks" in prefill_debug["skipped_groups_because_prefilled"]
+    assert "Additional Meat for Plates" in prefill_debug["skipped_groups_because_prefilled"]
+    assert "Can Drinks" not in prefill_debug["missing_groups_after_prefill"]
+    assert len(context.pending_item_queue) == 1
+    assert context.pending_item_queue[0].item_slot_value == "Chicken Burger"
+
+
+def test_add_item_handler_prefills_dequeued_multi_item_segment_for_next_item():
+    repo = _build_demo_menu_repo()
+    handler = AddItemHandler(repo)
+    context = ConversationContext()
+    text = normalize_text(
+        "i want a chicken taco with coke steak and chicken and a chicken burger with american cheese red onions and fresh mushrooms"
+    )
+
+    context.last_slots = (
+        SlotValue(
+            name="ITEM",
+            value="Chicken Taco",
+            raw="chicken taco",
+            start=text.index("chicken taco"),
+            end=text.index("chicken taco") + len("chicken taco"),
+            confidence=1.0,
+        ),
+        SlotValue(
+            name="ITEM",
+            value="Chicken Burger",
+            raw="chicken burger",
+            start=text.index("chicken burger"),
+            end=text.index("chicken burger") + len("chicken burger"),
+            confidence=1.0,
+        ),
+    )
+
+    first = handler.handle(
+        intent=Intent.ADD_ITEM,
+        context=context,
+        user_text=text,
+        session=None,
+    )
+    assert first.response_key == "ask_for_modifier"
+    next_item = context.pending_item_queue.popleft()
+
+    context.reset_task()
+    context.last_slots = next_item.segment_slots
+
+    second = handler.handle(
+        intent=Intent.ADD_ITEM,
+        context=context,
+        user_text=next_item.raw_text,
+        session=None,
+    )
+
+    assert second.next_state == ConversationState.WAITING_FOR_SIDE
+    assert second.response_key == "ask_for_side"
+    assert second.response_payload["group_name"] == "Choose Meat"
+    assert second.response_payload["prefilled_summary"] == "with American Cheese, Red Onions, and Fresh Mushroom"
+
+    pending = context.pending_add_item
+    assert pending is not None
+
+    cheese_group = next(group for group in pending.side_groups if group.name == "Choose Cheese")
+    selected_cheese_names = [
+        cheese_group.choices_by_item_id[item_id].name
+        for item_id in context.selected_side_groups.get(cheese_group.group_id, [])
+    ]
+    assert selected_cheese_names == ["American Cheese"]
+
+    burger_mod_group = next(group for group in pending.modifier_groups if group.name == "Burger Modification")
+    selected_modifier_names = [
+        selection.name
+        for selection in context.selected_modifier_groups.get(burger_mod_group.group_id, [])
+    ]
+    assert selected_modifier_names == ["Red Onions", "Fresh Mushroom"]
+
+    prefill_debug = second.response_payload["prefill_debug"]
+    assert "american cheese" in prefill_debug["candidate_phrases"]
+    assert "red onions" in prefill_debug["candidate_phrases"]
+    assert "fresh mushrooms" in prefill_debug["candidate_phrases"]
+    assert "Choose Cheese" in prefill_debug["skipped_groups_because_prefilled"]
+    assert "Choose Cheese" not in prefill_debug["missing_groups_after_prefill"]
+
+
 def test_waiting_for_side_returns_unmatched_feedback_when_nothing_matches():
     coke = PendingSideChoice(
         item_id="coke",
@@ -504,6 +686,32 @@ def test_waiting_for_side_returns_unmatched_feedback_when_nothing_matches():
     assert result.response_payload["repeat_reason"] == "invalid"
 
 
+def test_waiting_for_side_accepts_size_prefixed_choice_name() -> None:
+    repo = _build_demo_menu_repo()
+    item = next(
+        menu_item
+        for menu_item in repo.store.items.values()
+        if menu_item.normalized_name == normalize_text("Chicken Taco")
+    )
+    context = ConversationContext()
+    context.current_item_id = item.item_id
+    context.current_item_name = item.name
+    context.pending_add_item = build_pending_add_item(item)
+
+    result = WaitingForSideHandler(repo).handle(
+        intent=Intent.UNKNOWN,
+        context=context,
+        user_text="small coke",
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_MODIFIER
+    assert result.response_key == "ask_for_modifier"
+    assert context.selected_side_groups == {
+        "d9dcbebe-7d66-4659-940c-3890678834b5": ["5e57e093-8aab-4e93-acec-5a696fadd73e"]
+    }
+
+
 def test_waiting_for_modifier_returns_unmatched_feedback_when_nothing_matches():
     cheese = PendingModifierChoice(
         modifier_id="cheese",
@@ -552,3 +760,212 @@ def test_waiting_for_modifier_returns_unmatched_feedback_when_nothing_matches():
     assert result.response_key == "repeat_modifier_options"
     assert result.response_payload["unmatched_names"] == ["avocado"]
     assert result.response_payload["repeat_reason"] == "invalid"
+
+
+def test_waiting_for_modifier_prefills_later_groups_from_same_utterance():
+    cheese = PendingModifierChoice(
+        modifier_id="cheese",
+        name="Cheese",
+        group_id="g1",
+        normalized_name="cheese",
+        match_texts=("cheese",),
+    )
+    jelly = PendingModifierChoice(
+        modifier_id="jelly",
+        name="Jelly",
+        group_id="g2",
+        normalized_name="jelly",
+        match_texts=("jelly",),
+    )
+    sausage = PendingModifierChoice(
+        modifier_id="sausage",
+        name="Sausage",
+        group_id="g2",
+        normalized_name="sausage",
+        match_texts=("sausage",),
+    )
+    cheese_group = PendingModifierGroup(
+        group_id="g1",
+        name="Choose Cheese",
+        is_required=True,
+        min_selector=1,
+        max_selector=1,
+        choices=[cheese],
+        choices_by_modifier_id={"cheese": cheese},
+        choices_by_normalized_name={"cheese": [cheese]},
+        choice_names=("Cheese",),
+        normalized_choice_names=("cheese",),
+        top_choice_names=("Cheese",),
+    )
+    breakfast_group = PendingModifierGroup(
+        group_id="g2",
+        name="Breakfast Extras",
+        is_required=False,
+        min_selector=0,
+        max_selector=2,
+        choices=[jelly, sausage],
+        choices_by_modifier_id={"jelly": jelly, "sausage": sausage},
+        choices_by_normalized_name={"jelly": [jelly], "sausage": [sausage]},
+        choice_names=("Jelly", "Sausage"),
+        normalized_choice_names=("jelly", "sausage"),
+        top_choice_names=("Jelly", "Sausage"),
+    )
+    context = ConversationContext()
+    context.current_item_id = "burger"
+    context.current_item_name = "Burger"
+    context.pending_add_item = PendingAddItem(
+        item_id="burger",
+        item_name="Burger",
+        modifier_groups=[cheese_group, breakfast_group],
+        modifier_groups_by_id={"g1": cheese_group, "g2": breakfast_group},
+        modifier_choice_by_id={"cheese": cheese, "jelly": jelly, "sausage": sausage},
+    )
+
+    result = WaitingForModifierHandler().handle(
+        intent=Intent.UNKNOWN,
+        context=context,
+        user_text="cheese jelly and sausage",
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
+    assert result.response_key == "ask_for_quantity"
+    assert [selection.modifier_id for selection in context.selected_modifier_groups["g1"]] == ["cheese"]
+    assert [selection.modifier_id for selection in context.selected_modifier_groups["g2"]] == ["jelly", "sausage"]
+    assert result.response_payload["matched_names"] == ["Cheese", "Jelly", "Sausage"]
+
+
+def test_waiting_for_modifier_requires_clarification_when_later_group_overflows():
+    cheese = PendingModifierChoice(
+        modifier_id="cheese",
+        name="Cheese",
+        group_id="g1",
+        normalized_name="cheese",
+        match_texts=("cheese",),
+    )
+    jelly = PendingModifierChoice(
+        modifier_id="jelly",
+        name="Jelly",
+        group_id="g2",
+        normalized_name="jelly",
+        match_texts=("jelly",),
+    )
+    sausage = PendingModifierChoice(
+        modifier_id="sausage",
+        name="Sausage",
+        group_id="g2",
+        normalized_name="sausage",
+        match_texts=("sausage",),
+    )
+    cheese_group = PendingModifierGroup(
+        group_id="g1",
+        name="Choose Cheese",
+        is_required=True,
+        min_selector=1,
+        max_selector=1,
+        choices=[cheese],
+        choices_by_modifier_id={"cheese": cheese},
+        choices_by_normalized_name={"cheese": [cheese]},
+        choice_names=("Cheese",),
+        normalized_choice_names=("cheese",),
+        top_choice_names=("Cheese",),
+    )
+    breakfast_group = PendingModifierGroup(
+        group_id="g2",
+        name="Breakfast Extras",
+        is_required=False,
+        min_selector=0,
+        max_selector=1,
+        choices=[jelly, sausage],
+        choices_by_modifier_id={"jelly": jelly, "sausage": sausage},
+        choices_by_normalized_name={"jelly": [jelly], "sausage": [sausage]},
+        choice_names=("Jelly", "Sausage"),
+        normalized_choice_names=("jelly", "sausage"),
+        top_choice_names=("Jelly", "Sausage"),
+    )
+    context = ConversationContext()
+    context.current_item_id = "burger"
+    context.current_item_name = "Burger"
+    context.pending_add_item = PendingAddItem(
+        item_id="burger",
+        item_name="Burger",
+        modifier_groups=[cheese_group, breakfast_group],
+        modifier_groups_by_id={"g1": cheese_group, "g2": breakfast_group},
+        modifier_choice_by_id={"cheese": cheese, "jelly": jelly, "sausage": sausage},
+    )
+
+    result = WaitingForModifierHandler().handle(
+        intent=Intent.UNKNOWN,
+        context=context,
+        user_text="cheese jelly and sausage",
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_MODIFIER
+    assert result.response_key == "too_many_modifier_choices"
+    assert [selection.modifier_id for selection in context.selected_modifier_groups["g1"]] == ["cheese"]
+    assert "g2" not in context.selected_modifier_groups
+    assert context.current_modifier_group_index == 1
+
+
+def test_conversation_context_round_trip_preserves_match_texts():
+    cheese = PendingModifierChoice(
+        modifier_id="cheese",
+        name="Cheese",
+        group_id="mods",
+        normalized_name="cheese",
+        match_texts=("cheese", "american cheese"),
+    )
+    coke = PendingSideChoice(
+        item_id="coke",
+        name="Coke (12 oz.)",
+        pricing_mode="fixed",
+        normalized_name="coke 12 oz",
+        match_texts=("coke", "small coke"),
+    )
+    side_group = PendingSideGroup(
+        group_id="drink",
+        name="Drink",
+        is_required=False,
+        min_selector=0,
+        max_selector=1,
+        choices=[coke],
+        choices_by_item_id={"coke": coke},
+        choices_by_normalized_name={"coke 12 oz": [coke]},
+        choice_names=("Coke (12 oz.)",),
+        normalized_choice_names=("coke 12 oz",),
+        top_choice_names=("Coke (12 oz.)",),
+    )
+    modifier_group = PendingModifierGroup(
+        group_id="mods",
+        name="Add-ons",
+        is_required=False,
+        min_selector=0,
+        max_selector=1,
+        choices=[cheese],
+        choices_by_modifier_id={"cheese": cheese},
+        choices_by_normalized_name={"cheese": [cheese]},
+        choice_names=("Cheese",),
+        normalized_choice_names=("cheese",),
+        top_choice_names=("Cheese",),
+    )
+    context = ConversationContext()
+    context.pending_add_item = PendingAddItem(
+        item_id="burger",
+        item_name="Burger",
+        side_groups=[side_group],
+        modifier_groups=[modifier_group],
+        side_groups_by_id={"drink": side_group},
+        side_choice_by_item_id={"coke": coke},
+        modifier_groups_by_id={"mods": modifier_group},
+        modifier_choice_by_id={"cheese": cheese},
+    )
+
+    restored = ConversationContext.from_dict(context.to_dict())
+
+    assert restored.pending_add_item is not None
+    assert restored.pending_add_item.side_groups[0].choices[0].match_texts == ("coke", "small coke")
+    assert restored.pending_add_item.modifier_groups[0].choices[0].match_texts == (
+        "cheese",
+        "american cheese",
+    )

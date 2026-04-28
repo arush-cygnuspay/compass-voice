@@ -1,0 +1,17 @@
+{
+  "utterance": "large please",
+  "state": "waiting_for_size",
+  "nlu": {
+    "effective_intent": "unknown",
+    "intent_confidence": 0.0,
+    "model_main_intent": null,
+    "model_sub_intent": null,
+    "slots": [
+      {"name": "SIZE", "value": "large"}
+    ]
+  },
+  "expected": {
+    "slots_present": ["SIZE"],
+    "slot_value": {"SIZE": "large"}
+  }
+}

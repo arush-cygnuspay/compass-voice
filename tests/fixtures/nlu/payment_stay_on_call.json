@@ -1,0 +1,14 @@
+{
+  "utterance": "I'll stay on the line",
+  "state": "waiting_for_payment",
+  "nlu": {
+    "effective_intent": "unknown",
+    "intent_confidence": 0.0,
+    "model_main_intent": null,
+    "model_sub_intent": null,
+    "slots": []
+  },
+  "expected": {
+    "control_intent_kind": "payment_stay_on_call"
+  }
+}

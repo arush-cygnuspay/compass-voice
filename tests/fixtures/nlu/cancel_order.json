@@ -1,0 +1,14 @@
+{
+  "utterance": "cancel my order",
+  "state": "confirming_order",
+  "nlu": {
+    "effective_intent": "cancel_order",
+    "intent_confidence": 0.92,
+    "model_main_intent": "cancel_order",
+    "model_sub_intent": "cancel_order",
+    "slots": []
+  },
+  "expected": {
+    "control_intent_kind": "cancel"
+  }
+}

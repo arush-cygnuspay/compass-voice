@@ -1,6 +1,8 @@
 # app/state_machine/handlers/item/add_item/pending_add_item_factory.py
 from __future__ import annotations
 
+import re
+
 from app.menu.models import MenuItem
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.models.conversation_context import (
@@ -56,6 +58,63 @@ def _append_bucket_value[T](mapping: dict[str, list[T]], key: str, value: T) -> 
     bucket.append(value)
 
 
+def _simplify_measurement_label(text: str) -> str:
+    normalized = normalize_text(text)
+    if not normalized:
+        return ""
+
+    simplified = re.sub(r"\b\d+\s*(?:oz|ounce|ounces|inch|inches|pc|pcs|piece|pieces)\b", " ", normalized)
+    simplified = re.sub(r"\s+", " ", simplified).strip()
+    return simplified
+
+
+def _build_match_texts(
+    *,
+    name: str,
+    group_name: str = "",
+    aliases: tuple[str, ...] = (),
+    voice_labels: tuple[str, ...] = (),
+) -> tuple[str, ...]:
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def add(value: str) -> None:
+        normalized = normalize_text(value)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        candidates.append(normalized)
+
+    add(name)
+    simplified_name = _simplify_measurement_label(name)
+    if simplified_name:
+        add(simplified_name)
+
+    for alias in aliases:
+        add(alias)
+        simplified_alias = _simplify_measurement_label(alias)
+        if simplified_alias:
+            add(simplified_alias)
+
+    for label in voice_labels:
+        add(label)
+        simplified_label = _simplify_measurement_label(label)
+        if simplified_label:
+            add(simplified_label)
+
+    normalized_group_name = normalize_text(group_name)
+    normalized_name = normalize_text(name)
+    name_tokens = normalized_name.split()
+    group_tokens = set(normalized_group_name.split())
+    if len(name_tokens) >= 2:
+        suffix = name_tokens[-1]
+        stem = " ".join(name_tokens[:-1]).strip()
+        if stem and suffix in {"meat", "bun", "cheese"} and suffix in group_tokens:
+            add(stem)
+
+    return tuple(candidates)
+
+
 def build_pending_add_item(item: MenuItem) -> PendingAddItem:
     item_variants: list[PendingVariantChoice] = []
     if item.pricing and item.pricing.mode == "variant":
@@ -93,6 +152,12 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
                 name=choice.name,
                 pricing_mode=choice.pricing.mode,
                 normalized_name=normalize_text(choice.name),
+                match_texts=_build_match_texts(
+                    name=choice.name,
+                    group_name=group.name,
+                    aliases=tuple(choice.aliases or ()),
+                    voice_labels=tuple(choice.voice_labels or ()),
+                ),
                 variants=variants,
                 variants_by_id=variants_by_id,
                 variants_by_normalized_name=variants_by_normalized_name,
@@ -149,6 +214,12 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
                 name=choice.name,
                 group_id=group.group_id,
                 normalized_name=normalize_text(choice.name),
+                match_texts=_build_match_texts(
+                    name=choice.name,
+                    group_name=group.name,
+                    aliases=tuple(choice.aliases or ()),
+                    voice_labels=tuple(choice.voice_labels or ()),
+                ),
             )
 
             pending_choices.append(pending_choice)

@@ -1,32 +1,37 @@
 # app/state_machine/handlers/delivery/waiting_for_delivery_address_collection_handler.py
 from __future__ import annotations
 
+import os
 import re
 
+from app.intent.confirmation_utils import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.common.preorder_redirect_utils import (
     looks_like_ordering_request,
 )
 from app.state_machine.handlers.payment.payment_flow_support import (
     ensure_payment_link_for_voice_session,
+    log_phone_number_unavailable,
 )
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
-
-
 from app.state_machine.flow_sets import ORDERING_INTENTS as _ADDRESS_ORDERING_INTENTS
 
 
-class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
-    YES_WORDS = {
-        "yes", "yeah", "yep", "correct", "right",
-        "that is correct", "thats correct", "yes it is", "yeah its correct"
-    }
-    NO_WORDS = {"no", "nope", "wrong", "incorrect"}
+ADDRESS_FIELD_MAX_REPROMPTS = int(
+    os.getenv("COMPASS_ADDRESS_FIELD_MAX_REPROMPTS", "3")
+)
 
+
+class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
     OPTIONAL_NONE_WORDS = {
         "none",
         "no",
@@ -44,6 +49,42 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
         self.cart_summary_builder = cart_summary_builder
         self.checkout_service = checkout_service
 
+    @staticmethod
+    def _escalate_or_reprompt(
+        *,
+        context: ConversationContext,
+        field_name: str,
+        response_key: str,
+        response_payload: dict | None = None,
+    ) -> HandlerResult:
+        """Bump the reprompt counter for `field_name` and either return the
+        normal repeat HandlerResult (with `attempt_count` injected) or, once
+        we hit the max threshold, escalate to a recovery state."""
+        attempts = context.bump_reprompt(field_name)
+        if attempts >= ADDRESS_FIELD_MAX_REPROMPTS:
+            log_control_intent_event(
+                "address_field_max_attempts_exceeded",
+                field_name=field_name,
+                attempts=attempts,
+            )
+            context.reset_reprompt(field_name)
+            context.current_prompt_field = None
+            return HandlerResult(
+                next_state=ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
+                response_key="address_collection_giving_up",
+                response_payload={
+                    "field_name": field_name,
+                    "attempt_count": attempts,
+                },
+            )
+        payload = dict(response_payload or {})
+        payload["attempt_count"] = attempts
+        return HandlerResult(
+            next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+            response_key=response_key,
+            response_payload=payload,
+        )
+
     def handle(
         self,
         intent: Intent,
@@ -54,6 +95,21 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
         delivery = context.delivery_address
         text = self._normalize(user_text)
         step = context.current_prompt_field or "delivery_seed_confirmation"
+        decision = resolve_confirmation_decision(
+            context.last_nlu,
+            text,
+            resolved_intent=intent,
+            expect_confirmation=True,
+        )
+        control_intent = resolve_control_intent(
+            user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
 
         # ── Ordering intents during address collection → redirect gracefully ──
         if intent in _ADDRESS_ORDERING_INTENTS or looks_like_ordering_request(
@@ -67,13 +123,14 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
                 response_payload={"step": step},
             )
 
-        if intent in {Intent.CANCEL, Intent.CANCEL_ORDER}:
+        if intent == Intent.CANCEL_ORDER or decision == "cancel":
             payload = (
                 self.cart_summary_builder.build(session.cart)
                 if session is not None and not session.cart.is_empty()
                 else None
             )
             context.current_prompt_field = None
+            context.reprompt_attempts.clear()
             return HandlerResult(
                 next_state=ConversationState.CONFIRMING_ORDER,
                 response_key="confirm_order_summary",
@@ -81,14 +138,14 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
             )
 
         if step == "delivery_seed_confirmation":
-            if self._is_affirm(intent, text):
+            if decision == "affirm":
                 context.current_prompt_field = "delivery_house_number"
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
                     response_key="ask_for_delivery_house_number",
                 )
 
-            if self._is_deny(intent, text):
+            if decision == "deny":
                 delivery.area = None
                 delivery.postal_code = None
                 context.current_prompt_field = "delivery_area"
@@ -141,11 +198,13 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
         if step == "delivery_house_number":
             house_number = self._extract_house_number(user_text)
             if not house_number:
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+                return self._escalate_or_reprompt(
+                    context=context,
+                    field_name="delivery_house_number",
                     response_key="repeat_delivery_house_number",
                 )
             delivery.house_number = house_number
+            context.reset_reprompt("delivery_house_number")
             context.current_prompt_field = "delivery_house_number_confirmation"
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
@@ -154,13 +213,13 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
             )
 
         if step == "delivery_house_number_confirmation":
-            if self._is_affirm(intent, text):
+            if decision == "affirm":
                 context.current_prompt_field = "delivery_street"
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
                     response_key="ask_for_delivery_street",
                 )
-            if self._is_deny(intent, text):
+            if decision == "deny":
                 delivery.house_number = None
                 context.current_prompt_field = "delivery_house_number"
                 return HandlerResult(
@@ -176,11 +235,13 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
         if step == "delivery_street":
             street_value = self._clean_street_text(user_text)
             if len(street_value) < 2:
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+                return self._escalate_or_reprompt(
+                    context=context,
+                    field_name="delivery_street",
                     response_key="repeat_delivery_street",
                 )
             delivery.street = street_value
+            context.reset_reprompt("delivery_street")
             context.current_prompt_field = "delivery_street_confirmation"
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
@@ -189,13 +250,13 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
             )
 
         if step == "delivery_street_confirmation":
-            if self._is_affirm(intent, text):
+            if decision == "affirm":
                 context.current_prompt_field = "delivery_secondary_address"
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
                     response_key="ask_for_delivery_secondary_address",
                 )
-            if self._is_deny(intent, text):
+            if decision == "deny":
                 delivery.street = None
                 context.current_prompt_field = "delivery_street"
                 return HandlerResult(
@@ -209,11 +270,21 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
             )
 
         if step == "delivery_secondary_address":
-            if text in self.OPTIONAL_NONE_WORDS:
+            is_skip = (
+                text in self.OPTIONAL_NONE_WORDS
+                or intent in {Intent.DENY}
+                or (
+                    control_intent is not None
+                    and control_intent.kind == ControlIntentKind.SKIP
+                )
+            )
+            if is_skip:
                 delivery.secondary_address = None
+                context.reset_reprompt("delivery_secondary_address")
                 return self._finish(session, context)
 
             delivery.secondary_address = user_text.strip()
+            context.reset_reprompt("delivery_secondary_address")
             context.current_prompt_field = "delivery_secondary_address_confirmation"
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
@@ -222,17 +293,20 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
             )
 
         if step == "delivery_secondary_address_confirmation":
-            if self._is_affirm(intent, text):
+            if decision == "affirm":
+                context.reset_reprompt("delivery_secondary_address")
                 return self._finish(session, context)
-            if self._is_deny(intent, text):
+            if decision == "deny":
                 delivery.secondary_address = None
+                context.reset_reprompt("delivery_secondary_address")
                 context.current_prompt_field = "delivery_secondary_address"
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
                     response_key="ask_for_delivery_secondary_address",
                 )
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
+            return self._escalate_or_reprompt(
+                context=context,
+                field_name="delivery_secondary_address",
                 response_key="confirm_delivery_secondary_address",
                 response_payload={"secondary_address": delivery.secondary_address},
             )
@@ -246,14 +320,6 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
                 "postal_code": delivery.postal_code,
             },
         )
-
-    @classmethod
-    def _is_affirm(cls, intent: Intent, text: str) -> bool:
-        return intent in {Intent.AFFIRM, Intent.CONFIRM} or text in cls.YES_WORDS
-
-    @classmethod
-    def _is_deny(cls, intent: Intent, text: str) -> bool:
-        return intent in {Intent.DENY, Intent.CANCEL} or text in cls.NO_WORDS
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -314,16 +380,6 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
         context.delivery_address_confirmed = True
         context.current_prompt_field = None
 
-        phone_number = delivery.customer_phone_number
-        if not phone_number:
-            return HandlerResult(
-                next_state=ConversationState.CONFIRMING_ORDER,
-                response_key="payment_link_send_failed",
-                response_payload={
-                    "reason": "missing_customer_phone_number",
-                },
-            )
-
         if session is None:
             return HandlerResult(
                 next_state=ConversationState.ERROR_RECOVERY,
@@ -364,15 +420,35 @@ class WaitingForDeliveryAddressCollectionHandler(BaseHandler):
                 response_key="payment_link_send_failed",
             )
 
+        if not delivery.has_phone_number:
+            log_phone_number_unavailable(
+                session=session,
+                consumer="waiting_for_delivery_address_collection_handler.payment_link",
+            )
+            delivery.payment_link_delivery_channel = "in_session"
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_PAYMENT,
+                response_key="delivery_address_captured_resume_checkout",
+                response_payload={
+                    "order_number": delivery.order_number,
+                    "payment_link": delivery.payment_link,
+                    "payment_link_delivery_channel": "in_session",
+                },
+            )
+
+        delivery.payment_link_delivery_channel = "sms"
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_PAYMENT,
             response_key="delivery_address_captured_resume_checkout",
-            response_payload={"order_number": delivery.order_number},
+            response_payload={
+                "order_number": delivery.order_number,
+                "payment_link_delivery_channel": "sms",
+            },
             command={
                 "type": "SEND_SMS",
                 "payload": {
                     "template": "payment_link",
-                    "phone_number": phone_number,
+                    "phone_number": delivery.customer_phone_number,
                     "order_number": str(delivery.order_number),
                     "link": delivery.payment_link,
                 },

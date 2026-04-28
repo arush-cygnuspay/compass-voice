@@ -17,6 +17,10 @@ from app.nlu.intent_resolution.intent_resolver import predict_intent_labels
 from app.nlu.nlu_result import NLUResult, SlotValue
 from app.nlu.slot_resolution.slot_resolver import predict_slots
 from app.state_machine.models.conversation_state import ConversationState
+from app.state_machine.semantic_signals import (
+    is_affirm_like_response,
+    is_deny_like_response,
+)
 from app.utils.quantity_detection import normalize_quantity
 
 
@@ -74,17 +78,6 @@ CONTROL_PHRASES = {
     "show cart",
     "show total",
 }
-
-YES_PATTERNS = {
-    "yes", "yeah", "yep", "yup", "correct", "right", "sure", "okay", "ok",
-    "go ahead", "do it", "confirm", "please do", "that's right", "thats right",
-}
-
-NO_PATTERNS = {
-    "no", "nope", "nah", "negative", "don't", "do not", "not now",
-    "keep it", "continue", "no thanks", "that's wrong", "thats wrong",
-}
-
 
 def _should_run_slots(*, sub_intent: Optional[str], state: ConversationState) -> bool:
     if not SLOTS_ENABLED:
@@ -153,9 +146,9 @@ def _extract_size_rule(normalized: str) -> tuple[SlotValue, ...]:
 
 
 def _extract_confirmation_intent(normalized: str) -> Intent | None:
-    if normalized in YES_PATTERNS:
+    if is_affirm_like_response(None, normalized):
         return Intent.CONFIRM
-    if normalized in NO_PATTERNS:
+    if is_deny_like_response(None, normalized):
         return Intent.DENY
     return None
 
@@ -302,6 +295,7 @@ def resolve_nlu(
         ConversationState.CANCELLATION_CONFIRMATION,
         ConversationState.CONFIRMING_ITEM,
         ConversationState.CONFIRMING_ORDER,
+        ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
     }:
         confirm_intent = _extract_confirmation_intent(normalized_text)
         if confirm_intent is not None:

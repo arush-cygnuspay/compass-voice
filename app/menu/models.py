@@ -40,6 +40,8 @@ class SideGroup:
     min_selector: int
     max_selector: int
     choices: list[SideChoice]
+    prompt_noun: str | None = None
+    prompt_verb: str = "would you like"
 
 
 @dataclass(slots=True)
@@ -62,6 +64,8 @@ class ModifierGroup:
     min_selector: int
     max_selector: int
     choices: list[ModifierChoice]
+    prompt_noun: str | None = None
+    prompt_verb: str = "would you like"
 
 
 @dataclass(slots=True)

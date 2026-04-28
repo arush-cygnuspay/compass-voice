@@ -202,8 +202,13 @@ class CheckoutServicePaymentSyncTests(unittest.TestCase):
                     order_number="1234567",
                     payment_reference="ref-789",
                 )
+                duplicate = service.handle_payment_completed(
+                    order_number="1234567",
+                    payment_reference="ref-789",
+                )
 
                 self.assertIsNotNone(updated)
+                self.assertIsNotNone(duplicate)
                 self.assertTrue(updated.payment_completed)
                 self.assertEqual(updated.payment_reference, "ref-789")
                 self.assertEqual(updated.confirmation_link, "https://www.cygnuspay.com")
@@ -230,6 +235,7 @@ class CheckoutServicePaymentSyncTests(unittest.TestCase):
                     service.sms_service.requests[0].link,
                     "https://www.cygnuspay.com",
                 )
+                self.assertEqual(len(service.sms_service.requests), 1)
                 self.assertEqual(
                     service.live_call_service.calls,
                     [

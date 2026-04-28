@@ -1,0 +1,18 @@
+{
+  "utterance": "two burgers please",
+  "state": "waiting_for_quantity",
+  "nlu": {
+    "effective_intent": "unknown",
+    "intent_confidence": 0.0,
+    "model_main_intent": null,
+    "model_sub_intent": null,
+    "slots": [
+      {"name": "QUANTITY", "value": "2"},
+      {"name": "ITEM", "value": "burger"}
+    ]
+  },
+  "expected": {
+    "slots_present": ["QUANTITY", "ITEM"],
+    "slot_value": {"QUANTITY": "2"}
+  }
+}

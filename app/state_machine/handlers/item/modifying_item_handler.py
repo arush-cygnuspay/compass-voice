@@ -5,6 +5,12 @@ from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    control_intent_to_confirmation_decision,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.item.add_item.add_item_flow import (
@@ -36,6 +42,16 @@ class ModifyingItemHandler(BaseHandler):
 
         confirmation = context.awaiting_confirmation_for or {}
         action_type = confirmation.get("type")
+        control_intent = resolve_control_intent(
+            user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.MODIFYING_ITEM,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
+        decision = control_intent_to_confirmation_decision(control_intent)
 
         if not action_type:
             return HandlerResult(
@@ -43,7 +59,43 @@ class ModifyingItemHandler(BaseHandler):
                 response_key="confirmation_state_error",
             )
 
-        if intent == Intent.CANCEL:
+        if control_intent is not None and control_intent.kind == ControlIntentKind.META_CLARIFY:
+            log_control_intent_event(
+                "meta_clarify_repeated",
+                state=ConversationState.MODIFYING_ITEM.value,
+                field_name=action_type,
+            )
+            repeat_key = "confirm_modify_item" if action_type == "modify_item" else "confirm_replace_item"
+            if action_type == "replace_item_collect":
+                repeat_key = "ask_replacement_item"
+            return HandlerResult(
+                next_state=ConversationState.MODIFYING_ITEM,
+                response_key=repeat_key,
+                response_payload={
+                    "item_name": confirmation.get("item_name", "that item"),
+                    "replacement_item_name": confirmation.get("replacement_item_name"),
+                },
+            )
+
+        if control_intent is not None and control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+            log_control_intent_event(
+                "options_requested",
+                state=ConversationState.MODIFYING_ITEM.value,
+                field_name=action_type,
+            )
+            repeat_key = "confirm_modify_item" if action_type == "modify_item" else "confirm_replace_item"
+            if action_type == "replace_item_collect":
+                repeat_key = "ask_replacement_item"
+            return HandlerResult(
+                next_state=ConversationState.MODIFYING_ITEM,
+                response_key=repeat_key,
+                response_payload={
+                    "item_name": confirmation.get("item_name", "that item"),
+                    "replacement_item_name": confirmation.get("replacement_item_name"),
+                },
+            )
+
+        if decision == "cancel":
             context.reset()
             return HandlerResult(
                 next_state=ConversationState.IDLE,
@@ -51,7 +103,7 @@ class ModifyingItemHandler(BaseHandler):
             )
 
         if action_type == "replace_item_collect":
-            if intent == Intent.DENY:
+            if decision == "deny":
                 context.reset()
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
@@ -81,7 +133,7 @@ class ModifyingItemHandler(BaseHandler):
                 },
             )
 
-        if intent == Intent.DENY:
+        if decision == "deny":
             context.reset()
             cancel_key = "item_modification_cancelled" if action_type == "modify_item" else "item_replacement_cancelled"
             return HandlerResult(
@@ -89,7 +141,7 @@ class ModifyingItemHandler(BaseHandler):
                 response_key=cancel_key,
             )
 
-        if intent != Intent.CONFIRM:
+        if decision != "affirm":
             repeat_key = "confirm_modify_item" if action_type == "modify_item" else "confirm_replace_item"
             return HandlerResult(
                 next_state=ConversationState.MODIFYING_ITEM,

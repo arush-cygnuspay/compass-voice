@@ -1,0 +1,14 @@
+{
+  "utterance": "yes that's right",
+  "state": "confirming_order",
+  "nlu": {
+    "effective_intent": "affirm",
+    "intent_confidence": 0.9,
+    "model_main_intent": "affirm",
+    "model_sub_intent": "affirm",
+    "slots": []
+  },
+  "expected": {
+    "control_intent_kind": "affirm"
+  }
+}

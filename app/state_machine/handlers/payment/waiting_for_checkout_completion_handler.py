@@ -1,11 +1,29 @@
 from __future__ import annotations
 
+import time
+
 from app.nlu.intent_resolution.intent import Intent
 from app.services.checkout_service import CheckoutService
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
-from app.state_machine.handlers.payment.payment_flow_support import verify_payment_for_order
+from app.state_machine.handlers.payment.payment_flow_support import (
+    PAYMENT_LINK_RESEND_COOLDOWN_SECONDS,
+    VOICE_PAYMENT_FALLBACK_AVAILABLE,
+    append_payment_event,
+    build_payment_sms_payload,
+    log_phone_number_unavailable,
+    verify_payment_for_order,
+)
 from app.state_machine.models.conversation_state import ConversationState
+from app.state_machine.phase3_controls import is_live_agent_request
+from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
+    HUMAN_AGENT_TRANSFER_NUMBER,
+)
 
 
 class WaitingForCheckoutCompletionHandler(BaseHandler):
@@ -47,41 +65,143 @@ class WaitingForCheckoutCompletionHandler(BaseHandler):
 
         delivery = context.delivery_address
 
-        if intent in self.COMPLETE_INTENTS:
+        if is_live_agent_request(user_text):
+            return HandlerResult(
+                next_state=ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
+                response_key="transferring_to_human_agent",
+                response_payload=append_payment_event(
+                    {
+                        "transfer_number": HUMAN_AGENT_TRANSFER_NUMBER,
+                        "reason": "user_requested_agent",
+                    },
+                    event_name="user_requested_agent",
+                    metadata={"reason": "checkout_wait"},
+                ),
+                command={
+                    "type": "transfer_call",
+                    "transfer_number": HUMAN_AGENT_TRANSFER_NUMBER,
+                },
+            )
+
+        control_intent = resolve_control_intent(
+            user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
+
+        if control_intent is not None:
+            if control_intent.kind == ControlIntentKind.PAYMENT_STAY_ON_CALL:
+                delivery.payment_wait_mode = "stay_on_call"
+                delivery.payment_session_state = "waiting_payment_stay_on_call"
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                    response_key="checkout_wait_stay_on_call",
+                    response_payload=append_payment_event(
+                        None,
+                        event_name="payment_wait_mode_selected",
+                        metadata={"mode": "stay_on_call"},
+                    ),
+                )
+
+            if control_intent.kind == ControlIntentKind.PAYMENT_AFTER_CALL:
+                delivery.payment_wait_mode = "after_call"
+                delivery.payment_session_state = "waiting_payment_after_call"
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                    response_key="checkout_after_call_selected",
+                    response_payload=append_payment_event(
+                        None,
+                        event_name="payment_after_call_selected",
+                        metadata={"mode": "after_call"},
+                    ),
+                )
+
+            if control_intent.kind == ControlIntentKind.PAYMENT_CANNOT_OPEN_LINK:
+                delivery.payment_wait_mode = "after_call"
+                delivery.payment_session_state = "waiting_payment_after_call"
+                response_key = (
+                    "checkout_voice_fallback_available"
+                    if VOICE_PAYMENT_FALLBACK_AVAILABLE
+                    else "checkout_link_after_call_fallback"
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                    response_key=response_key,
+                    response_payload=append_payment_event(
+                        None,
+                        event_name="payment_after_call_selected",
+                        metadata={"reason": "cannot_open_link"},
+                    ),
+                )
+
+        if intent in self.COMPLETE_INTENTS or (
+            control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM
+        ):
             return verify_payment_for_order(
                 checkout_service=self.checkout_service,
                 order_number=delivery.order_number,
                 pending_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
                 pending_response_key="payment_not_confirmed_yet",
-            )
-
-        if intent == Intent.CANCEL_ORDER:
-            return HandlerResult(
-                next_state=ConversationState.IDLE,
-                response_key="order_cancelled",
+                delivery=delivery,
             )
 
         if intent in self.RESEND_INTENTS:
-            if not delivery.customer_phone_number or not delivery.address_form_link:
+            if not delivery.address_form_link:
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
                     response_key="checkout_link_send_failed",
                 )
 
-            delivery.checkout_link_send_attempts = 0
+            now = time.time()
+            last_resend_at = float(getattr(delivery, "last_checkout_link_resend_at_epoch", 0.0) or 0.0)
+            if last_resend_at and (now - last_resend_at) < PAYMENT_LINK_RESEND_COOLDOWN_SECONDS:
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                    response_key="checkout_link_resend_cooldown",
+                )
 
+            delivery.checkout_link_send_attempts = 0
+            delivery.checkout_status = "checkout_sent"
+            delivery.payment_status = "payment_pending"
+            delivery.last_checkout_link_resend_at_epoch = now
+
+            if not delivery.has_phone_number:
+                log_phone_number_unavailable(
+                    session=session,
+                    consumer="waiting_for_checkout_completion_handler.resend",
+                )
+                delivery.payment_link_delivery_channel = "in_session"
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                    response_key="checkout_link_resent",
+                    response_payload={
+                        "order_number": delivery.order_number,
+                        "address_form_link": delivery.address_form_link,
+                        "payment_link_delivery_channel": "in_session",
+                    },
+                )
+
+            delivery.payment_link_delivery_channel = "sms"
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
-                response_key="checkout_link_sent",
-                response_payload={"order_number": delivery.order_number},
+                response_key="checkout_link_resent",
+                response_payload={
+                    "order_number": delivery.order_number,
+                    "payment_link_delivery_channel": "sms",
+                },
                 command={
                     "type": "SEND_SMS",
-                    "payload": {
-                        "template": "checkout_link",
-                        "phone_number": delivery.customer_phone_number,
-                        "order_number": str(delivery.order_number),
-                        "link": delivery.address_form_link,
-                    },
+                    "payload": build_payment_sms_payload(
+                        template="checkout_link",
+                        phone_number=delivery.customer_phone_number,
+                        order_number=str(delivery.order_number),
+                        link=delivery.address_form_link,
+                        order_summary=session.last_response_payload or {},
+                    ),
                 },
             )
 
@@ -91,12 +211,58 @@ class WaitingForCheckoutCompletionHandler(BaseHandler):
                 order_number=delivery.order_number,
                 pending_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
                 pending_response_key="waiting_for_checkout_completion",
+                delivery=delivery,
             )
 
-        if intent in self.STATUS_INTENTS or intent in {Intent.DENY, Intent.CANCEL}:
+        if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
+            log_control_intent_event(
+                "control_intent_action",
+                state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION.value,
+                action="checkout_cancel_blocked",
+                kind=control_intent.kind.value,
+            )
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                response_key="cannot_cancel_during_checkout",
+            )
+
+        if control_intent is not None and control_intent.kind == ControlIntentKind.META_CLARIFY:
+            log_control_intent_event(
+                "meta_clarify_repeated",
+                state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION.value,
+                field_name="checkout_wait",
+            )
+
+        if control_intent is not None and control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+            log_control_intent_event(
+                "options_requested",
+                state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION.value,
+                field_name="checkout_wait",
+            )
+
+        if (
+            intent in self.STATUS_INTENTS
+            or (control_intent is not None and control_intent.kind in {
+                ControlIntentKind.DENY,
+                ControlIntentKind.DONE,
+                ControlIntentKind.META_CLARIFY,
+                ControlIntentKind.OPTIONS_REQUEST,
+            })
+        ):
+            if delivery.payment_wait_mode == "after_call":
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                    response_key="checkout_after_call_selected",
+                )
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
                 response_key="waiting_for_checkout_completion",
+            )
+
+        if delivery.payment_wait_mode == "after_call":
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
+                response_key="checkout_after_call_selected",
             )
 
         return HandlerResult(

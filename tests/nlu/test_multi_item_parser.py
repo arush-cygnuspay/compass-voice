@@ -84,3 +84,19 @@ def test_parse_multi_item_utterance_uses_menu_truth_for_boundary_items():
     assert "jelly" in first_segment_values
     assert "sausage" in first_segment_values
     assert "chicken burger" not in first_segment_values
+
+
+def test_parse_multi_item_utterance_does_not_split_required_side_mentions_without_separator():
+    store = _build_demo_store()
+    text = normalize_text("chicken burger plain bun beef meat american cheese")
+
+    slots = (
+        _slot("ITEM", "chicken burger", text),
+        _slot("ITEM", "plain bun", text),
+        _slot("ITEM", "beef meat", text),
+        _slot("ITEM", "american cheese", text),
+    )
+
+    segments = parse_multi_item_utterance(text, slots, menu_store=store)
+
+    assert segments == []

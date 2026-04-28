@@ -61,6 +61,7 @@ def _pending_side_choice_to_dict(value: PendingSideChoice) -> dict:
         "name": value.name,
         "pricing_mode": value.pricing_mode,
         "normalized_name": value.normalized_name,
+        "match_texts": list(value.match_texts),
         "variants": [_pending_variant_to_dict(variant) for variant in value.variants],
     }
 
@@ -71,6 +72,7 @@ def _pending_modifier_choice_to_dict(value: PendingModifierChoice) -> dict:
         "name": value.name,
         "group_id": value.group_id,
         "normalized_name": value.normalized_name,
+        "match_texts": list(value.match_texts),
     }
 
 
@@ -134,6 +136,7 @@ def _pending_side_choice_from_dict(data: dict) -> PendingSideChoice:
         name=name,
         pricing_mode=data["pricing_mode"],
         normalized_name=normalized_name,
+        match_texts=tuple(data.get("match_texts", ()) or ()),
         variants=variants,
         variants_by_id=variants_by_id,
         variants_by_normalized_name=variants_by_normalized_name,
@@ -151,6 +154,7 @@ def _pending_modifier_choice_from_dict(data: dict) -> PendingModifierChoice:
         name=name,
         group_id=data["group_id"],
         normalized_name=normalized_name,
+        match_texts=tuple(data.get("match_texts", ()) or ()),
     )
 
 
@@ -333,6 +337,7 @@ class ConversationContext:
 
     awaiting_flow_confirmation: bool = False
     interrupt_proposal: Optional[InterruptProposal] = None
+    resume_order_confirmation_after_edit: bool = False
 
     last_user_text: Optional[str] = None
     last_nlu: Optional[NLUResult] = None
@@ -359,6 +364,22 @@ class ConversationContext:
     # NEW: lightweight group collection metadata
     group_prompt_cursors: Dict[str, int] = field(default_factory=dict)
     group_multi_select_announced: set[str] = field(default_factory=set)
+
+    # Per-field reprompt attempt counters. Owned here so any handler
+    # can participate in a uniform escalation contract.
+    reprompt_attempts: Dict[str, int] = field(default_factory=dict)
+
+    def bump_reprompt(self, field_name: str) -> int:
+        """Increment and return the new attempt count for the field."""
+        current = int(self.reprompt_attempts.get(field_name, 0)) + 1
+        self.reprompt_attempts[field_name] = current
+        return current
+
+    def reset_reprompt(self, field_name: str) -> None:
+        self.reprompt_attempts.pop(field_name, None)
+
+    def reprompt_count(self, field_name: str) -> int:
+        return int(self.reprompt_attempts.get(field_name, 0))
 
     def set_last_nlu(self, user_text: str, nlu: NLUResult) -> None:
         self.last_user_text = user_text
@@ -399,10 +420,12 @@ class ConversationContext:
 
         self.awaiting_flow_confirmation = False
         self.interrupt_proposal = None
+        self.resume_order_confirmation_after_edit = False
         self.pending_add_item = None
 
         self.group_prompt_cursors.clear()
         self.group_multi_select_announced.clear()
+        self.reprompt_attempts.clear()
 
     def clear_item_queue(self) -> None:
         self.pending_item_queue.clear()
@@ -449,6 +472,7 @@ class ConversationContext:
             "available_choices_values": list(self.available_choices_values),
             "awaiting_flow_confirmation": self.awaiting_flow_confirmation,
             "interrupt_proposal": self.interrupt_proposal.to_dict() if self.interrupt_proposal else None,
+            "resume_order_confirmation_after_edit": self.resume_order_confirmation_after_edit,
             "pending_add_item": _pending_add_item_to_dict(self.pending_add_item) if self.pending_add_item else None,
             "pending_item_queue": [
                 {
@@ -478,6 +502,7 @@ class ConversationContext:
             "delivery_address": self.delivery_address.to_dict(),
             "group_prompt_cursors": dict(self.group_prompt_cursors),
             "group_multi_select_announced": list(self.group_multi_select_announced),
+            "reprompt_attempts": dict(self.reprompt_attempts),
         }
 
     @classmethod
@@ -525,6 +550,9 @@ class ConversationContext:
         ctx.available_choices_values = tuple(data.get("available_choices_values", []))
         ctx.awaiting_flow_confirmation = data.get("awaiting_flow_confirmation", False)
         ctx.interrupt_proposal = InterruptProposal.from_dict(data.get("interrupt_proposal"))
+        ctx.resume_order_confirmation_after_edit = bool(
+            data.get("resume_order_confirmation_after_edit", False)
+        )
 
         pending_add_item = data.get("pending_add_item")
         ctx.pending_add_item = _pending_add_item_from_dict(pending_add_item) if pending_add_item else None
@@ -563,6 +591,10 @@ class ConversationContext:
 
         ctx.group_prompt_cursors = dict(data.get("group_prompt_cursors", {}))
         ctx.group_multi_select_announced = set(data.get("group_multi_select_announced", []))
+        ctx.reprompt_attempts = {
+            str(k): int(v or 0)
+            for k, v in (data.get("reprompt_attempts") or {}).items()
+        }
 
         return ctx
 

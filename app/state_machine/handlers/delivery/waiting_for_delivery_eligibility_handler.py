@@ -3,8 +3,13 @@ from __future__ import annotations
 
 import re
 
+from app.intent.confirmation_utils import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
+from app.state_machine.control_intent_resolver import (
+    control_intent_to_confirmation_decision,
+    resolve_control_intent,
+)
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.common.preorder_redirect_utils import (
@@ -12,7 +17,6 @@ from app.state_machine.handlers.common.preorder_redirect_utils import (
 )
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
-
 
 from app.state_machine.flow_sets import ORDERING_INTENTS as _ORDERING_INTENTS
 
@@ -25,9 +29,6 @@ _STEP_REPROMPT_KEY = {
 
 
 class WaitingForDeliveryEligibilityHandler(BaseHandler):
-    YES_WORDS = {"yes", "yeah", "yep", "correct", "right", "that is correct", "thats correct", "yes it is", "yeah its correct"}
-    NO_WORDS = {"no", "nope", "wrong", "incorrect"}
-
     def handle(
         self,
         intent: Intent,
@@ -38,6 +39,18 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
         text = self._normalize(user_text)
         delivery = context.delivery_address
         step = context.current_prompt_field or "delivery_area"
+        decision = resolve_confirmation_decision(
+            context.last_nlu,
+            text,
+            resolved_intent=intent,
+            expect_confirmation=True,
+        )
+        if step == "delivery_eligibility_confirmation":
+            decision = self._resolve_delivery_confirmation_decision(
+                context=context,
+                text=text,
+                intent=intent,
+            )
 
         # Raw ZIP replies are often mislabeled by NLU. Accept deterministic ZIP
         # input before any intent-based redirect logic.
@@ -67,7 +80,7 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
                 response_payload={"step": step},
             )
 
-        if intent in {Intent.CANCEL, Intent.CANCEL_ORDER}:
+        if intent == Intent.CANCEL_ORDER or decision == "cancel":
             context.order_type = None
             context.delivery_address_required = False
             context.delivery_address_confirmed = False
@@ -100,7 +113,7 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
             )
 
         if step == "delivery_eligibility_confirmation":
-            if self._is_affirm(intent, text):
+            if decision == "affirm":
                 delivery.area_serviceable = True
                 context.onboarding_complete = True
                 context.current_prompt_field = None
@@ -113,10 +126,11 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
                     },
                 )
 
-            if self._is_deny(intent, text):
+            if decision == "deny":
                 delivery.area = None
                 delivery.postal_code = None
                 delivery.area_serviceable = None
+                context.onboarding_complete = False
                 context.current_prompt_field = "delivery_area"
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
@@ -138,13 +152,32 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
             response_key="ask_for_delivery_area",
         )
 
-    @classmethod
-    def _is_affirm(cls, intent: Intent, text: str) -> bool:
-        return intent in {Intent.AFFIRM, Intent.CONFIRM} or text in cls.YES_WORDS
+    def _resolve_delivery_confirmation_decision(
+        self,
+        *,
+        context: ConversationContext,
+        text: str,
+        intent: Intent,
+    ) -> str:
+        control_intent = resolve_control_intent(
+            transcript=text,
+            detected_intent=intent,
+            detected_sub_intent=getattr(context.last_nlu, "model_sub_intent", None),
+            current_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
+            pending_context=context,
+            nlu_result=context.last_nlu,
+            intent_confidence=getattr(context.last_nlu, "intent_confidence", None),
+        )
+        decision = control_intent_to_confirmation_decision(control_intent)
+        if decision != "unknown":
+            return decision
 
-    @classmethod
-    def _is_deny(cls, intent: Intent, text: str) -> bool:
-        return intent in {Intent.DENY, Intent.CANCEL} or text in cls.NO_WORDS
+        return resolve_confirmation_decision(
+            context.last_nlu,
+            text,
+            resolved_intent=intent,
+            expect_confirmation=True,
+        )
 
     @staticmethod
     def _normalize(text: str) -> str:
@@ -353,3 +386,4 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
                 "postal_code": context.delivery_address.postal_code,
             },
         )
+

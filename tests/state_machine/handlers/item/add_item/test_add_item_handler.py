@@ -215,16 +215,16 @@ def test_add_item_handler_prefills_only_choices_that_fit_the_current_item():
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
-    assert result.command is None
-    assert context.quantity is None
+    assert result.next_state == ConversationState.IDLE
+    assert result.response_key == "item_added_successfully"
+    assert result.command is not None
+    assert context.quantity == 2
     assert context.selected_side_groups == {"drink": ["coke"]}
     assert context.selected_modifier_groups["mods"][0].modifier_id == "cheese"
     assert context.selected_modifier_groups["mods"][0].instruction is None
 
 
-def test_add_item_handler_always_asks_quantity_even_when_initial_request_contains_it():
+def test_add_item_handler_prefills_quantity_when_initial_request_contains_it():
     item = make_item_with_groups()
     repo = FakeMenuRepo(MenuQueryResult(type=MenuQueryType.ITEM, item=item))
     handler = AddItemHandler(repo)
@@ -241,6 +241,28 @@ def test_add_item_handler_always_asks_quantity_even_when_initial_request_contain
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
-    assert context.quantity is None
+    assert result.next_state == ConversationState.WAITING_FOR_SIDE
+    assert result.response_key == "ask_for_side"
+    assert context.quantity == 2
+
+
+def test_add_item_handler_does_not_skip_optional_modifier_group_on_unmatched_prefill():
+    item = make_item_with_groups()
+    repo = FakeMenuRepo(MenuQueryResult(type=MenuQueryType.ITEM, item=item))
+    handler = AddItemHandler(repo)
+    context = ConversationContext()
+    context.last_slots = (
+        SlotValue(name="ITEM", value="Chicken Burger"),
+        SlotValue(name="MODIFIER", value="Jelly"),
+    )
+
+    result = handler.handle(
+        intent=Intent.ADD_ITEM,
+        context=context,
+        user_text="chicken burger with jelly",
+        session=None,
+    )
+
+    assert result.next_state == ConversationState.WAITING_FOR_SIDE
+    assert result.response_key == "ask_for_side"
+    assert "mods" not in context.skipped_modifier_groups

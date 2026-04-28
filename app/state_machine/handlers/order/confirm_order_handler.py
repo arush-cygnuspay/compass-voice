@@ -1,12 +1,18 @@
-# app/state_machine/handlers/order/confirm_order_handler.py
 from __future__ import annotations
 
 import os
 
 from app.nlu.intent_resolution.intent import Intent
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.payment.payment_flow_support import (
+    build_payment_sms_payload,
     ensure_payment_link_for_voice_session,
+    log_phone_number_unavailable,
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
@@ -30,6 +36,13 @@ class ConfirmOrderHandler(BaseHandler):
         Intent.REVIEW_ORDER,
     }
 
+    EDIT_INTENTS = {
+        Intent.REMOVE_ITEM,
+        Intent.MODIFY_ITEM,
+        Intent.REPLACE_ITEM,
+        Intent.UNDO_LAST,
+    }
+
     def __init__(self, cart_summary_builder, sms_service, checkout_service):
         self.cart_summary_builder = cart_summary_builder
         self.sms_service = sms_service
@@ -37,14 +50,6 @@ class ConfirmOrderHandler(BaseHandler):
 
     def _build_payment_link_result(self, session, context) -> HandlerResult:
         delivery = context.delivery_address
-        phone_number = delivery.customer_phone_number
-        if not phone_number:
-            return HandlerResult(
-                next_state=ConversationState.CONFIRMING_ORDER,
-                response_key="payment_link_send_failed",
-                response_payload={"reason": "missing_customer_phone_number"},
-            )
-
         order_summary = self.cart_summary_builder.build(session.cart)
         try:
             payment_info = ensure_payment_link_for_voice_session(
@@ -64,6 +69,10 @@ class ConfirmOrderHandler(BaseHandler):
         delivery.confirmation_link = (
             payment_info.get("confirmation_link") or delivery.confirmation_link
         )
+        delivery.payment_status = "payment_pending"
+        delivery.payment_wait_mode = "undecided"
+        delivery.payment_session_state = "waiting_payment_stay_on_call"
+        delivery.checkout_status = None
         delivery.payment_link_send_attempts = 0
 
         if payment_info.get("payment_completed"):
@@ -81,18 +90,39 @@ class ConfirmOrderHandler(BaseHandler):
                 response_key="payment_link_send_failed",
             )
 
+        if not delivery.has_phone_number:
+            log_phone_number_unavailable(
+                session=session,
+                consumer="confirm_order_handler.payment_link",
+            )
+            delivery.payment_link_delivery_channel = "in_session"
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_PAYMENT,
+                response_key="payment_link_sent",
+                response_payload={
+                    "order_number": delivery.order_number,
+                    "payment_link": delivery.payment_link,
+                    "payment_link_delivery_channel": "in_session",
+                },
+            )
+
+        delivery.payment_link_delivery_channel = "sms"
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_PAYMENT,
             response_key="payment_link_sent",
-            response_payload={"order_number": delivery.order_number},
+            response_payload={
+                "order_number": delivery.order_number,
+                "payment_link_delivery_channel": "sms",
+            },
             command={
                 "type": "SEND_SMS",
-                "payload": {
-                    "template": "payment_link",
-                    "phone_number": phone_number,
-                    "order_number": str(delivery.order_number),
-                    "link": delivery.payment_link,
-                },
+                "payload": build_payment_sms_payload(
+                    template="payment_link",
+                    phone_number=delivery.customer_phone_number,
+                    order_number=str(delivery.order_number),
+                    link=delivery.payment_link,
+                    order_summary=order_summary,
+                ),
             },
         )
 
@@ -115,7 +145,76 @@ class ConfirmOrderHandler(BaseHandler):
                 response_key="cart_empty",
             )
 
-        if intent in self.CHECKOUT_CONFIRM_INTENTS:
+        control_intent = resolve_control_intent(
+            user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.CONFIRMING_ORDER,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
+
+        if self._is_pending_cancel_scope_confirmation(context):
+            if control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM:
+                context.awaiting_confirmation_for = None
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="order_cancelled",
+                )
+
+            if intent in self.EDIT_INTENTS or (
+                control_intent is not None and control_intent.kind == ControlIntentKind.DENY
+            ):
+                context.awaiting_confirmation_for = None
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="order_confirmation_declined",
+                )
+
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ORDER,
+                response_key="confirm_cancel_order_or_edit",
+            )
+
+        if control_intent is not None and control_intent.kind == ControlIntentKind.META_CLARIFY:
+            log_control_intent_event(
+                "meta_clarify_repeated",
+                state=ConversationState.CONFIRMING_ORDER.value,
+                field_name="order_confirmation",
+            )
+            return self._summary_result(session)
+
+        if control_intent is not None and control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+            log_control_intent_event(
+                "options_requested",
+                state=ConversationState.CONFIRMING_ORDER.value,
+                field_name="order_confirmation",
+            )
+            return self._summary_result(session)
+
+        if intent in self.EDIT_INTENTS:
+            log_control_intent_event(
+                "control_intent_action",
+                state=ConversationState.CONFIRMING_ORDER.value,
+                action="route_to_order_correction",
+                intent=intent.value,
+            )
+            return HandlerResult(
+                next_state=ConversationState.IDLE,
+                response_key="order_confirmation_declined",
+            )
+
+        if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
+            context.awaiting_confirmation_for = {"type": "confirm_full_order_cancellation"}
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ORDER,
+                response_key="confirm_cancel_order_or_edit",
+            )
+
+        if intent in self.CHECKOUT_CONFIRM_INTENTS or (
+            control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM
+        ):
             delivery = context.delivery_address
 
             if context.order_type == "delivery":
@@ -131,12 +230,12 @@ class ConfirmOrderHandler(BaseHandler):
                     )
 
                 can_use_checkout_link = (
-                        not FORCE_VOICE_ADDRESS_FALLBACK
-                        and bool(delivery.customer_phone_number)
-                        and (
-                            self.sms_service.is_configured()
-                            or getattr(context, "caller_device_type", None) == "chat"
-                        )
+                    not FORCE_VOICE_ADDRESS_FALLBACK
+                    and delivery.has_phone_number
+                    and (
+                        self.sms_service.is_configured()
+                        or getattr(context, "caller_device_type", None) == "chat"
+                    )
                 )
 
                 if can_use_checkout_link:
@@ -158,6 +257,10 @@ class ConfirmOrderHandler(BaseHandler):
                         checkout_session.token
                     )
                     delivery.source = "sms_form"
+                    delivery.checkout_status = "checkout_sent"
+                    delivery.payment_status = "payment_pending"
+                    delivery.payment_wait_mode = "undecided"
+                    delivery.payment_session_state = "waiting_payment_stay_on_call"
 
                     return HandlerResult(
                         next_state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
@@ -165,12 +268,13 @@ class ConfirmOrderHandler(BaseHandler):
                         response_payload={"order_number": delivery.order_number},
                         command={
                             "type": "SEND_SMS",
-                            "payload": {
-                                "template": "checkout_link",
-                                "phone_number": delivery.customer_phone_number,
-                                "order_number": str(delivery.order_number),
-                                "link": delivery.address_form_link,
-                            },
+                            "payload": build_payment_sms_payload(
+                                template="checkout_link",
+                                phone_number=delivery.customer_phone_number,
+                                order_number=str(delivery.order_number),
+                                link=delivery.address_form_link,
+                                order_summary=self.cart_summary_builder.build(session.cart),
+                            ),
                         },
                     )
 
@@ -194,15 +298,25 @@ class ConfirmOrderHandler(BaseHandler):
                 response_key="payment_not_started",
             )
 
-        if intent in {Intent.CANCEL_ORDER, Intent.DENY, Intent.CANCEL}:
+        if control_intent is not None and control_intent.kind == ControlIntentKind.DENY:
             return HandlerResult(
                 next_state=ConversationState.IDLE,
-                response_key="order_cancelled",
+                response_key="order_confirmation_declined",
             )
 
-        payload = self.cart_summary_builder.build(session.cart)
+        return HandlerResult(
+            next_state=ConversationState.CONFIRMING_ORDER,
+            response_key="confirm_order_summary_unclear",
+            response_payload=self.cart_summary_builder.build(session.cart),
+        )
+
+    def _is_pending_cancel_scope_confirmation(self, context) -> bool:
+        confirmation = getattr(context, "awaiting_confirmation_for", None)
+        return isinstance(confirmation, dict) and confirmation.get("type") == "confirm_full_order_cancellation"
+
+    def _summary_result(self, session) -> HandlerResult:
         return HandlerResult(
             next_state=ConversationState.CONFIRMING_ORDER,
             response_key="confirm_order_summary",
-            response_payload=payload,
+            response_payload=self.cart_summary_builder.build(session.cart),
         )

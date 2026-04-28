@@ -1,0 +1,146 @@
+{
+  "nlu_cases": [
+    {
+      "id": "intent_add_burger",
+      "utterance": "add a burger",
+      "expected_intent": "add_item",
+      "scripted_intent": "add_item",
+      "scripted_slots": []
+    },
+    {
+      "id": "intent_remove_cake",
+      "utterance": "remove the cake",
+      "expected_intent": "remove_item",
+      "scripted_intent": "remove_item",
+      "scripted_slots": [
+        {"name": "ITEM", "value": "Chocolate Cake"}
+      ]
+    },
+    {
+      "id": "intent_modify_bun",
+      "utterance": "change the bun",
+      "expected_intent": "modify_item",
+      "scripted_intent": "modify_item",
+      "scripted_slots": []
+    },
+    {
+      "id": "intent_ask_options",
+      "utterance": "what are the options",
+      "expected_intent": "ask_options",
+      "scripted_intent": "ask_options",
+      "scripted_slots": []
+    },
+    {
+      "id": "intent_finish_order",
+      "utterance": "no that's all",
+      "expected_intent": "finish_order",
+      "scripted_intent": "finish_order",
+      "scripted_slots": []
+    },
+    {
+      "id": "slots_burger_modifiers",
+      "utterance": "burger with lettuce tomato no onions extra cheese",
+      "expected_intent": "add_item",
+      "scripted_intent": "add_item",
+      "scripted_slots": [
+        {"name": "ITEM", "value": "Burger"}
+      ]
+    },
+    {
+      "id": "slots_chicken_burger_quantity",
+      "utterance": "2 chicken burgers with plain bun and coke",
+      "expected_intent": "add_item",
+      "scripted_intent": "add_item",
+      "scripted_slots": [
+        {"name": "ITEM", "value": "Chicken Burger"},
+        {"name": "QUANTITY", "value": "2"}
+      ]
+    },
+    {
+      "id": "slots_beef_meat_normalization",
+      "utterance": "make it beef meat",
+      "expected_intent": "unknown",
+      "scripted_intent": "unknown",
+      "scripted_slots": [
+        {"name": "ITEM", "value": "Beef Meat"}
+      ]
+    }
+  ],
+  "conversation_scenarios": [
+    {
+      "id": "happy_path_checkout",
+      "category": "flow",
+      "counts_toward_order_turns": true,
+      "setup": {
+        "state": "waiting_for_order_type",
+        "caller_device_type": "phone",
+        "order_type": null
+      },
+      "turns": [
+        {"utterance": "pickup", "scripted_intent": "unknown", "scripted_slots": []},
+        {"utterance": "burger with lettuce tomato no onions extra cheese", "scripted_intent": "add_item", "scripted_slots": [{"name": "ITEM", "value": "Burger"}]},
+        {"utterance": "1", "scripted_intent": "unknown", "scripted_slots": [{"name": "QUANTITY", "value": "1"}]},
+        {"utterance": "chocolate cake", "scripted_intent": "add_item", "scripted_slots": [{"name": "ITEM", "value": "Chocolate Cake"}]},
+        {"utterance": "1", "scripted_intent": "unknown", "scripted_slots": [{"name": "QUANTITY", "value": "1"}]},
+        {"utterance": "checkout", "scripted_intent": "checkout", "scripted_slots": []},
+        {"utterance": "go ahead", "scripted_intent": "confirm", "scripted_slots": []}
+      ],
+      "expected_final_state": "waiting_for_payment",
+      "expected_response_keys": ["confirm_order_summary", "payment_link_sent"]
+    },
+    {
+      "id": "partial_input_missing_only_quantity",
+      "category": "flow",
+      "counts_toward_order_turns": false,
+      "setup": {
+        "state": "waiting_for_order_type",
+        "caller_device_type": "phone",
+        "order_type": null
+      },
+      "turns": [
+        {"utterance": "pickup", "scripted_intent": "unknown", "scripted_slots": []},
+        {"utterance": "burger with lettuce", "scripted_intent": "add_item", "scripted_slots": [{"name": "ITEM", "value": "Burger"}]}
+      ],
+      "expected_final_state": "waiting_for_quantity",
+      "expected_response_keys": ["ask_for_quantity"]
+    },
+    {
+      "id": "delivery_checkout_after_call",
+      "category": "payment",
+      "counts_toward_order_turns": false,
+      "setup": {
+        "state": "confirming_order",
+        "caller_device_type": "chat",
+        "order_type": "delivery",
+        "seed_items": ["Burger"],
+        "delivery_area": "Downtown",
+        "delivery_postal_code": "12345"
+      },
+      "turns": [
+        {"utterance": "go ahead", "scripted_intent": "confirm", "scripted_slots": []},
+        {"utterance": "I'll complete it after the call", "scripted_intent": "unknown", "scripted_slots": []}
+      ],
+      "expected_final_state": "waiting_for_checkout_completion",
+      "expected_response_keys": ["checkout_link_sent", "checkout_after_call_selected"]
+    },
+    {
+      "id": "invalid_side_recovery",
+      "category": "edge_case",
+      "counts_toward_order_turns": false,
+      "setup": {
+        "state": "waiting_for_order_type",
+        "caller_device_type": "phone",
+        "order_type": null
+      },
+      "turns": [
+        {"utterance": "pickup", "scripted_intent": "unknown", "scripted_slots": []},
+        {"utterance": "chicken taco", "scripted_intent": "add_item", "scripted_slots": [{"name": "ITEM", "value": "Chicken Taco"}]},
+        {"utterance": "huh", "scripted_intent": "unknown", "scripted_slots": []},
+        {"utterance": "whatever", "scripted_intent": "unknown", "scripted_slots": []},
+        {"utterance": "still not sure", "scripted_intent": "unknown", "scripted_slots": []}
+      ],
+      "expected_final_state": "waiting_for_side",
+      "expected_response_keys": ["list_side_options"]
+    }
+  ]
+}

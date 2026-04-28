@@ -2,6 +2,11 @@ from __future__ import annotations
 
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.models.conversation_context import ConversationContext, InterruptProposal
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
@@ -47,20 +52,70 @@ class WaitingForQuantityHandler(BaseHandler):
             )
 
         normalized_user_text = (user_text or "").strip()
+        control_intent = resolve_control_intent(
+            normalized_user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.WAITING_FOR_QUANTITY,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
 
-        if intent == Intent.CANCEL:
-            context.reset()
-            return HandlerResult(
-                next_state=ConversationState.IDLE,
-                response_key="item_cancelled_successfully",
-            )
+        if control_intent is not None:
+            if control_intent.kind == ControlIntentKind.CANCEL:
+                log_control_intent_event(
+                    "control_intent_action",
+                    state=ConversationState.WAITING_FOR_QUANTITY.value,
+                    action="cancel_pending_item",
+                    kind=control_intent.kind.value,
+                )
+                context.reset_task()
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_cancelled_successfully",
+                )
 
-        if intent == Intent.ASK_OPTIONS:
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_QUANTITY,
-                response_key="ask_for_quantity",
-                response_payload={"item_name": pending.item_name},
-            )
+            if control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+                log_control_intent_event(
+                    "options_requested",
+                    state=ConversationState.WAITING_FOR_QUANTITY.value,
+                    field_name="quantity",
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_QUANTITY,
+                    response_key="ask_for_quantity",
+                    response_payload={"item_name": pending.item_name},
+                )
+
+            if control_intent.kind == ControlIntentKind.META_CLARIFY:
+                log_control_intent_event(
+                    "meta_clarify_repeated",
+                    state=ConversationState.WAITING_FOR_QUANTITY.value,
+                    field_name="quantity",
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_QUANTITY,
+                    response_key="ask_for_quantity",
+                    response_payload={"item_name": pending.item_name},
+                )
+
+            if control_intent.kind in {
+                ControlIntentKind.AFFIRM,
+                ControlIntentKind.DENY,
+                ControlIntentKind.DONE,
+            }:
+                log_control_intent_event(
+                    "control_intent_action",
+                    state=ConversationState.WAITING_FOR_QUANTITY.value,
+                    action="quantity_still_required",
+                    kind=control_intent.kind.value,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_QUANTITY,
+                    response_key="ask_for_quantity",
+                    response_payload={"item_name": pending.item_name},
+                )
 
         extracted_quantity = self._extract_quantity_from_context_or_text(
             context=context,
@@ -140,8 +195,6 @@ class WaitingForQuantityHandler(BaseHandler):
                 if stripped.isdigit():
                     return int(stripped)
 
-        # First use the deterministic normalizer because detect_quantity may be
-        # conservative or stubbed depending on environment.
         normalized_quantity = normalize_quantity(user_text)
         if isinstance(normalized_quantity, int):
             return normalized_quantity
