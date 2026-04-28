@@ -7,6 +7,11 @@ from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.models.conversation_context import (
     ConversationContext,
     InterruptProposal,
@@ -15,12 +20,22 @@ from app.state_machine.models.conversation_context import (
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
+from app.state_machine.handlers.item.add_item.add_item_handler import PendingItemCaptureHelper
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,
 )
+from app.state_machine.handlers.item.add_item.option_matching import (
+    build_match_debug_payload,
+    extract_slot_candidate_texts,
+    score_scoped_choice,
+)
 from app.utils.candidate_texts import build_candidate_texts_normalized
-from app.utils.token_matcher import is_controlled_partial_match, is_strong_token_match, tokenize
+from app.utils.token_matcher import (
+    is_controlled_partial_match,
+    is_strong_token_match,
+    tokenize,
+)
 
 from app.state_machine.flow_sets import SOFT_SWITCH_INTENTS
 
@@ -37,43 +52,10 @@ class _ScoredVariantChoice:
 
 
 def _extract_size_slot_values_normalized(context: ConversationContext) -> list[str]:
-    slots = context.last_slots or ()
-    values: list[str] = []
-    seen: set[str] = set()
-
-    for slot in slots:
-        name = str(slot.name).upper()
-        if name not in {"SIZE", "VARIANT"}:
-            continue
-
-        value = slot.value
-        if not isinstance(value, str):
-            continue
-
-        normalized = normalize_text(value)
-        if not normalized or normalized in seen:
-            continue
-
-        seen.add(normalized)
-        values.append(normalized)
-
-    return values
-
-
-def _first_size_slot_normalized(slots) -> str | None:
-    for slot in slots:
-        if str(slot.name).lower() != "size":
-            continue
-
-        value = slot.value
-        if not isinstance(value, str):
-            continue
-
-        normalized = normalize_text(value)
-        if normalized:
-            return normalized
-
-    return None
+    return extract_slot_candidate_texts(
+        slots=context.last_slots or (),
+        allowed_slot_labels={"SIZE", "VARIANT"},
+    )
 
 
 def _looks_like_pure_size_answer(
@@ -185,9 +167,14 @@ class _VariantMatchMixin:
 
         if is_controlled_partial_match(candidate, choice_name):
             best = max(best, 0.82)
-
-        best = max(best, self._similarity_ratio(candidate, choice_name))
-        return best
+        return max(
+            best,
+            score_scoped_choice(
+                candidate,
+                choice_name,
+                reject_candidate_superset=False,
+            ),
+        )
 
     def _resolve_best_variant_from_values(
         self,
@@ -241,18 +228,9 @@ class _VariantMatchMixin:
 
 
 class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
-    """
-    Resolve the size / variant for the main pending item.
-
-    Important:
-    - waiting state owns the turn
-    - size resolution is slot-first, then direct-text fallback
-    - accepts short natural answers like 'small' and mixed answers like 'make it large'
-    - medium-confidence best guess asks for yes/no confirmation
-    """
-
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
         self.menu_repo = menu_repo
+        self.capture_helper = PendingItemCaptureHelper()
 
     def handle(
         self,
@@ -276,29 +254,57 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
         available_sizes = list(pending.item_variant_names)
         choices_by_normalized_name = pending.item_variants_by_normalized_name
         normalized_choice_names = tuple(choices_by_normalized_name.keys())
+        control_intent = resolve_control_intent(
+            normalized_user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.WAITING_FOR_SIZE,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
 
         size_confirmation = self._get_pending_size_confirmation(context)
         if size_confirmation is not None:
-            if intent == Intent.CONFIRM:
+            if control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM:
                 context.selected_variant_id = size_confirmation["variant_id"]
                 self._clear_pending_size_prompt(context)
                 self._clear_pending_size_confirmation(context)
+                self._capture_remaining_slots(context, normalized_user_text)
 
                 step = determine_next_add_item_step(context)
                 return self._step_to_result(context, step)
 
-            if intent == Intent.DENY:
-                self._clear_pending_size_confirmation(context)
+            if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
+                log_control_intent_event(
+                    "control_intent_action",
+                    state=ConversationState.WAITING_FOR_SIZE.value,
+                    action="cancel_pending_item",
+                    kind=control_intent.kind.value,
+                )
+                context.reset_task()
                 return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_SIZE,
-                    response_key="repeat_size_options",
-                    response_payload={
-                        "item_name": pending.item_name,
-                        "available_sizes": available_sizes,
-                    },
+                    next_state=ConversationState.IDLE,
+                    response_key="item_cancelled_successfully",
                 )
 
-            if intent == Intent.ASK_OPTIONS:
+            if control_intent is not None and control_intent.kind in {
+                ControlIntentKind.DENY,
+                ControlIntentKind.META_CLARIFY,
+                ControlIntentKind.OPTIONS_REQUEST,
+            }:
+                if control_intent.kind == ControlIntentKind.META_CLARIFY:
+                    log_control_intent_event(
+                        "meta_clarify_repeated",
+                        state=ConversationState.WAITING_FOR_SIZE.value,
+                        field_name="size",
+                    )
+                if control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+                    log_control_intent_event(
+                        "options_requested",
+                        state=ConversationState.WAITING_FOR_SIZE.value,
+                        field_name="size",
+                    )
                 self._clear_pending_size_confirmation(context)
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_SIZE,
@@ -311,29 +317,92 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
 
             self._clear_pending_size_confirmation(context)
 
-        if intent == Intent.DENY:
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_SIZE,
-                response_key="required_size_cannot_skip",
-                response_payload={
-                    "item_name": pending.item_name,
-                    "available_sizes": available_sizes,
-                },
-            )
+        if control_intent is not None:
+            if control_intent.kind == ControlIntentKind.CANCEL:
+                log_control_intent_event(
+                    "control_intent_action",
+                    state=ConversationState.WAITING_FOR_SIZE.value,
+                    action="cancel_pending_item",
+                    kind=control_intent.kind.value,
+                )
+                context.reset_task()
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_cancelled_successfully",
+                )
 
-        if intent == Intent.ASK_OPTIONS:
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_SIZE,
-                response_key="repeat_size_options",
-                response_payload={
-                    "item_name": pending.item_name,
-                    "available_sizes": available_sizes,
-                },
-            )
+            if control_intent.kind == ControlIntentKind.META_CLARIFY:
+                log_control_intent_event(
+                    "meta_clarify_repeated",
+                    state=ConversationState.WAITING_FOR_SIZE.value,
+                    field_name="size",
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIZE,
+                    response_key="repeat_size_options",
+                    response_payload={
+                        "item_name": pending.item_name,
+                        "available_sizes": available_sizes,
+                    },
+                )
+
+            if control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+                log_control_intent_event(
+                    "options_requested",
+                    state=ConversationState.WAITING_FOR_SIZE.value,
+                    field_name="size",
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIZE,
+                    response_key="repeat_size_options",
+                    response_payload={
+                        "item_name": pending.item_name,
+                        "available_sizes": available_sizes,
+                    },
+                )
+
+            if control_intent.kind in {ControlIntentKind.DENY, ControlIntentKind.DONE}:
+                log_control_intent_event(
+                    "required_selection_cannot_skip",
+                    state=ConversationState.WAITING_FOR_SIZE.value,
+                    field_name="size",
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIZE,
+                    response_key="required_size_cannot_skip",
+                    response_payload={
+                        "item_name": pending.item_name,
+                        "available_sizes": available_sizes,
+                    },
+                )
+
+            if control_intent.kind == ControlIntentKind.AFFIRM:
+                log_control_intent_event(
+                    "control_intent_action",
+                    state=ConversationState.WAITING_FOR_SIZE.value,
+                    action="size_selection_requires_explicit_choice",
+                    kind=control_intent.kind.value,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIZE,
+                    response_key="repeat_size_options",
+                    response_payload={
+                        "item_name": pending.item_name,
+                        "available_sizes": available_sizes,
+                    },
+                )
 
         scored_match: _ScoredVariantChoice | None = None
 
         normalized_slot_values = _extract_size_slot_values_normalized(context)
+        match_debug = build_match_debug_payload(
+            raw_utterance=normalized_user_text,
+            candidates=[],
+            selected_candidate=(normalized_slot_values[0] if normalized_slot_values else normalized_user_text or None),
+            matched_option=None,
+            match_source=("slot_value" if normalized_slot_values else ("raw_utterance" if normalized_user_text else None)),
+            match_score=None,
+        )
         if normalized_slot_values:
             scored_match = self._resolve_best_variant_from_values(
                 normalized_values=normalized_slot_values,
@@ -364,10 +433,19 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
             )
 
         if scored_match is not None:
+            match_debug = build_match_debug_payload(
+                raw_utterance=normalized_user_text,
+                candidates=[],
+                selected_candidate=(normalized_slot_values[0] if normalized_slot_values else normalized_user_text or None),
+                matched_option=scored_match.choice_name,
+                match_source=("slot_value" if normalized_slot_values else "raw_utterance"),
+                match_score=scored_match.confidence,
+            )
             if scored_match.confidence >= AUTO_ACCEPT_THRESHOLD:
                 context.selected_variant_id = scored_match.variant_id
                 self._clear_pending_size_prompt(context)
                 self._clear_pending_size_confirmation(context)
+                self._capture_remaining_slots(context, normalized_user_text)
 
                 step = determine_next_add_item_step(context)
                 return self._step_to_result(context, step)
@@ -385,15 +463,18 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
                     response_payload={
                         "item_name": pending.item_name,
                         "choice_name": scored_match.choice_name,
+                        **match_debug,
                     },
                 )
 
+        self._capture_remaining_slots(context, normalized_user_text)
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_SIZE,
             response_key="repeat_size_options",
             response_payload={
                 "item_name": pending.item_name,
                 "available_sizes": available_sizes,
+                **match_debug,
             },
         )
 
@@ -435,265 +516,28 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
 
         context.size_target = None
 
-    def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
-        pending = context.pending_add_item
-        if pending is None:
-            return HandlerResult(
-                next_state=ConversationState.ERROR_RECOVERY,
-                response_key="item_context_missing",
-            )
-
-        if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
-            return HandlerResult(
-                next_state=ConversationState.IDLE,
-                response_key="item_added_successfully",
-                response_payload={
-                    "item_name": pending.item_name,
-                    "quantity": context.quantity or 1,
-                },
-                command=build_add_item_command(context),
-                reset_context=True,
-            )
-
-        return HandlerResult(
-            next_state=step.next_state,
-            response_key=step.response_key,
-            response_payload=step.response_payload,
-        )
-
-
-class WaitingForSideSizeHandler(BaseHandler, _VariantMatchMixin):
-    """
-    Resolve the size / variant for the currently selected side item.
-
-    Important:
-    - waiting state owns the turn
-    - size resolution is slot-first, then direct-text fallback
-    - only sizes for the active pending side item may match
-    - medium-confidence best guess asks for yes/no confirmation
-    """
-
-    def __init__(self, menu_repo: MenuRepository | None = None) -> None:
-        self.menu_repo = menu_repo
-
-    def handle(
+    def _capture_remaining_slots(
         self,
-        intent: Intent,
         context: ConversationContext,
-        user_text: str,
-        session: Session | None = None,
-    ) -> HandlerResult:
-        pending = context.pending_add_item
-        pending_side_item_id = context.pending_side_item_id
-
-        if pending is None or not pending_side_item_id:
-            return HandlerResult(
-                next_state=ConversationState.ERROR_RECOVERY,
-                response_key="item_context_missing",
-            )
-
-        normalized_user_text = user_text or ""
-        side_choice = pending.side_choice_by_item_id.get(pending_side_item_id)
-
-        if side_choice is None:
-            return HandlerResult(
-                next_state=ConversationState.ERROR_RECOVERY,
-                response_key="item_context_missing",
-            )
-
-        if side_choice.pricing_mode != "variant" or not side_choice.variants:
-            self._clear_pending_side_size(context)
-            return self._step_to_result(context, determine_next_add_item_step(context))
-
-        available_sizes = list(side_choice.variant_names)
-        normalized_choice_names = tuple(side_choice.variants_by_normalized_name.keys())
-
-        side_size_confirmation = self._get_pending_side_size_confirmation(
+        normalized_user_text: str,
+    ) -> None:
+        self.capture_helper.prefill_quantity(
             context=context,
-            side_item_id=side_choice.item_id,
+            user_text=normalized_user_text,
         )
-        if side_size_confirmation is not None:
-            if intent == Intent.CONFIRM:
-                context.selected_side_variants[side_choice.item_id] = side_size_confirmation["variant_id"]
-                self._clear_pending_side_size(context)
-                self._clear_pending_side_size_confirmation(context, side_choice.item_id)
-
-                step = determine_next_add_item_step(context)
-                return self._step_to_result(context, step)
-
-            if intent == Intent.DENY:
-                self._clear_pending_side_size_confirmation(context, side_choice.item_id)
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
-                    response_key="repeat_side_size_options",
-                    response_payload={
-                        "item_name": pending.item_name,
-                        "side_item_name": side_choice.name,
-                        "available_sizes": available_sizes,
-                    },
-                )
-
-            if intent == Intent.ASK_OPTIONS:
-                self._clear_pending_side_size_confirmation(context, side_choice.item_id)
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
-                    response_key="repeat_side_size_options",
-                    response_payload={
-                        "item_name": pending.item_name,
-                        "side_item_name": side_choice.name,
-                        "available_sizes": available_sizes,
-                    },
-                )
-
-            self._clear_pending_side_size_confirmation(context, side_choice.item_id)
-
-        if intent == Intent.DENY:
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
-                response_key="required_side_size_cannot_skip",
-                response_payload={
-                    "item_name": pending.item_name,
-                    "side_item_name": side_choice.name,
-                    "available_sizes": available_sizes,
-                },
-            )
-
-        if intent == Intent.ASK_OPTIONS:
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
-                response_key="repeat_side_size_options",
-                response_payload={
-                    "item_name": pending.item_name,
-                    "side_item_name": side_choice.name,
-                    "available_sizes": available_sizes,
-                },
-            )
-
-        scored_match: _ScoredVariantChoice | None = None
-
-        slot_value = _first_size_slot_normalized(context.last_slots or ())
-        if slot_value:
-            scored_match = self._resolve_best_variant_from_values(
-                normalized_values=[slot_value],
-                choices_by_normalized_name=side_choice.variants_by_normalized_name,
-            )
-
-        if scored_match is None and intent in SOFT_SWITCH_INTENTS:
-            context.awaiting_flow_confirmation = True
-            context.return_state = ConversationState.WAITING_FOR_SIDE_SIZE
-            context.interrupt_proposal = InterruptProposal(
-                text=normalized_user_text,
-                predicted_main_intent=None,
-                predicted_sub_intent=intent.value,
-            )
-            return HandlerResult(
-                next_state=ConversationState.CANCELLATION_CONFIRMATION,
-                response_key="confirm_cancel_current_item_for_new_request",
-                response_payload={"item_name": pending.item_name},
-            )
-
-        if scored_match is None and _looks_like_pure_size_answer(
-            normalized_user_text,
-            normalized_choice_names,
-        ):
-            scored_match = self._resolve_best_variant_from_values(
-                normalized_values=[normalized_user_text],
-                choices_by_normalized_name=side_choice.variants_by_normalized_name,
-            )
-
-        if scored_match is not None:
-            if scored_match.confidence >= AUTO_ACCEPT_THRESHOLD:
-                context.selected_side_variants[side_choice.item_id] = scored_match.variant_id
-                self._clear_pending_side_size(context)
-                self._clear_pending_side_size_confirmation(context, side_choice.item_id)
-
-                step = determine_next_add_item_step(context)
-                return self._step_to_result(context, step)
-
-            if scored_match.confidence >= CONFIRM_THRESHOLD:
-                self._set_pending_side_size_confirmation(
-                    context=context,
-                    side_item_id=side_choice.item_id,
-                    variant_id=scored_match.variant_id,
-                    choice_name=scored_match.choice_name,
-                    confidence=scored_match.confidence,
-                )
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
-                    response_key="confirm_side_size_choice_guess",
-                    response_payload={
-                        "item_name": pending.item_name,
-                        "side_item_name": side_choice.name,
-                        "choice_name": scored_match.choice_name,
-                    },
-                )
-
-        return HandlerResult(
-            next_state=ConversationState.WAITING_FOR_SIDE_SIZE,
-            response_key="invalid_side_size_option",
-            response_payload={
-                "item_name": pending.item_name,
-                "side_item_name": side_choice.name,
-                "available_sizes": available_sizes,
-            },
+        self.capture_helper.prefill_side_groups(
+            context=context,
+            normalized_user_text=normalized_user_text,
         )
-
-    def _set_pending_side_size_confirmation(
-        self,
-        *,
-        context: ConversationContext,
-        side_item_id: str,
-        variant_id: str,
-        choice_name: str,
-        confidence: float,
-    ) -> None:
-        context.awaiting_confirmation_for = {
-            "type": "side_size_choice_guess",
-            "side_item_id": side_item_id,
-            "variant_id": variant_id,
-            "choice_name": choice_name,
-            "confidence": confidence,
-        }
-
-    def _get_pending_side_size_confirmation(
-        self,
-        *,
-        context: ConversationContext,
-        side_item_id: str,
-    ) -> dict | None:
-        confirmation = getattr(context, "awaiting_confirmation_for", None)
-        if not isinstance(confirmation, dict):
-            return None
-        if confirmation.get("type") != "side_size_choice_guess":
-            return None
-        if confirmation.get("side_item_id") != side_item_id:
-            return None
-        return confirmation
-
-    def _clear_pending_side_size_confirmation(
-        self,
-        context: ConversationContext,
-        side_item_id: str,
-    ) -> None:
-        confirmation = getattr(context, "awaiting_confirmation_for", None)
-        if (
-            isinstance(confirmation, dict)
-            and confirmation.get("type") == "side_size_choice_guess"
-            and confirmation.get("side_item_id") == side_item_id
-        ):
-            context.awaiting_confirmation_for = None
-
-    def _clear_pending_side_size(self, context: ConversationContext) -> None:
-        context.pending_side_item_id = None
-        context.pending_side_item_name = None
-        context.pending_side_group_id = None
-
-        if context.current_prompt_field == "side_size":
-            context.current_prompt_field = None
-
-        if context.available_choices_kind == "side_size":
-            context.available_choices_kind = None
-            context.available_choices_values = ()
+        self.capture_helper.prefill_selected_side_variants(
+            context=context,
+            user_text=normalized_user_text,
+            slots=context.last_slots or (),
+        )
+        self.capture_helper.prefill_modifier_groups(
+            context=context,
+            normalized_user_text=normalized_user_text,
+        )
 
     def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
         pending = context.pending_add_item

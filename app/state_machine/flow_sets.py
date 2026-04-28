@@ -192,9 +192,16 @@ DELIVERY_GATING_ALLOWED_CONTROL_INTENTS: set[Intent] = {
 # User phrases meaning "I'm done choosing from this group, move on."
 DONE_WORDS: set[str] = {
     "done",
+    "i am done",
+    "i said done",
+    "done and done",
     "thats all",
+    "that is all",
     "thats it",
+    "that is it",
     "finished",
+    "i am finished",
+    "im finished",
     "continue",
     "next",
     "no more",
@@ -214,6 +221,7 @@ DONE_WORDS: set[str] = {
     "that will do it",
     "should be good",
     "should be enough",
+    "sounds good",
 }
 
 # User phrases meaning "skip this optional group entirely."
@@ -224,6 +232,9 @@ SKIP_WORDS: set[str] = {
     "skip",
     "skip it",
     "no thanks",
+    "leave it",
+    "leave it off",
+    "i am good",
 }
 
 # User phrases meaning "show me more options / what else is available."
@@ -233,6 +244,12 @@ MORE_OPTIONS_WORDS: set[str] = {
     "what else",
     "what else do you have",
     "what else you got",
+    "what are the options",
+    "what can i choose",
+    "tell me the choices",
+    "what do you have",
+    "list options",
+    "available toppings",
     "next options",
     "show me more",
     "any others",
@@ -295,12 +312,43 @@ def _strip_signal_wrappers(text: str) -> str:
     return value
 
 
-def _matches_signal_phrase(text: str, phrases: set[str]) -> bool:
+def _signal_candidates(text: str) -> set[str]:
     normalized = normalize_text(text)
     if not normalized:
-        return False
+        return set()
 
-    candidates = {normalized, _strip_signal_wrappers(normalized)}
+    candidates: set[str] = {normalized}
+    queue: list[str] = [normalized]
+    seen: set[str] = set()
+
+    while queue:
+        value = queue.pop()
+        if not value or value in seen:
+            continue
+        seen.add(value)
+        candidates.add(value)
+
+        for phrase in _SIGNAL_LEADING_FILLERS:
+            prefix = f"{phrase} "
+            if value.startswith(prefix):
+                queue.append(value[len(prefix):].strip())
+
+        for phrase in _SIGNAL_TRAILING_FILLERS:
+            suffix = f" {phrase}"
+            if value.endswith(suffix):
+                queue.append(value[: -len(suffix)].strip())
+
+        if " and " in value:
+            parts = [part.strip() for part in value.split(" and ") if part.strip()]
+            queue.extend(parts)
+            if len(parts) >= 2 and len(set(parts)) == 1:
+                queue.append(parts[0])
+
+    return candidates
+
+
+def _matches_signal_phrase(text: str, phrases: set[str]) -> bool:
+    candidates = _signal_candidates(text)
     return any(candidate in phrases for candidate in candidates if candidate)
 
 

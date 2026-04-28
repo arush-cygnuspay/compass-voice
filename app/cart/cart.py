@@ -43,6 +43,13 @@ class Cart:
                 return True
         return False
 
+    def replace_item(self, cart_item_id: str, replacement: CartItem) -> bool:
+        for i, item in enumerate(self._items):
+            if item.cart_item_id == cart_item_id:
+                self._items[i] = replacement
+                return True
+        return False
+
     def clear(self) -> None:
         self._items.clear()
 

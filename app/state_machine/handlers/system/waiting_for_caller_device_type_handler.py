@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 
+from app.intent.confirmation_utils import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
@@ -152,7 +153,14 @@ class WaitingForCallerDeviceTypeHandler(BaseHandler):
         intent: Intent,
         normalized_text: str,
     ) -> HandlerResult:
-        if intent in {Intent.AFFIRM, Intent.CONFIRM} or self._is_yes_like(normalized_text):
+        decision = resolve_confirmation_decision(
+            None,
+            normalized_text,
+            resolved_intent=intent,
+            expect_confirmation=True,
+        )
+
+        if decision == "affirm":
             return HandlerResult(
                 next_state=ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
                 response_key="transferring_to_human_agent",
@@ -165,7 +173,7 @@ class WaitingForCallerDeviceTypeHandler(BaseHandler):
                 },
             )
 
-        if intent in {Intent.DENY, Intent.CANCEL, Intent.CANCEL_ORDER} or self._is_no_like(normalized_text):
+        if decision in {"deny", "cancel"}:
             return HandlerResult(
                 next_state=ConversationState.COMPLETED,
                 response_key="landline_pickup_declined",
@@ -176,37 +184,3 @@ class WaitingForCallerDeviceTypeHandler(BaseHandler):
             response_key="repeat_landline_pickup_only",
         )
 
-    @staticmethod
-    def _is_yes_like(text: str) -> bool:
-        if not text:
-            return False
-        return any(
-            phrase in text
-            for phrase in (
-                "yes",
-                "yeah",
-                "yep",
-                "proceed",
-                "continue",
-                "go ahead",
-                "place the order",
-                "place my order",
-            )
-        )
-
-    @staticmethod
-    def _is_no_like(text: str) -> bool:
-        if not text:
-            return False
-        return any(
-            phrase in text
-            for phrase in (
-                "no",
-                "nope",
-                "cancel",
-                "stop",
-                "not now",
-                "do not",
-                "don't",
-            )
-        )

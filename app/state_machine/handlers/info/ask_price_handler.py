@@ -9,6 +9,7 @@ from app.menu.repository import MenuRepository
 from app.menu.slot_helpers import first_slot_value, slot_values
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
+from app.nlu.slot_consumption import consume_slot_or_fallback
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.models.conversation_context import ConversationContext
@@ -170,16 +171,20 @@ class AskPriceHandler(BaseHandler):
         }
 
     def _extract_requested_size(self, normalized_text: str, slots) -> str | None:
-        slot_size = first_slot_value(slots, "SIZE")
-        if isinstance(slot_size, str) and slot_size.strip():
-            return normalize_text(slot_size)
+        def _extract_size_via_regex() -> str | None:
+            for size in SIZE_WORDS:
+                if re.search(rf"\b{re.escape(size)}\b", normalized_text):
+                    return normalize_text(size)
+            return None
 
-        for size in SIZE_WORDS:
-            match = re.search(rf"\b{re.escape(size)}\b", normalized_text)
-            if match:
-                return normalize_text(size)
-
-        return None
+        resolution = consume_slot_or_fallback(
+            slots=slots,
+            slot_labels=("SIZE", "VARIANT"),
+            fallback=_extract_size_via_regex,
+            parse=lambda raw: normalize_text(raw) or None,
+            consumer_site="ask_price_handler.size",
+        )
+        return resolution.value
 
     def _build_modifier_price_result(
         self,

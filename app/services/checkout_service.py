@@ -51,7 +51,7 @@ for _directory in (
 
 PUBLIC_CHECKOUT_BASE_URL = os.getenv(
     "COMPASS_PUBLIC_CHECKOUT_BASE_URL",
-    "https://voice.cygnuscompass.com/checkout",
+    "https://65dd-2407-aa80-116-319-88f6-6b6d-ed8b-deaa.ngrok-free.app/checkout",
 ).rstrip("/")
 
 REVERSE_GEOCODE_URL = os.getenv(
@@ -793,6 +793,7 @@ class CheckoutService:
         if status_lower in PAYMENT_FAILURE_STATUSES:
             session.mark_payment_retryable(status_lower)
             self.save_session(session)
+            self._sync_voice_session_from_checkout(session)
             logger.info(
                 "Payment requires retry for order=%s token=%s status=%s",
                 session.order_number,
@@ -809,6 +810,10 @@ class CheckoutService:
                 "error": None,
             }
 
+        if status_lower and status_lower != (session.last_payment_status or "").lower():
+            session.last_payment_status = status_lower
+            self.save_session(session)
+        self._sync_voice_session_from_checkout(session)
         return {
             "ok": True,
             "paid": False,
@@ -949,7 +954,8 @@ class CheckoutService:
         self._sync_voice_session_from_checkout(session, mark_completed=True)
         logger.info("Payment completed for order %s (token=%s)", order_number, session.token)
 
-        if session.customer_phone_number:
+        phone_number = (session.customer_phone_number or "").strip()
+        if phone_number:
             # Prefer the actual payment/checkout link over the static
             # restaurant website so the customer can track their order.
             latest_payment = self._find_latest_payment_link_session(session.token)
@@ -961,7 +967,7 @@ class CheckoutService:
             sms_result = self.sms_service.send(
                 SmsSendRequest(
                     template="order_confirmation",
-                    phone_number=session.customer_phone_number,
+                    phone_number=phone_number,
                     order_number=order_number,
                     link=order_link,
                 )
@@ -969,7 +975,7 @@ class CheckoutService:
             if sms_result.ok:
                 logger.info(
                     "Order-confirmation SMS sent to %s (sid=%s)",
-                    session.customer_phone_number,
+                    phone_number,
                     sms_result.sid,
                 )
             else:
@@ -979,9 +985,15 @@ class CheckoutService:
                     sms_result.error_message,
                 )
         else:
+            surface = "chat_ui" if not session.call_sid else "twilio"
             logger.info(
-                "No customer_phone_number on session %s - skipping SMS",
-                session.token,
+                "phone_number_unavailable",
+                extra={
+                    "event_name": "phone_number_unavailable",
+                    "surface": surface,
+                    "consumer": "checkout_service.handle_payment_completed",
+                    "session_token": session.token,
+                },
             )
 
         if self.live_call_service.announce_order_completed(
@@ -1050,6 +1062,25 @@ class CheckoutService:
             # URL so voice responses reference the real link, not the
             # static restaurant website.
             delivery.confirmation_link = latest_payment_link.public_link_url
+            if checkout_session.address_required:
+                delivery.checkout_status = "checkout_sent"
+
+        payment_status = str(checkout_session.last_payment_status or "").strip().lower()
+        if checkout_session.payment_completed:
+            delivery.payment_status = "payment_confirmed"
+            delivery.payment_reference = checkout_session.payment_reference
+            if delivery.address_form_link or checkout_session.address_required:
+                delivery.checkout_status = "checkout_opened"
+        elif payment_status in PAYMENT_FAILURE_STATUSES:
+            delivery.payment_status = "payment_failed"
+            if delivery.address_form_link or checkout_session.address_required:
+                delivery.checkout_status = "checkout_opened"
+        elif checkout_session.payment_started or payment_status:
+            delivery.payment_status = "payment_pending"
+            if checkout_session.address_completed or delivery.form_completed:
+                delivery.checkout_status = "checkout_opened"
+        elif delivery.address_form_link:
+            delivery.checkout_status = "checkout_sent"
 
         if checkout_session.address_completed:
             delivery.source = "sms_form"
@@ -1057,6 +1088,8 @@ class CheckoutService:
             delivery.collected = True
             delivery.confirmed = True
             context.delivery_address_confirmed = True
+            if not checkout_session.payment_completed:
+                delivery.checkout_status = "checkout_opened"
 
         if mark_completed or checkout_session.payment_completed:
             context.reset()

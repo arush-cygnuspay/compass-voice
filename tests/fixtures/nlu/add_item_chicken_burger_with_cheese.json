@@ -1,0 +1,20 @@
+{
+  "utterance": "chicken burger with cheese no onions",
+  "state": "idle",
+  "nlu": {
+    "effective_intent": "add_item",
+    "intent_confidence": 0.95,
+    "model_main_intent": "add_item",
+    "model_sub_intent": "add_item",
+    "slots": [
+      {"name": "ITEM", "value": "chicken burger"},
+      {"name": "MODIFIER", "value": "cheese"},
+      {"name": "NEGATION_MODIFIER", "value": "onions"}
+    ]
+  },
+  "expected": {
+    "effective_intent": "add_item",
+    "slots_present": ["ITEM", "MODIFIER", "NEGATION_MODIFIER"],
+    "slot_value": {"ITEM": "chicken burger", "MODIFIER": "cheese"}
+  }
+}

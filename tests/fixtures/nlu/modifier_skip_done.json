@@ -1,0 +1,14 @@
+{
+  "utterance": "no thanks done",
+  "state": "waiting_for_modifier",
+  "nlu": {
+    "effective_intent": "deny",
+    "intent_confidence": 0.85,
+    "model_main_intent": "deny",
+    "model_sub_intent": "deny",
+    "slots": []
+  },
+  "expected": {
+    "control_intent_kind": "deny"
+  }
+}

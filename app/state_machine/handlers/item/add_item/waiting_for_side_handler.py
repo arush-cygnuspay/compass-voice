@@ -5,7 +5,13 @@ from dataclasses import dataclass
 
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.models.conversation_context import (
     ConversationContext,
     InterruptProposal,
@@ -14,17 +20,23 @@ from app.state_machine.models.conversation_context import (
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
+from app.state_machine.handlers.item.add_item.add_item_handler import PendingItemCaptureHelper
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     build_add_item_command,
     determine_next_add_item_step,
 )
 from app.state_machine.handlers.item.add_item.side_group_resolver import (
     SideGroupResolver,
+    build_side_option_candidates,
     extract_side_slot_values_normalized,
     dedupe_keep_order,
 )
 from app.state_machine.handlers.item.add_item.group_collection_utils import (
     effective_group_selector_bounds,
+)
+from app.state_machine.handlers.item.add_item.group_skip_policy import (
+    GroupSkipDecision,
+    evaluate_group_skip,
 )
 
 from app.state_machine.flow_sets import (
@@ -34,6 +46,7 @@ from app.state_machine.flow_sets import (
     looks_like_more_options_answer,
     looks_like_skip_answer,
 )
+from app.utils.token_matcher import tokenize
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +87,7 @@ class WaitingForSideHandler(BaseHandler):
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
         self.menu_repo = menu_repo
         self.side_resolver = SideGroupResolver()
+        self.capture_helper = PendingItemCaptureHelper(side_resolver=self.side_resolver)
 
     def handle(
         self,
@@ -100,55 +114,146 @@ class WaitingForSideHandler(BaseHandler):
         group = groups[idx]
         existing_ids = list(context.selected_side_groups.get(group.group_id, []))
         min_selector, max_selector = effective_group_selector_bounds(group)
+        self.capture_helper.prefill_quantity(
+            context=context,
+            user_text=normalized_user_text,
+        )
 
-        # ── "What else?" / "more options" → show option listing ──
-        if intent == Intent.ASK_OPTIONS or _looks_like_more_options(normalized_user_text):
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_SIDE,
-                response_key="list_side_options",
-                response_payload=self._choice_payload(context, group),
-            )
+        control_intent = resolve_control_intent(
+            normalized_user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.WAITING_FOR_SIDE,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
 
-        # ── Skip / deny → skip group if optional ──
-        if intent == Intent.DENY or _looks_like_skip_side_answer(normalized_user_text, group):
-            if len(existing_ids) < min_selector:
+        if control_intent is not None:
+            if control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+                log_control_intent_event(
+                    "options_requested",
+                    state=ConversationState.WAITING_FOR_SIDE.value,
+                    field_name="side",
+                    group_id=group.group_id,
+                )
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_SIDE,
-                    response_key="required_side_cannot_skip",
+                    response_key="list_side_options",
                     response_payload=self._choice_payload(context, group),
                 )
 
-            if not existing_ids:
-                context.skipped_side_groups.add(group.group_id)
-                context.selected_side_groups.pop(group.group_id, None)
-
-            step = determine_next_add_item_step(context)
-            return self._step_to_result(context, step)
-
-        # ── "That's it" / "done" / "no more" → done with THIS GROUP ──
-        if _looks_like_done_answer(normalized_user_text) or (
-            intent in GROUP_DONE_INTENTS
-        ):
-            if len(existing_ids) < min_selector:
+            if control_intent.kind == ControlIntentKind.META_CLARIFY:
+                log_control_intent_event(
+                    "meta_clarify_repeated",
+                    state=ConversationState.WAITING_FOR_SIDE.value,
+                    field_name="side",
+                    group_id=group.group_id,
+                )
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_SIDE,
                     response_key="repeat_side_options",
                     response_payload={
                         **self._choice_payload(context, group),
-                        "repeat_reason": "need_more",
+                        "repeat_reason": "meta_clarify",
                     },
                 )
 
-            if not existing_ids:
-                context.skipped_side_groups.add(group.group_id)
-                context.selected_side_groups.pop(group.group_id, None)
+            if control_intent.kind == ControlIntentKind.CANCEL:
+                log_control_intent_event(
+                    "control_intent_action",
+                    state=ConversationState.WAITING_FOR_SIDE.value,
+                    action="cancel_pending_item",
+                    kind=control_intent.kind.value,
+                )
+                context.reset_task()
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_cancelled_successfully",
+                )
 
-            step = determine_next_add_item_step(context)
-            return self._step_to_result(context, step)
+            if control_intent.kind == ControlIntentKind.AFFIRM:
+                if len(existing_ids) >= min_selector and existing_ids:
+                    log_control_intent_event(
+                        "control_intent_action",
+                        state=ConversationState.WAITING_FOR_SIDE.value,
+                        action="accept_current_side_selection",
+                        kind=control_intent.kind.value,
+                    )
+                    step = determine_next_add_item_step(context)
+                    return self._step_to_result(context, step)
+
+                log_control_intent_event(
+                    "control_intent_action",
+                    state=ConversationState.WAITING_FOR_SIDE.value,
+                    action="side_selection_requires_explicit_choice",
+                    kind=control_intent.kind.value,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE,
+                    response_key="repeat_side_options",
+                    response_payload={
+                        **self._choice_payload(context, group),
+                        "repeat_reason": "need_choice",
+                    },
+                )
+
+            if control_intent.kind in {ControlIntentKind.DENY, ControlIntentKind.DONE}:
+                skip = evaluate_group_skip(min_selector, len(existing_ids))
+
+                if skip.decision == GroupSkipDecision.BLOCK_UNDER_MIN:
+                    log_control_intent_event(
+                        "required_selection_cannot_skip",
+                        state=ConversationState.WAITING_FOR_SIDE.value,
+                        field_name="side",
+                        group_id=group.group_id,
+                    )
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_SIDE,
+                        response_key="required_side_cannot_skip",
+                        response_payload={
+                            **self._choice_payload(context, group),
+                            "remaining_to_min": skip.remaining_to_min,
+                            "selected_count": skip.selected_count,
+                            "min_required": skip.min_required,
+                            "intent_kind": control_intent.kind.value,
+                        },
+                    )
+
+                if skip.decision == GroupSkipDecision.SKIP_OPTIONAL:
+                    # Preserve byte-identical legacy behavior: only mark
+                    # the group as "skipped" when the user actually had
+                    # no selections. When selections exist (min == 0
+                    # with prior picks) we just advance with picks intact.
+                    if not existing_ids:
+                        context.skipped_side_groups.add(group.group_id)
+                        context.selected_side_groups.pop(group.group_id, None)
+                        log_control_intent_event(
+                            "skipped_optional_group",
+                            state=ConversationState.WAITING_FOR_SIDE.value,
+                            field_name="side",
+                            group_id=group.group_id,
+                        )
+                else:
+                    # ADVANCE_MIN_MET: selections meet/exceed min — keep
+                    # them, do not flag as skipped.
+                    log_control_intent_event(
+                        "advance_min_met",
+                        state=ConversationState.WAITING_FOR_SIDE.value,
+                        field_name="side",
+                        group_id=group.group_id,
+                        selected_count=skip.selected_count,
+                        min_required=skip.min_required,
+                        kind=control_intent.kind.value,
+                    )
+
+                step = determine_next_add_item_step(context)
+                return self._step_to_result(context, step)
 
         resolution = self.side_resolver.resolve(
             group=group,
             normalized_user_text=normalized_user_text,
+            option_candidates=build_side_option_candidates(context, normalized_user_text),
             normalized_slot_values=extract_side_slot_values_normalized(context),
             already_selected_ids=existing_ids,
         )
@@ -160,6 +265,41 @@ class WaitingForSideHandler(BaseHandler):
                 group=group,
                 matched_ids=resolution.matched_item_ids,
                 unmatched_values=resolution.unmatched_values,
+                normalized_user_text=normalized_user_text,
+                match_debug=resolution.match_debug,
+            )
+
+        carry_feedback = self.capture_helper.prefill_side_groups(
+            context=context,
+            normalized_user_text=normalized_user_text,
+            start_index=idx + 1,
+        )
+        self.capture_helper.prefill_selected_side_variants(
+            context=context,
+            user_text=normalized_user_text,
+            slots=context.last_slots or (),
+        )
+        modifier_feedback = self.capture_helper.prefill_modifier_groups(
+            context=context,
+            normalized_user_text=normalized_user_text,
+        )
+        carried_names = self.capture_helper.collect_matched_names(carry_feedback + modifier_feedback)
+        filtered_unmatched = self._filter_unmatched_values(
+            resolution.unmatched_values,
+            matched_names=carried_names,
+        )
+
+        if carried_names and len(existing_ids) >= min_selector:
+            if not existing_ids:
+                context.skipped_side_groups.add(group.group_id)
+                context.selected_side_groups.pop(group.group_id, None)
+
+            step = determine_next_add_item_step(context)
+            return self._step_to_result(
+                context,
+                step,
+                matched_names=carried_names,
+                unmatched_names=filtered_unmatched,
             )
 
         if resolution.unmatched_values:
@@ -169,7 +309,9 @@ class WaitingForSideHandler(BaseHandler):
                 response_payload={
                     **self._choice_payload(context, group),
                     "repeat_reason": "invalid",
-                    "unmatched_names": [value for value in resolution.unmatched_values if value],
+                    "matched_names": carried_names,
+                    "unmatched_names": filtered_unmatched,
+                    **self._match_debug_payload(resolution.match_debug),
                 },
             )
 
@@ -194,6 +336,8 @@ class WaitingForSideHandler(BaseHandler):
             response_payload={
                 **self._choice_payload(context, group),
                 "repeat_reason": "invalid",
+                "matched_names": carried_names,
+                **self._match_debug_payload(resolution.match_debug),
             },
         )
 
@@ -205,6 +349,8 @@ class WaitingForSideHandler(BaseHandler):
         group: PendingSideGroup,
         matched_ids: list[str],
         unmatched_values: list[str] | None = None,
+        normalized_user_text: str,
+        match_debug: dict[str, object] | None = None,
     ) -> HandlerResult:
         existing_ids = list(context.selected_side_groups.get(group.group_id, []))
         proposed_ids = dedupe_keep_order(existing_ids + matched_ids)
@@ -216,26 +362,24 @@ class WaitingForSideHandler(BaseHandler):
 
         # ── Over-max: accept up to limit, tell user what was capped ──
         if max_selector > 0 and len(proposed_ids) > max_selector:
-            accepted_ids = proposed_ids[:max_selector]
             dropped_ids = proposed_ids[max_selector:]
             dropped_names = [
                 group.choices_by_item_id[item_id].name
                 for item_id in dropped_ids
                 if item_id in group.choices_by_item_id
             ]
-            accepted_names = [
+            requested_names = [
                 group.choices_by_item_id[item_id].name
-                for item_id in accepted_ids
+                for item_id in matched_ids
                 if item_id in group.choices_by_item_id
             ]
-            context.selected_side_groups[group.group_id] = accepted_ids
-            context.skipped_side_groups.discard(group.group_id)
 
             payload = self._choice_payload(context, group)
-            payload["accepted_names"] = accepted_names
+            payload["requested_names"] = requested_names
             payload["dropped_names"] = dropped_names
             payload["unmatched_names"] = _unmatched
             payload["over_max"] = True
+            payload.update(self._match_debug_payload(match_debug))
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
                 response_key="too_many_side_choices",
@@ -252,9 +396,29 @@ class WaitingForSideHandler(BaseHandler):
             if item_id in group.choices_by_item_id
         ]
 
+        carry_feedback = self.capture_helper.prefill_side_groups(
+            context=context,
+            normalized_user_text=normalized_user_text,
+            start_index=context.current_side_group_index + 1,
+        )
+        self.capture_helper.prefill_selected_side_variants(
+            context=context,
+            user_text=normalized_user_text,
+            slots=context.last_slots or (),
+        )
+        modifier_feedback = self.capture_helper.prefill_modifier_groups(
+            context=context,
+            normalized_user_text=normalized_user_text,
+        )
+        all_matched_names = newly_added_names + self.capture_helper.collect_matched_names(
+            carry_feedback + modifier_feedback
+        )
+
         for selected_item_id in newly_added_ids:
             choice = group.choices_by_item_id.get(selected_item_id)
             if choice and choice.pricing_mode == "variant":
+                if selected_item_id in context.selected_side_variants:
+                    continue
                 context.pending_side_item_id = choice.item_id
                 context.pending_side_item_name = choice.name
                 context.pending_side_group_id = group.group_id
@@ -270,7 +434,7 @@ class WaitingForSideHandler(BaseHandler):
                         "side_item_name": choice.name,
                         "group_name": group.name,
                         "available_sizes": list(choice.variant_names),
-                        "matched_names": newly_added_names,
+                        "matched_names": all_matched_names,
                         "unmatched_names": _unmatched,
                     },
                 )
@@ -282,28 +446,18 @@ class WaitingForSideHandler(BaseHandler):
                 response_payload={
                     **self._choice_payload(context, group),
                     "repeat_reason": "need_more",
-                    "matched_names": newly_added_names,
+                    "matched_names": all_matched_names,
                     "unmatched_names": _unmatched,
-                },
-            )
-
-        if max_selector > 1 and len(proposed_ids) < max_selector:
-            return HandlerResult(
-                next_state=ConversationState.WAITING_FOR_SIDE,
-                response_key="repeat_side_options",
-                response_payload={
-                    **self._choice_payload(context, group),
-                    "repeat_reason": "optional_more",
-                    "matched_names": newly_added_names,
-                    "unmatched_names": _unmatched,
+                    **self._match_debug_payload(match_debug),
                 },
             )
 
         step = determine_next_add_item_step(context)
         return self._step_to_result(
             context, step,
-            matched_names=newly_added_names,
+            matched_names=all_matched_names,
             unmatched_names=_unmatched,
+            match_debug=match_debug,
         )
 
     def _choice_payload(self, context: ConversationContext, group: PendingSideGroup) -> dict:
@@ -342,6 +496,7 @@ class WaitingForSideHandler(BaseHandler):
         *,
         matched_names: list[str] | None = None,
         unmatched_names: list[str] | None = None,
+        match_debug: dict[str, object] | None = None,
     ) -> HandlerResult:
         pending = context.pending_add_item
         if pending is None:
@@ -359,6 +514,7 @@ class WaitingForSideHandler(BaseHandler):
                 payload["matched_names"] = matched_names
             if unmatched_names:
                 payload["unmatched_names"] = unmatched_names
+            payload.update(self._match_debug_payload(match_debug))
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
@@ -372,8 +528,39 @@ class WaitingForSideHandler(BaseHandler):
             payload["matched_names"] = matched_names
         if unmatched_names:
             payload["unmatched_names"] = unmatched_names
+        payload.update(self._match_debug_payload(match_debug))
         return HandlerResult(
             next_state=step.next_state,
             response_key=step.response_key,
             response_payload=payload,
         )
+
+    @staticmethod
+    def _match_debug_payload(match_debug: dict[str, object] | None) -> dict[str, object]:
+        return dict(match_debug or {})
+
+    @staticmethod
+    def _filter_unmatched_values(
+        unmatched_values: list[str] | None,
+        *,
+        matched_names: list[str] | None = None,
+    ) -> list[str]:
+        values = [str(value).strip() for value in (unmatched_values or []) if str(value).strip()]
+        if not values:
+            return []
+
+        matched_tokens: set[str] = set()
+        for name in matched_names or []:
+            matched_tokens.update(tokenize(normalize_text(name)))
+
+        if not matched_tokens:
+            return values
+
+        filtered: list[str] = []
+        for value in values:
+            value_tokens = set(tokenize(normalize_text(value)))
+            if value_tokens and value_tokens.issubset(matched_tokens):
+                continue
+            filtered.append(value)
+        return filtered
+

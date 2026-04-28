@@ -34,6 +34,37 @@ class DeliveryAddress:
     confirmation_link: Optional[str] = None
     feedback_link: Optional[str] = None
     menu_link: Optional[str] = None
+    checkout_status: Optional[str] = None
+    payment_status: Optional[str] = None
+    payment_reference: Optional[str] = None
+    payment_wait_mode: Optional[str] = None
+    payment_session_state: Optional[str] = None
+    last_payment_link_resend_at_epoch: Optional[float] = None
+    last_checkout_link_resend_at_epoch: Optional[float] = None
+    last_checkout_wait_prompt_at_epoch: Optional[float] = None
+    last_checkout_wait_response_key: Optional[str] = None
+    last_payment_wait_prompt_at_epoch: Optional[float] = None
+    last_payment_wait_response_key: Optional[str] = None
+    payment_status_last_prompt_at_epoch: Optional[float] = None
+    payment_status_last_response_key: Optional[str] = None
+
+    # "sms" if a phone number is available and SMS delivery is used,
+    # "in_session" when there is no phone number and the link must be
+    # surfaced inline (chat UI / TTS read-out).
+    payment_link_delivery_channel: Optional[str] = None
+
+    @property
+    def has_phone_number(self) -> bool:
+        value = (self.customer_phone_number or "").strip()
+        return bool(value)
+
+    def normalized_phone_number(self) -> Optional[str]:
+        """Return the digits-only phone number, or None if missing/invalid."""
+        raw = (self.customer_phone_number or "").strip()
+        if not raw:
+            return None
+        digits = "".join(ch for ch in raw if ch.isdigit())
+        return digits or None
 
     def reset_for_new_delivery(self) -> None:
         self.area = None
@@ -58,6 +89,20 @@ class DeliveryAddress:
         self.confirmation_link = None
         self.feedback_link = None
         self.menu_link = None
+        self.checkout_status = None
+        self.payment_status = None
+        self.payment_reference = None
+        self.payment_wait_mode = None
+        self.payment_session_state = None
+        self.last_payment_link_resend_at_epoch = None
+        self.last_checkout_link_resend_at_epoch = None
+        self.last_checkout_wait_prompt_at_epoch = None
+        self.last_checkout_wait_response_key = None
+        self.last_payment_wait_prompt_at_epoch = None
+        self.last_payment_wait_response_key = None
+        self.payment_status_last_prompt_at_epoch = None
+        self.payment_status_last_response_key = None
+        self.payment_link_delivery_channel = None
 
     def missing_eligibility_fields(self) -> list[str]:
         missing: list[str] = []
@@ -106,6 +151,20 @@ class DeliveryAddress:
             "confirmation_link": self.confirmation_link,
             "feedback_link": self.feedback_link,
             "menu_link": self.menu_link,
+            "checkout_status": self.checkout_status,
+            "payment_status": self.payment_status,
+            "payment_reference": self.payment_reference,
+            "payment_wait_mode": self.payment_wait_mode,
+            "payment_session_state": self.payment_session_state,
+            "last_payment_link_resend_at_epoch": self.last_payment_link_resend_at_epoch,
+            "last_checkout_link_resend_at_epoch": self.last_checkout_link_resend_at_epoch,
+            "last_checkout_wait_prompt_at_epoch": self.last_checkout_wait_prompt_at_epoch,
+            "last_checkout_wait_response_key": self.last_checkout_wait_response_key,
+            "last_payment_wait_prompt_at_epoch": self.last_payment_wait_prompt_at_epoch,
+            "last_payment_wait_response_key": self.last_payment_wait_response_key,
+            "payment_status_last_prompt_at_epoch": self.payment_status_last_prompt_at_epoch,
+            "payment_status_last_response_key": self.payment_status_last_response_key,
+            "payment_link_delivery_channel": self.payment_link_delivery_channel,
         }
 
     @classmethod
@@ -139,4 +198,18 @@ class DeliveryAddress:
             confirmation_link=data.get("confirmation_link"),
             feedback_link=data.get("feedback_link"),
             menu_link=data.get("menu_link"),
+            checkout_status=data.get("checkout_status"),
+            payment_status=data.get("payment_status"),
+            payment_reference=data.get("payment_reference"),
+            payment_wait_mode=data.get("payment_wait_mode"),
+            payment_session_state=data.get("payment_session_state"),
+            last_payment_link_resend_at_epoch=data.get("last_payment_link_resend_at_epoch"),
+            last_checkout_link_resend_at_epoch=data.get("last_checkout_link_resend_at_epoch"),
+            last_checkout_wait_prompt_at_epoch=data.get("last_checkout_wait_prompt_at_epoch"),
+            last_checkout_wait_response_key=data.get("last_checkout_wait_response_key"),
+            last_payment_wait_prompt_at_epoch=data.get("last_payment_wait_prompt_at_epoch"),
+            last_payment_wait_response_key=data.get("last_payment_wait_response_key"),
+            payment_status_last_prompt_at_epoch=data.get("payment_status_last_prompt_at_epoch"),
+            payment_status_last_response_key=data.get("payment_status_last_response_key"),
+            payment_link_delivery_channel=data.get("payment_link_delivery_channel"),
         )

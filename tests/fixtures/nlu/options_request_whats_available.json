@@ -1,0 +1,14 @@
+{
+  "utterance": "what's available",
+  "state": "waiting_for_modifier",
+  "nlu": {
+    "effective_intent": "ask_options",
+    "intent_confidence": 0.8,
+    "model_main_intent": "ask_options",
+    "model_sub_intent": "ask_options",
+    "slots": []
+  },
+  "expected": {
+    "control_intent_kind": "options_request"
+  }
+}

@@ -5,6 +5,7 @@ from difflib import SequenceMatcher
 from typing import Sequence
 
 from app.core.pending_action import PendingAction
+from app.intent.confirmation_utils import resolve_confirmation_decision
 from app.menu.models import MenuItem
 from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository
@@ -12,6 +13,11 @@ from app.nlu.intent_resolution.intent import Intent
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
+from app.state_machine.control_intent_resolver import (
+    ControlIntentKind,
+    log_control_intent_event,
+    resolve_control_intent,
+)
 from app.state_machine.models.conversation_context import ConversationContext, InterruptProposal
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
@@ -98,17 +104,59 @@ class ConfirmingHandler(BaseHandler):
             )
 
         reason = confirmation.get("reason")
+        control_intent = resolve_control_intent(
+            user_text,
+            intent,
+            getattr(context.last_nlu, "model_sub_intent", None),
+            ConversationState.CONFIRMING_ITEM,
+            context,
+            nlu_result=context.last_nlu,
+            intent_confidence=context.last_intent_confidence,
+        )
 
         if reason in {"multiple_matches", "category_detected"}:
-            if intent == Intent.DENY:
+            if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
                 context.awaiting_confirmation_for = None
                 context.candidate_item_id = None
                 context.current_item_id = None
                 context.current_item_name = None
-
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
                     response_key="item_cancelled_successfully",
+                )
+
+            if control_intent is not None and control_intent.kind == ControlIntentKind.META_CLARIFY:
+                log_control_intent_event(
+                    "meta_clarify_repeated",
+                    state=ConversationState.CONFIRMING_ITEM.value,
+                    field_name="item_disambiguation",
+                )
+                return HandlerResult(
+                    next_state=ConversationState.CONFIRMING_ITEM,
+                    response_key=self._repeat_response_key(confirmation),
+                    response_payload=dict(confirmation),
+                )
+
+            if control_intent is not None and control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+                log_control_intent_event(
+                    "options_requested",
+                    state=ConversationState.CONFIRMING_ITEM.value,
+                    field_name="item_disambiguation",
+                )
+                return HandlerResult(
+                    next_state=ConversationState.CONFIRMING_ITEM,
+                    response_key=self._repeat_response_key(confirmation),
+                    response_payload=dict(confirmation),
+                )
+
+            if control_intent is not None and control_intent.kind in {
+                ControlIntentKind.AFFIRM,
+                ControlIntentKind.DENY,
+            }:
+                return HandlerResult(
+                    next_state=ConversationState.CONFIRMING_ITEM,
+                    response_key=self._repeat_response_key(confirmation),
+                    response_payload=dict(confirmation),
                 )
 
             matched = self._resolve_candidate_item_from_confirmation(
@@ -136,7 +184,7 @@ class ConfirmingHandler(BaseHandler):
             )
 
         if reason == "candidate_selected":
-            if intent == Intent.CONFIRM:
+            if control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM:
                 candidate_item_id = confirmation.get("value_id")
                 if not candidate_item_id:
                     return HandlerResult(
@@ -157,7 +205,7 @@ class ConfirmingHandler(BaseHandler):
                     item=item,
                 )
 
-            if intent == Intent.DENY:
+            if control_intent is not None and control_intent.kind == ControlIntentKind.DENY:
                 previous_confirmation = confirmation.get("previous_confirmation") or {}
                 if not previous_confirmation:
                     context.awaiting_confirmation_for = None
@@ -176,6 +224,51 @@ class ConfirmingHandler(BaseHandler):
                     next_state=ConversationState.CONFIRMING_ITEM,
                     response_key=self._repeat_response_key(previous_confirmation),
                     response_payload=dict(previous_confirmation),
+                )
+
+            if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
+                context.reset_task()
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_cancelled_successfully",
+                )
+
+            if control_intent is not None and control_intent.kind == ControlIntentKind.META_CLARIFY:
+                log_control_intent_event(
+                    "meta_clarify_repeated",
+                    state=ConversationState.CONFIRMING_ITEM.value,
+                    field_name="item_confirmation",
+                )
+                previous_confirmation = confirmation.get("previous_confirmation") or {}
+                if previous_confirmation:
+                    return HandlerResult(
+                        next_state=ConversationState.CONFIRMING_ITEM,
+                        response_key=self._repeat_response_key(previous_confirmation),
+                        response_payload=dict(previous_confirmation),
+                    )
+                return HandlerResult(
+                    next_state=ConversationState.CONFIRMING_ITEM,
+                    response_key="confirm_item",
+                    response_payload={"item_name": confirmation.get("value_name")},
+                )
+
+            if control_intent is not None and control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
+                log_control_intent_event(
+                    "options_requested",
+                    state=ConversationState.CONFIRMING_ITEM.value,
+                    field_name="item_confirmation",
+                )
+                previous_confirmation = confirmation.get("previous_confirmation") or {}
+                if previous_confirmation:
+                    return HandlerResult(
+                        next_state=ConversationState.CONFIRMING_ITEM,
+                        response_key=self._repeat_response_key(previous_confirmation),
+                        response_payload=dict(previous_confirmation),
+                    )
+                return HandlerResult(
+                    next_state=ConversationState.CONFIRMING_ITEM,
+                    response_key="confirm_item",
+                    response_payload={"item_name": confirmation.get("value_name")},
                 )
 
             if intent in SOFT_SWITCH_INTENTS:
@@ -571,3 +664,4 @@ class ConfirmingHandler(BaseHandler):
 
     def _get_last_slots(self, context: ConversationContext) -> Sequence[SlotValue]:
         return context.last_slots or ()
+

@@ -8,6 +8,10 @@ from app.state_machine.models.conversation_context import ConversationContext
 from app.utils.top_k_choices import get_top_k_choices
 
 
+_GENERIC_SIDE_NOUN = "side"
+_GENERIC_MODIFIER_NOUN = "add-on"
+
+
 def _clean_group_label(name: str | None, fallback: str) -> str:
     if not name:
         return fallback
@@ -18,6 +22,17 @@ def _clean_group_label(name: str | None, fallback: str) -> str:
     label = re.sub(r"(ss)\b", "s", label, flags=re.IGNORECASE)
 
     return label or fallback
+
+
+def _format_examples(choices: list[str], max_items: int = 3) -> str:
+    """Render 'gluten-free, wheat, or pretzel'. Empty string if no choices."""
+    clean = [str(c).strip() for c in choices if c and str(c).strip()]
+    if not clean:
+        return ""
+    sample = clean[:max_items]
+    if len(sample) == 1:
+        return sample[0]
+    return ", ".join(sample[:-1]) + f", or {sample[-1]}"
 
 
 def _format_options(options: list[str], max_items: int = 3) -> str:
@@ -264,33 +279,20 @@ def ask_for_side(context: ConversationContext, menu_repo: MenuRepository, payloa
     group = item.side_groups[context.current_side_group_index]
     group_payload = _current_side_payload(context, menu_repo, payload)
 
-    group_label = _clean_group_label(group.name, "side").lower()
-    choice_names = [choice.name for choice in group.choices]
-    options = _format_options(choice_names)
-    total = len(choice_names)
+    noun = (getattr(group, "prompt_noun", None) or _GENERIC_SIDE_NOUN).strip() or _GENERIC_SIDE_NOUN
+    verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
     min_selector = int(group_payload.get("min_selector", 0) or 0)
-    max_selector = int(group_payload.get("max_selector", 0) or 0)
+    top_choices = group_payload.get("top_choices") or []
 
-    if options and (min_selector > 0 or max_selector > 1):
-        return _initial_multi_select_prompt(
-            item_name=item.name,
-            group_label=group_label,
-            options=options,
-            min_selector=min_selector,
-            max_selector=max_selector,
-            optional=min_selector == 0,
-            total_choices=total,
-        )
+    examples = _format_examples(top_choices)
+    if examples:
+        prompt = f"Any {noun} {verb}, like {examples}?"
+    else:
+        prompt = f"Any {noun} {verb} with your {item.name}?"
 
-    ask_hint = " Ask for options to hear more." if total > 6 else ""
-    if min_selector > 0:
-        if options:
-            return f"Which {group_label} for your {item.name}? {options}.{ask_hint}"
-        return f"Which {group_label} for your {item.name}?"
-
-    if options:
-        return f"Any {group_label} with your {item.name}? {options}, or no.{ask_hint}"
-    return f"Any {group_label} with your {item.name}?"
+    if min_selector == 0:
+        return f"{prompt} You can say none."
+    return prompt
 
 
 def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> str:
@@ -298,44 +300,24 @@ def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository, pa
     group = item.modifier_groups[context.current_modifier_group_index]
     group_payload = _current_modifier_payload(context, menu_repo, payload)
 
-    group_label = _clean_group_label(group.name, "add-on").lower()
-    choice_names = [choice.name for choice in group.choices]
-    options = _format_options(choice_names)
-    total = len(choice_names)
+    noun = (getattr(group, "prompt_noun", None) or _GENERIC_MODIFIER_NOUN).strip() or _GENERIC_MODIFIER_NOUN
+    verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
     min_selector = int(group_payload.get("min_selector", 0) or 0)
-    max_selector = int(group_payload.get("max_selector", 0) or 0)
+    top_choices = group_payload.get("top_choices") or []
 
-    if options and (min_selector > 0 or max_selector > 1):
-        return _initial_multi_select_prompt(
-            item_name=item.name,
-            group_label=group_label,
-            options=options,
-            min_selector=min_selector,
-            max_selector=max_selector,
-            optional=min_selector == 0,
-            total_choices=total,
-        )
+    examples = _format_examples(top_choices)
+    if examples:
+        prompt = f"Any {noun} {verb}, like {examples}?"
+    else:
+        prompt = f"Any {noun} {verb} on your {item.name}?"
 
-    ask_hint = " Ask for options to hear more." if total > 6 else ""
-    if min_selector > 0:
-        if options:
-            return f"Which {group_label} for your {item.name}? {options}.{ask_hint}"
-        return f"Which {group_label} for your {item.name}?"
-
-    if options:
-        return f"Any extras for your {item.name}? {options}, or no.{ask_hint}"
-    return f"Any extras for your {item.name}?"
+    if min_selector == 0:
+        return f"{prompt} You can say none."
+    return prompt
 
 
 def ask_for_size(context: ConversationContext, menu_repo: MenuRepository) -> str:
     item = menu_repo.store.get_item(context.current_item_id)
-    variants = item.pricing.variants or []
-
-    labels = [variant.label for variant in variants if variant.label]
-    options = _format_options(labels)
-
-    if options:
-        return f"What size would you like for {item.name}? {options}."
     return f"What size would you like for {item.name}?"
 
 
@@ -423,6 +405,7 @@ def too_many_side_choices(context, menu_repo, payload) -> str:
     max_selector = int(side_payload.get("max_selector", 0) or 0)
 
     accepted_names = payload.get("accepted_names") or []
+    requested_names = payload.get("requested_names") or []
     dropped_names = payload.get("dropped_names") or []
     unmatched = payload.get("unmatched_names") or []
 
@@ -430,14 +413,21 @@ def too_many_side_choices(context, menu_repo, payload) -> str:
 
     if accepted_names:
         parts.append(f"I added {_format_selected_names(accepted_names)}.")
-    if dropped_names:
+    if dropped_names and not accepted_names:
+        limit_note = f"You can only pick {max_selector}" if max_selector > 0 else "That's the limit"
+        parts.append(
+            f"{limit_note}. Please choose again from {_format_selected_names(requested_names or dropped_names)}."
+        )
+    elif dropped_names:
         limit_note = f"You can only pick {max_selector}" if max_selector > 0 else "That's the limit"
         parts.append(f"{limit_note}, so I couldn't add {_format_selected_names(dropped_names)}.")
     if unmatched:
         parts.append(f"I couldn't find {_format_selected_names(unmatched)}.")
 
     if parts:
-        return " ".join(parts) + " Say done when you're ready."
+        if accepted_names:
+            return " ".join(parts) + " Say done when you're ready."
+        return " ".join(parts)
 
     # Fallback (shouldn't normally reach here)
     options = _format_options(side_payload.get("top_choices") or side_payload.get("all_choices") or _top_side_choices(context, menu_repo))
@@ -453,6 +443,7 @@ def too_many_modifier_choices(context, menu_repo, payload) -> str:
     max_selector = int(modifier_payload.get("max_selector", 0) or 0)
 
     accepted_names = payload.get("accepted_names") or []
+    requested_names = payload.get("requested_names") or []
     dropped_names = payload.get("dropped_names") or []
     unmatched = payload.get("unmatched_names") or []
 
@@ -460,14 +451,21 @@ def too_many_modifier_choices(context, menu_repo, payload) -> str:
 
     if accepted_names:
         parts.append(f"I added {_format_selected_names(accepted_names)}.")
-    if dropped_names:
+    if dropped_names and not accepted_names:
+        limit_note = f"You can only pick {max_selector}" if max_selector > 0 else "That's the limit"
+        parts.append(
+            f"{limit_note}. Please choose again from {_format_selected_names(requested_names or dropped_names)}."
+        )
+    elif dropped_names:
         limit_note = f"You can only pick {max_selector}" if max_selector > 0 else "That's the limit"
         parts.append(f"{limit_note}, so I couldn't add {_format_selected_names(dropped_names)}.")
     if unmatched:
         parts.append(f"I couldn't find {_format_selected_names(unmatched)}.")
 
     if parts:
-        return " ".join(parts) + " Say done when you're ready."
+        if accepted_names:
+            return " ".join(parts) + " Say done when you're ready."
+        return " ".join(parts)
 
     # Fallback
     options = _format_options(modifier_payload.get("top_choices") or modifier_payload.get("all_choices") or _top_modifier_choices(context, menu_repo))
@@ -515,6 +513,11 @@ def invalid_size_option(context, menu_repo, payload) -> str:
     labels = [variant.label for variant in (item.pricing.variants or []) if variant.label]
     options = _format_options(labels)
 
+    if payload.get("reprompt_escalation"):
+        if options:
+            return f"Let's make this easy. Say {options} for {item.name}."
+        return f"Let's make this easy. Please say the size for {item.name}."
+
     if options:
         return f"That size is not available for {item.name}. Please choose {options}."
     return f"That size is not available for {item.name}. Please choose another size."
@@ -522,6 +525,10 @@ def invalid_size_option(context, menu_repo, payload) -> str:
 
 def invalid_quantity_option(context, menu_repo, payload) -> str:
     item_name = payload.get("item_name") or context.current_item_name
+    if payload.get("reprompt_escalation"):
+        if item_name:
+            return f"Please say a number for {item_name}, like 1 or 2."
+        return "Please say a number, like 1 or 2."
     if item_name:
         return f"Please give a valid quantity for {item_name}."
     return "Please give a valid quantity."
@@ -612,6 +619,11 @@ def repeat_size_options(context, menu_repo, payload) -> str:
     labels = [variant.label for variant in (item.pricing.variants or []) if variant.label]
     options = _format_options(labels)
 
+    if payload.get("reprompt_escalation"):
+        if options:
+            return f"Please say one of these sizes for {item.name}: {options}."
+        return f"Please say the size for {item.name}."
+
     if options:
         return f"Available sizes for {item.name} are {options}."
     return f"What size would you like for {item.name}?"
@@ -633,9 +645,10 @@ def list_side_options(context, menu_repo, payload) -> str:
     options = _format_options(all_choices, max_items=6)
     if options:
         max_selector = int(side_payload.get("max_selector", 0) or 0)
+        prefix = "Let me list them. " if payload.get("reprompt_escalation") else ""
         if max_selector > 1:
-            return f"Up to {max_selector}. {options}."
-        return f"Your options are {options}."
+            return f"{prefix}Up to {max_selector}. {options}."
+        return f"{prefix}Your options are {options}."
     return "Let me list the side options."
 
 
@@ -652,9 +665,10 @@ def list_modifier_options(context, menu_repo, payload) -> str:
     options = _format_options(all_choices, max_items=6)
     if options:
         max_selector = int(modifier_payload.get("max_selector", 0) or 0)
+        prefix = "Let me list them. " if payload.get("reprompt_escalation") else ""
         if max_selector > 1:
-            return f"Up to {max_selector}. {options}."
-        return f"Your options are {options}."
+            return f"{prefix}Up to {max_selector}. {options}."
+        return f"{prefix}Your options are {options}."
     return "Let me list the options."
 
 

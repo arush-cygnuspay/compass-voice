@@ -72,7 +72,7 @@ def make_item_with_groups() -> MenuItem:
 
 
 class AddItemQuantityPromptTests(unittest.TestCase):
-    def test_always_asks_for_quantity_even_when_present_in_first_request(self):
+    def test_prefilled_quantity_skips_quantity_prompt_when_nothing_else_is_missing(self):
         item = make_item_with_groups()
         repo = FakeMenuRepo(MenuQueryResult(type=MenuQueryType.ITEM, item=item))
         handler = AddItemHandler(repo)
@@ -90,9 +90,9 @@ class AddItemQuantityPromptTests(unittest.TestCase):
         )
 
         self.assertEqual(context.pending_action, PendingAction.ADD_ITEM)
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
-        self.assertIsNone(context.quantity)
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
+        self.assertEqual(context.quantity, 2)
         self.assertEqual(context.selected_side_groups, {"drink": ["coke"]})
         self.assertEqual(
             context.selected_modifier_groups["mods"][0].modifier_id,

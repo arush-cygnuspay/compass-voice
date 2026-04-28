@@ -75,6 +75,25 @@ class WaitingForCallerDeviceTypeHandlerTests(unittest.TestCase):
         self.assertEqual(result.next_state, ConversationState.COMPLETED)
         self.assertEqual(result.response_key, "landline_pickup_declined")
 
+    def test_landline_confirmation_semantic_affirm_transfers_to_human_agent(self):
+        session = Session(session_id="call-1", restaurant_id="demo")
+        session.conversation_state = ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION
+        context = ConversationContext()
+        context.caller_device_type = "landline"
+
+        result = self.handler.handle(
+            intent=Intent.UNKNOWN,
+            context=context,
+            user_text="sounds good",
+            session=session,
+        )
+
+        self.assertEqual(
+            result.next_state,
+            ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
+        )
+        self.assertEqual(result.response_key, "transferring_to_human_agent")
+
 
 if __name__ == "__main__":
     unittest.main()

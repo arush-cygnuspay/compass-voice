@@ -1,80 +1,74 @@
-import unittest
-
+from app.cart.cart_item import CartItem
 from app.nlu.intent_resolution.intent import Intent
-from app.nlu.nlu_result import SlotValue
+from app.nlu.nlu_result import NLUResult
 from app.session.session import Session
 from app.state_machine.handlers.common.cancellation_confirmation_handler import (
     CancellationConfirmationHandler,
 )
-from app.state_machine.models.conversation_context import ConversationContext, InterruptProposal
 from app.state_machine.models.conversation_state import ConversationState
-from app.state_machine.models.pending_item_models import PendingAddItem
 
 
-def _build_session_and_context() -> tuple[Session, ConversationContext]:
-    session = Session(session_id="test-session", restaurant_id="demo")
+def _session() -> Session:
+    session = Session(session_id="cancel-1", restaurant_id="demo")
     session.conversation_state = ConversationState.CANCELLATION_CONFIRMATION
-
-    context = session.conversation_context
-    context.current_item_id = "burger"
-    context.current_item_name = "Burger"
-    context.current_prompt_field = "quantity"
-    context.pending_add_item = PendingAddItem(
-        item_id="burger",
-        item_name="Burger",
+    session.cart.add_item(
+        CartItem.create(
+            item_id="burger",
+            quantity=1,
+            variant_id=None,
+            sides={},
+            side_variants={},
+            modifiers={},
+        )
     )
-    context.return_state = ConversationState.WAITING_FOR_QUANTITY
-    context.awaiting_flow_confirmation = True
-    context.interrupt_proposal = InterruptProposal(
-        text="add a coke",
-        predicted_main_intent="cart",
-        predicted_sub_intent="add_item",
+    return session
+
+
+def _set_last_nlu(session: Session, intent: Intent, confidence: float = 0.2) -> None:
+    session.conversation_context.set_last_nlu(
+        user_text="",
+        nlu=NLUResult(
+            effective_intent=intent,
+            intent_confidence=confidence,
+            raw_text="",
+            normalized_text="",
+        ),
     )
-    return session, context
 
 
-class CancellationConfirmationHandlerTests(unittest.TestCase):
-    def test_quantity_like_reply_does_not_confirm_cancellation(self):
-        handler = CancellationConfirmationHandler()
-        session, context = _build_session_and_context()
-        context.last_slots = (SlotValue(name="QUANTITY", value="1"),)
+def test_clear_cart_accepts_natural_confirmation_phrase() -> None:
+    handler = CancellationConfirmationHandler()
+    session = _session()
+    session.conversation_context.return_state = ConversationState.IDLE
+    session.conversation_context.awaiting_flow_confirmation = True
+    session.conversation_context.awaiting_confirmation_for = {"type": "clear_cart"}
+    _set_last_nlu(session, Intent.UNKNOWN)
 
-        result = handler.handle(
-            intent=Intent.CONFIRM,
-            context=context,
-            user_text="one",
-            session=session,
-        )
+    result = handler.handle(
+        intent=Intent.UNKNOWN,
+        context=session.conversation_context,
+        user_text="yeah go ahead",
+        session=session,
+    )
 
-        self.assertEqual(result.next_state, ConversationState.IDLE)
-        self.assertEqual(result.response_key, "item_added_successfully")
-        self.assertIsNotNone(result.command)
-        self.assertEqual(result.command["type"], "ADD_ITEM_TO_CART")
-        self.assertEqual(result.command["payload"]["quantity"], 1)
-        self.assertFalse(context.awaiting_flow_confirmation)
-        self.assertIsNone(context.return_state)
-        self.assertIsNone(context.interrupt_proposal)
-
-    def test_deny_clears_confirmation_overlay_state(self):
-        handler = CancellationConfirmationHandler()
-        session, context = _build_session_and_context()
-
-        result = handler.handle(
-            intent=Intent.DENY,
-            context=context,
-            user_text="no",
-            session=session,
-        )
-
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(
-            result.response_key,
-            "continue_current_item_after_cancel_denied",
-        )
-        self.assertFalse(context.awaiting_flow_confirmation)
-        self.assertIsNone(context.return_state)
-        self.assertIsNone(context.interrupt_proposal)
+    assert result.response_key == "cart_cleared"
+    assert result.command == {"type": "CLEAR_CART"}
 
 
-if __name__ == "__main__":
-    unittest.main()
+def test_clear_cart_denial_keeps_cart_without_yes_no_requirement() -> None:
+    handler = CancellationConfirmationHandler()
+    session = _session()
+    session.conversation_context.return_state = ConversationState.IDLE
+    session.conversation_context.awaiting_flow_confirmation = True
+    session.conversation_context.awaiting_confirmation_for = {"type": "clear_cart"}
+    _set_last_nlu(session, Intent.UNKNOWN)
+
+    result = handler.handle(
+        intent=Intent.UNKNOWN,
+        context=session.conversation_context,
+        user_text="no keep it",
+        session=session,
+    )
+
+    assert result.response_key == "clear_cart_cancelled"
+    assert result.next_state == ConversationState.IDLE

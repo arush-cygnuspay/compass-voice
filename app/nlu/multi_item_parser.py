@@ -47,10 +47,27 @@ _ATTACHMENT_PREFIXES = (
     "on the side ",
 )
 
+# Tail-only tokens that indicate the upcoming item is attached to the
+# previous one (e.g. "with X", "extra Y", "no Z").
+_ATTACHMENT_TAIL_TOKENS_1: frozenset[str] = frozenset(
+    {"with", "extra", "more", "double", "no", "without", "light", "less", "hold", "remove"}
+)
+_ATTACHMENT_TAIL_TOKENS_2: frozenset[tuple[str, str]] = frozenset(
+    {("on", "the"), ("hold", "the"), ("remove", "the"), ("on", "side"), ("with", "the")}
+)
+# Tail-only tokens that signal a *new* item is starting (so the upcoming
+# item slot is NOT attached). "and", "plus", "also" alone — or "and a",
+# "plus 2", etc.
+_RESTART_TAIL_TOKENS_1: frozenset[str] = frozenset({"and", "plus", "also", "then", "or"})
+_RESTART_QUANTITY_WORDS: frozenset[str] = frozenset(
+    {"a", "an", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten"}
+)
+
 _RESTART_WITH_QUANTITY = re.compile(
     r"(?:and|plus|also)(?:\s+also)?\s+(?:a|an|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*$",
     re.IGNORECASE,
 )
+_BOUNDARY_SEPARATORS = re.compile(r"\b(?:and|plus|also|then)\b|,", re.IGNORECASE)
 
 
 @dataclass(frozen=True, slots=True)
@@ -143,19 +160,64 @@ def _collect_candidate_item_slots(
 
 
 def _slot_looks_attached(text: str, slot: SlotValue) -> bool:
+    """
+    Decide whether the upcoming item slot is part of the previous item
+    (e.g. "burger WITH cheese") or the start of a new item.
+
+    Implementation note: the historical heuristic was
+
+        " with " in compact   # anywhere in the 60-char lookback
+
+    That over-attaches when a "with" appears far upstream in the same
+    utterance (e.g. "taco with coke and jelly a chicken burger" — the
+    "with" before "coke" must NOT cause "chicken burger" to be treated
+    as attached). The fix is to look only at the immediate tail tokens.
+    """
     if slot.start is None:
         return False
 
     lookback = text[max(0, slot.start - 60):slot.start].lower()
-    compact = re.sub(r"\s+", " ", lookback).lstrip()
-    if _RESTART_WITH_QUANTITY.search(compact):
+    compact = re.sub(r"\s+", " ", lookback).strip()
+    if not compact:
         return False
 
-    return (
-        any(compact.endswith(prefix) for prefix in _ATTACHMENT_PREFIXES)
-        or compact.startswith("with ")
-        or " with " in compact
-    )
+    tokens = compact.split()
+    if not tokens:
+        return False
+
+    # Restart patterns explicitly start a new item — never attached.
+    #   "...and a chicken burger", "...plus 2 burgers", "...also one ..."
+    if (
+        len(tokens) >= 2
+        and tokens[-2] in _RESTART_TAIL_TOKENS_1
+        and (tokens[-1] in _RESTART_QUANTITY_WORDS or tokens[-1].isdigit())
+    ):
+        return False
+    if tokens[-1] in _RESTART_TAIL_TOKENS_1:
+        return False
+
+    # Immediate attachment markers: the next slot is part of the previous
+    # item.
+    if tokens[-1] in _ATTACHMENT_TAIL_TOKENS_1:
+        return True
+    if (
+        len(tokens) >= 2
+        and (tokens[-2], tokens[-1]) in _ATTACHMENT_TAIL_TOKENS_2
+    ):
+        return True
+    # "with a", "extra an", "no the", "more a" etc. — an attachment word
+    # followed by an article. Still attached.
+    if (
+        len(tokens) >= 2
+        and tokens[-1] in {"a", "an", "the"}
+        and tokens[-2] in _ATTACHMENT_TAIL_TOKENS_1
+    ):
+        return True
+
+    # Bare "a"/"an" without a preceding restart or attachment connector
+    # still signals a new item ("...jelly a chicken burger") — treat as
+    # not attached.
+    return False
 
 
 def _extract_leading_quantity(text: str) -> tuple[int | None, str]:
@@ -172,6 +234,29 @@ def _extract_leading_quantity(text: str) -> tuple[int | None, str]:
         if m:
             return qty, text[m.end():].strip()
     return None, text
+
+
+def _has_explicit_split_boundary(
+    text: str,
+    previous_slot: SlotValue,
+    next_slot: SlotValue,
+) -> bool:
+    if previous_slot.end is None or next_slot.start is None:
+        return False
+
+    between = text[previous_slot.end:next_slot.start]
+    if not between:
+        return False
+
+    compact = re.sub(r"\s+", " ", between).strip()
+    if not compact:
+        return False
+
+    if _BOUNDARY_SEPARATORS.search(compact):
+        return True
+
+    quantity, remainder = _extract_leading_quantity(compact)
+    return quantity is not None and not remainder
 
 
 def parse_multi_item_utterance(
@@ -210,46 +295,80 @@ def parse_multi_item_utterance(
 
     # ── Split by ITEM slot offsets ──
     items_with_offsets.sort(key=lambda s: s.start)
-    segments: list[ParsedItemSegment] = []
-    boundary_slot_keys = {_slot_key(slot) for slot in items_with_offsets}
+    anchored_items: list[SlotValue] = []
+    for slot in items_with_offsets:
+        if not anchored_items:
+            anchored_items.append(slot)
+            continue
+        if _has_explicit_split_boundary(normalized_text, anchored_items[-1], slot):
+            anchored_items.append(slot)
 
-    for i, item_slot in enumerate(items_with_offsets):
-        # Determine segment boundaries
-        # Look backward from the item slot to find where this segment starts
+    if len(anchored_items) <= 1:
+        return []
+
+    segments: list[ParsedItemSegment] = []
+    boundary_slot_keys = {_slot_key(slot) for slot in anchored_items}
+
+    for i, item_slot in enumerate(anchored_items):
+        # Determine segment boundaries.
+        #
+        # Strategy (in priority order):
+        #   1) Honour the quantity prefix immediately before THIS item slot
+        #      ("a", "an", "2", "two", ...). The segment starts AT that
+        #      quantity word, regardless of any "and" further back. This
+        #      keeps modifier lists like "...and jelly" attached to the
+        #      previous item even when the next item is preceded by a
+        #      bare "a" instead of "and a".
+        #   2) Otherwise fall back to the LAST connector ("and", ",", ...)
+        #      between the previous item end and this item start.
         if i == 0:
             seg_start = 0
         else:
-            # Start from just after the previous segment's effective end
-            prev_end = items_with_offsets[i - 1].end
-            # Find the "and" or separator between prev item and this one
-            between = normalized_text[prev_end:item_slot.start]
-            sep_matches = list(re.finditer(r"\band\b|\bplus\b|\balso\b|,", between))
-            if sep_matches:
-                seg_start = prev_end + sep_matches[-1].end()
+            prev_end = anchored_items[i - 1].end
+            qty_prefix_start = _quantity_prefix_start(normalized_text, item_slot.start)
+            if qty_prefix_start is not None and qty_prefix_start >= prev_end:
+                seg_start = qty_prefix_start
             else:
-                seg_start = prev_end
+                between = normalized_text[prev_end:item_slot.start]
+                sep_matches = list(re.finditer(r"\band\b|\bplus\b|\balso\b|,", between))
+                if sep_matches:
+                    seg_start = prev_end + sep_matches[-1].end()
+                else:
+                    seg_start = prev_end
 
-        # Segment ends at the start of the next item's segment, or end of text
-        if i < len(items_with_offsets) - 1:
-            next_start = items_with_offsets[i + 1].start
-            # Look backward to find separator
-            between = normalized_text[item_slot.end:next_start]
-            sep_matches = list(re.finditer(r"\band\b|\bplus\b|\balso\b|,", between))
-            if sep_matches:
-                seg_end = item_slot.end + sep_matches[-1].start()
+        # Segment ends at the start of the next item's segment.
+        if i < len(anchored_items) - 1:
+            next_slot = anchored_items[i + 1]
+            next_start = next_slot.start
+            qty_prefix_start = _quantity_prefix_start(normalized_text, next_start)
+            if qty_prefix_start is not None and qty_prefix_start > item_slot.end:
+                # Stop just before the next item's quantity prefix so that
+                # any trailing modifiers ("...and jelly") stay with this
+                # segment.
+                seg_end = qty_prefix_start
             else:
-                seg_end = next_start
+                between = normalized_text[item_slot.end:next_start]
+                sep_matches = list(re.finditer(r"\band\b|\bplus\b|\balso\b|,", between))
+                if sep_matches:
+                    seg_end = item_slot.end + sep_matches[-1].start()
+                else:
+                    seg_end = next_start
         else:
             seg_end = len(normalized_text)
 
-        # Look further back for quantity prefix
-        prefix_start = _find_quantity_prefix_start(normalized_text, seg_start, item_slot.start)
-        if prefix_start < seg_start:
-            seg_start = prefix_start
-
         raw_segment = normalized_text[seg_start:seg_end].strip()
-        raw_segment = re.sub(r"^(and|plus|also|,)\s*", "", raw_segment, flags=re.IGNORECASE).strip()
-        raw_segment = re.sub(r"\s*(and|plus|also|,)\s*$", "", raw_segment, flags=re.IGNORECASE).strip()
+        # Strip leading and trailing connectors. Loop the trailing strip so
+        # compound connectors like "and also" are removed in one pass.
+        raw_segment = re.sub(r"^(and|plus|also|then|,)\s*", "", raw_segment, flags=re.IGNORECASE).strip()
+        prev_segment: str | None = None
+        while raw_segment != prev_segment:
+            prev_segment = raw_segment
+            raw_segment = re.sub(
+                r"(?:\s+(?:and|plus|also|then)|,)\s*$",
+                "",
+                raw_segment,
+                flags=re.IGNORECASE,
+            ).strip()
 
         # Extract quantity from segment
         quantity, _ = _extract_leading_quantity(raw_segment)
@@ -296,6 +415,34 @@ def _find_quantity_prefix_start(text: str, seg_start: int, item_start: int) -> i
         actual_start = max(0, seg_start - 15) + m.start()
         return actual_start
     return seg_start
+
+
+_QTY_PREFIX_TAIL_RE = re.compile(
+    r"(?:^|\s)((?:a|an|the|\d+|one|two|three|four|five|six|seven|eight|nine|ten))\s+$",
+    re.IGNORECASE,
+)
+
+
+def _quantity_prefix_start(text: str, item_start: int) -> int | None:
+    """
+    Return the absolute index of the quantity-prefix word ("a", "an",
+    "the", a digit, or one of the spelled-out numbers 1–10) that appears
+    immediately before `item_start`, separated only by whitespace.
+
+    Returns None when no such prefix exists. The caller uses this to
+    snap segment boundaries to the start of the quantity rather than to
+    the last "and"/comma — important for utterances like
+    "...jelly a chicken burger..." where there is no connector at all.
+    """
+    if item_start <= 0:
+        return None
+
+    window_start = max(0, item_start - 15)
+    backwindow = text[window_start:item_start]
+    m = _QTY_PREFIX_TAIL_RE.search(backwindow)
+    if not m:
+        return None
+    return window_start + m.start(1)
 
 
 def _slots_in_range(

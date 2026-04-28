@@ -49,6 +49,7 @@ class PendingSideChoice:
     name: str
     pricing_mode: str
     normalized_name: str
+    match_texts: tuple[str, ...] = ()
     variants: list[PendingVariantChoice] = field(default_factory=list)
     variants_by_id: dict[str, PendingVariantChoice] = field(default_factory=dict)
     variants_by_normalized_name: dict[str, PendingVariantChoice] = field(default_factory=dict)
@@ -77,6 +78,7 @@ class PendingModifierChoice:
     name: str
     group_id: str
     normalized_name: str
+    match_texts: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

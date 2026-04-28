@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+from app.intent.confirmation_utils import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler
@@ -54,10 +55,17 @@ class CancellationConfirmationHandler(BaseHandler):
                 session=session,
             )
 
+        decision = resolve_confirmation_decision(
+            context.last_nlu,
+            user_text,
+            resolved_intent=intent,
+            expect_confirmation=True,
+        )
+
         # -------------------------------------------------
         # 1) User confirms cancellation / destructive action
         # -------------------------------------------------
-        if intent == Intent.CONFIRM:
+        if decision == "affirm":
             if self._is_clear_cart_confirmation(context):
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
@@ -82,7 +90,14 @@ class CancellationConfirmationHandler(BaseHandler):
         # -------------------------------------------------
         # 2) User denies cancellation => resume prior flow
         # -------------------------------------------------
-        if intent in {Intent.DENY, Intent.CANCEL}:
+        if decision == "cancel":
+            self._clear_flow_confirmation_state(context)
+            return HandlerResult(
+                next_state=ConversationState.IDLE,
+                response_key="action_cancelled",
+            )
+
+        if decision == "deny":
             resume_state = context.return_state or ConversationState.IDLE
 
             if self._is_clear_cart_confirmation(context):
