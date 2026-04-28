@@ -188,3 +188,13 @@ logs/
 # OS junk
 .DS_Store
 Thumbs.db
+
+app/data/checkout_sessions/
+app/data/payment_link_sessions/
+app/data/payment_sessions/
+app/data/evals/
+app/ml/models/
+app/ml/artifacts/
+app/ml/config/
+*.safetensors
+*.bin
