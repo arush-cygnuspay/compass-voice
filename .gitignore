@@ -198,3 +198,4 @@ app/ml/artifacts/
 app/ml/config/
 *.safetensors
 *.bin
+*.pt
