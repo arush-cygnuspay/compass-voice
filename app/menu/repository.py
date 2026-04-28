@@ -1,205 +1,63 @@
 from __future__ import annotations
 
 from app.menu.models import ItemResolution, MenuItem
-from app.menu.query_result import MenuQueryResult, MenuQueryType
-from app.menu.slot_helpers import slot_values
+from app.menu.query_result import MenuQueryResult
+from app.menu.query_service import MenuQueryService
 from app.menu.store import MenuStore
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
-from app.utils.item_matching import score_item, score_item_normalized
 
 
 class MenuRepository:
-    """
-    Public menu query API for NLU and handlers.
+    """Backward-compatible facade over ``MenuQueryService``.
 
-    Hot-path contract:
-    - normalized_* methods expect already-normalized text
-    - wrapper methods exist only for compatibility callers that still pass raw text
+    All public methods delegate to ``MenuQueryService``.  Callers that
+    construct ``MenuRepository(store)`` continue to work unchanged.
     """
 
     def __init__(self, store: MenuStore):
         self.store = store
+        self._service = MenuQueryService(store)
 
-    # ======================================================
-    # INTERNAL HELPERS
-    # ======================================================
+    # ------------------------------------------------------------------
+    # DATA ACCESS
+    # ------------------------------------------------------------------
 
-    def _score_item_labels(self, normalized_text: str, item: MenuItem) -> float:
-        return max(
-            score_item_normalized(normalized_text, item.normalized_name),
-            max((score_item(normalized_text, alias) for alias in item.normalized_aliases), default=0.0),
-            max((score_item(normalized_text, label) for label in item.voice_labels), default=0.0),
+    def get_item(self, item_id: str) -> MenuItem:
+        return self._service.get_item(item_id)
+
+    # ------------------------------------------------------------------
+    # NOT-FOUND RECOVERY
+    # ------------------------------------------------------------------
+
+    def build_not_found_recovery(
+        self,
+        text: str,
+        *,
+        item_limit: int = 3,
+        category_limit: int = 4,
+    ) -> tuple[list[MenuItem], list[dict]]:
+        return self._service.build_not_found_recovery(
+            text, item_limit=item_limit, category_limit=category_limit
         )
 
-    def _candidate_items_from_text(self, normalized_text: str) -> list[MenuItem]:
-        entity_candidates = self.store.find_entity(normalized_text, allowed_types={"item"})
-        candidate_ids = {
-            entry.get("item_id")
-            for entry in entity_candidates
-            if entry.get("item_id")
-        }
-
-        exact_item = self.store.find_item_exact(normalized_text)
-        if exact_item is not None:
-            candidate_ids.add(exact_item.item_id)
-
-        for item_id in self.store.find_item_ids_by_alias(normalized_text):
-            candidate_ids.add(item_id)
-
-        for item_id in self.store.find_item_ids_by_voice_label(normalized_text):
-            candidate_ids.add(item_id)
-
-        if candidate_ids:
-            return [
-                self.store.get_item(item_id)
-                for item_id in candidate_ids
-                if item_id in self.store.items
-            ]
-
-        return list(self.store.items.values())
-
-    def _has_explicit_item_evidence(self, normalized_text: str) -> bool:
-        if not normalized_text:
-            return False
-
-        if self.store.find_entity(normalized_text, allowed_types={"item"}):
-            return True
-
-        if self.store.find_item_exact(normalized_text) is not None:
-            return True
-
-        if self.store.find_item_ids_by_alias(normalized_text):
-            return True
-
-        if self.store.find_item_ids_by_voice_label(normalized_text):
-            return True
-
-        return False
-
-    # ======================================================
-    # CANDIDATE-LOCAL RESOLUTION
-    # ======================================================
-
-    def resolve_item_within_candidates_normalized(
+    def build_not_found_recovery_normalized(
         self,
-        *,
         normalized_text: str,
-        candidate_item_ids: list[str] | tuple[str, ...],
-    ) -> MenuItem | None:
-        if not normalized_text or not candidate_item_ids:
-            return None
-
-        candidates: list[MenuItem] = []
-        for item_id in candidate_item_ids:
-            if item_id in self.store.items:
-                candidates.append(self.store.get_item(item_id))
-
-        if not candidates:
-            return None
-
-        # 1. exact / alias / voice-label deterministic hit
-        exact_hits: list[MenuItem] = []
-        for item in candidates:
-            if normalized_text == item.normalized_name:
-                exact_hits.append(item)
-                continue
-            if normalized_text in item.normalized_aliases:
-                exact_hits.append(item)
-                continue
-            if normalized_text in item.voice_labels:
-                exact_hits.append(item)
-
-        if len(exact_hits) == 1:
-            return exact_hits[0]
-
-        # 2. scoring only inside shortlist
-        scored: list[tuple[float, MenuItem]] = []
-        for item in candidates:
-            score = self._score_item_labels(normalized_text, item)
-            if score > 0:
-                scored.append((score, item))
-
-        if not scored:
-            return None
-
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        best_score, best_item = scored[0]
-        second_score = scored[1][0] if len(scored) > 1 else 0.0
-
-        if best_score >= 6.0 and (
-            second_score == 0.0
-            or best_score - second_score >= 0.9
-            or best_score >= second_score * 1.15
-        ):
-            return best_item
-
-        return None
-
-    def resolve_side_choice_within_group_normalized(
-        self,
         *,
-        normalized_text: str,
-        group_id: str,
-        candidate_names_by_id: dict[str, tuple[str, ...]],
-    ) -> list[str]:
-        if not normalized_text or not group_id:
-            return []
+        item_limit: int = 3,
+        category_limit: int = 4,
+    ) -> tuple[list[MenuItem], list[dict]]:
+        return self._service.build_not_found_recovery_normalized(
+            normalized_text, item_limit=item_limit, category_limit=category_limit
+        )
 
-        exact_ids = self.store.find_side_ids_for_group_by_label(group_id, normalized_text)
-        if exact_ids:
-            return exact_ids
-
-        scored: list[tuple[float, str]] = []
-        for item_id, labels in candidate_names_by_id.items():
-            best = max((score_item(normalized_text, label) for label in labels), default=0.0)
-            if best > 0:
-                scored.append((best, item_id))
-
-        if not scored:
-            return []
-
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        best_score = scored[0][0]
-        winners = [item_id for score, item_id in scored if score >= best_score * 0.90]
-
-        return winners
-
-    def resolve_modifier_choice_within_group_normalized(
-        self,
-        *,
-        normalized_text: str,
-        group_id: str,
-        candidate_names_by_id: dict[str, tuple[str, ...]],
-    ) -> list[str]:
-        if not normalized_text or not group_id:
-            return []
-
-        exact_ids = self.store.find_modifier_ids_for_group_by_label(group_id, normalized_text)
-        if exact_ids:
-            return exact_ids
-
-        scored: list[tuple[float, str]] = []
-        for modifier_id, labels in candidate_names_by_id.items():
-            best = max((score_item(normalized_text, label) for label in labels), default=0.0)
-            if best > 0:
-                scored.append((best, modifier_id))
-
-        if not scored:
-            return []
-
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        best_score = scored[0][0]
-        winners = [modifier_id for score, modifier_id in scored if score >= best_score * 0.90]
-
-        return winners
-
-    # ======================================================
+    # ------------------------------------------------------------------
     # CATEGORY RESOLUTION
-    # ======================================================
+    # ------------------------------------------------------------------
 
     def resolve_category_query(self, text: str, *, limit: int = 5) -> MenuQueryResult | None:
-        return self.resolve_category_query_normalized(normalize_text(text or ""), limit=limit)
+        return self._service.resolve_category_query(text, limit=limit)
 
     def resolve_category_query_normalized(
         self,
@@ -207,79 +65,11 @@ class MenuRepository:
         *,
         limit: int = 5,
     ) -> MenuQueryResult | None:
-        if not normalized_text:
-            return None
+        return self._service.resolve_category_query_normalized(normalized_text, limit=limit)
 
-        entries = self.store.find_entity(normalized_text, allowed_types={"category"})
-        for entry in entries:
-            category_id = entry.get("category_id")
-            if not category_id:
-                continue
-
-            category = self.store.categories.get(category_id)
-            if category is not None:
-                return self._build_category_result(category, limit=limit)
-
-        category = self.store.find_category_by_name(normalized_text)
-        if category is not None:
-            return self._build_category_result(category, limit=limit)
-
-        fuzzy = self._find_category_fuzzy(normalized_text)
-        if fuzzy is not None:
-            return self._build_category_result(fuzzy, limit=limit)
-
-        return None
-
-    def _build_category_result(self, category: dict, *, limit: int = 5) -> MenuQueryResult:
-        items = [
-            self.store.get_item(item_id)
-            for item_id in category.get("item_ids", [])
-            if item_id in self.store.items
-        ]
-
-        if len(items) == 1:
-            return MenuQueryResult(
-                type=MenuQueryType.CATEGORY_SINGLE_ITEM,
-                category_id=category["category_id"],
-                category_name=category["name"],
-                items=items,
-            )
-
-        return MenuQueryResult(
-            type=MenuQueryType.CATEGORY,
-            category_id=category["category_id"],
-            category_name=category["name"],
-            items=items[:limit],
-        )
-
-    def _find_category_fuzzy(self, normalized_text: str) -> dict | None:
-        best_category = None
-        best_score = 0
-
-        for category in self.store.categories.values():
-            category_name = normalize_text(str(category.get("name", "")))
-            if not category_name:
-                continue
-
-            if normalized_text == category_name:
-                return category
-
-            if len(normalized_text) >= 3 and normalized_text in category_name:
-                score = 3
-            elif len(category_name) >= 3 and category_name in normalized_text:
-                score = 2
-            else:
-                score = len(set(normalized_text.split()) & set(category_name.split()))
-
-            if score > best_score:
-                best_score = score
-                best_category = category
-
-        return best_category if best_score > 0 else None
-
-    # ======================================================
+    # ------------------------------------------------------------------
     # SLOT-FIRST RESOLUTION
-    # ======================================================
+    # ------------------------------------------------------------------
 
     def resolve_menu_query_from_slots(
         self,
@@ -289,8 +79,8 @@ class MenuRepository:
         fallback_to_text: bool = True,
         limit: int = 5,
     ) -> MenuQueryResult:
-        return self.resolve_menu_query_from_slots_normalized(
-            normalized_user_text=normalize_text(user_text or ""),
+        return self._service.resolve_menu_query_from_slots(
+            user_text=user_text,
             slots=slots,
             fallback_to_text=fallback_to_text,
             limit=limit,
@@ -304,163 +94,19 @@ class MenuRepository:
         fallback_to_text: bool = True,
         limit: int = 5,
     ) -> MenuQueryResult:
-        item_queries = [
-            normalize_text(value)
-            for value in slot_values(slots, "ITEM", "MENU_ITEM")
-            if normalize_text(value)
-        ]
-        category_queries = [
-            normalize_text(value)
-            for value in slot_values(slots, "CATEGORY", "MENU_CATEGORY")
-            if normalize_text(value)
-        ]
-
-        category_result = None
-        for normalized_category_query in category_queries:
-            category_result = self.resolve_category_query_normalized(
-                normalized_category_query,
-                limit=limit,
-            )
-            if category_result is not None:
-                break
-
-        if category_result is not None and not item_queries:
-            return category_result
-
-        prioritized_item_queries = [query for query in item_queries if self._has_explicit_item_evidence(query)]
-        if not prioritized_item_queries:
-            prioritized_item_queries = item_queries
-
-        fallback_slot_item_result: MenuQueryResult | None = None
-        for normalized_item_query in prioritized_item_queries:
-            slot_item_result = self._resolve_item_query_from_explicit_slot_normalized(
-                normalized_item_query,
-                limit=limit,
-            )
-            if slot_item_result is None:
-                continue
-
-            if slot_item_result.type == MenuQueryType.ITEM:
-                return slot_item_result
-
-            if fallback_slot_item_result is None:
-                fallback_slot_item_result = slot_item_result
-
-        if category_result is not None:
-            return category_result
-
-        if fallback_slot_item_result is not None:
-            return fallback_slot_item_result
-
-        if not fallback_to_text or not normalized_user_text:
-            similar_items, categories = self.build_not_found_recovery_normalized(
-                normalized_user_text,
-                item_limit=3,
-                category_limit=4,
-            )
-            return MenuQueryResult(
-                type=MenuQueryType.NOT_FOUND,
-                suggested_items=similar_items,
-                suggested_categories=categories,
-            )
-
-        return self.resolve_menu_query_normalized(normalized_user_text, limit=limit)
-
-    def _resolve_item_query_from_explicit_slot(
-        self,
-        text: str,
-        *,
-        limit: int = 5,
-    ) -> MenuQueryResult | None:
-        return self._resolve_item_query_from_explicit_slot_normalized(
-            normalize_text(text),
+        return self._service.resolve_menu_query_from_slots_normalized(
+            normalized_user_text=normalized_user_text,
+            slots=slots,
+            fallback_to_text=fallback_to_text,
             limit=limit,
         )
 
-    def _resolve_item_query_from_explicit_slot_normalized(
-        self,
-        normalized_text: str,
-        *,
-        limit: int = 5,
-    ) -> MenuQueryResult | None:
-        if not normalized_text:
-            return None
-
-        candidates = self._candidate_items_from_text(normalized_text)
-
-        scored_items: list[tuple[float, MenuItem]] = []
-        for item in candidates:
-            if not item.available:
-                continue
-
-            score = self._score_item_labels(normalized_text, item)
-            if score > 0:
-                scored_items.append((score, item))
-
-        if not scored_items:
-            similar_items, categories = self.build_not_found_recovery_normalized(
-                normalized_text,
-                item_limit=3,
-                category_limit=4,
-            )
-            return MenuQueryResult(
-                type=MenuQueryType.NOT_FOUND,
-                suggested_items=similar_items,
-                suggested_categories=categories,
-            )
-
-        scored_items.sort(key=lambda pair: pair[0], reverse=True)
-        best_score, best_item = scored_items[0]
-        second_score = scored_items[1][0] if len(scored_items) > 1 else 0.0
-
-        clear_winner = (
-            best_score >= 5.8 and (
-                second_score == 0.0
-                or best_score - second_score >= 0.9
-                or best_score >= second_score * 1.18
-            )
-        )
-
-        if clear_winner:
-            return MenuQueryResult(type=MenuQueryType.ITEM, item=best_item)
-
-        close_items: list[MenuItem] = []
-        seen_item_ids: set[str] = set()
-
-        for score, item in scored_items:
-            if score < best_score * 0.92:
-                break
-            if item.item_id in seen_item_ids:
-                continue
-            seen_item_ids.add(item.item_id)
-            close_items.append(item)
-
-        if len(close_items) == 1 and best_score >= 5.4:
-            return MenuQueryResult(type=MenuQueryType.ITEM, item=close_items[0])
-
-        if len(close_items) > 1:
-            return MenuQueryResult(
-                type=MenuQueryType.ITEM_AMBIGUOUS,
-                matched_items=close_items[:limit],
-            )
-
-        similar_items, categories = self.build_not_found_recovery_normalized(
-            normalized_text,
-            item_limit=3,
-            category_limit=4,
-        )
-        return MenuQueryResult(
-            type=MenuQueryType.NOT_FOUND,
-            suggested_items=similar_items,
-            suggested_categories=categories,
-        )
-
-    # ======================================================
+    # ------------------------------------------------------------------
     # GENERAL FREE-TEXT RESOLUTION
-    # ======================================================
+    # ------------------------------------------------------------------
 
     def resolve_menu_query(self, text: str, *, limit: int = 5) -> MenuQueryResult:
-        return self.resolve_menu_query_normalized(normalize_text(text), limit=limit)
+        return self._service.resolve_menu_query(text, limit=limit)
 
     def resolve_menu_query_normalized(
         self,
@@ -468,209 +114,11 @@ class MenuRepository:
         *,
         limit: int = 5,
     ) -> MenuQueryResult:
-        if not normalized_text:
-            similar_items, categories = self.build_not_found_recovery_normalized(
-                normalized_text,
-                item_limit=3,
-                category_limit=4,
-            )
-            return MenuQueryResult(
-                type=MenuQueryType.NOT_FOUND,
-                suggested_items=similar_items,
-                suggested_categories=categories,
-            )
+        return self._service.resolve_menu_query_normalized(normalized_text, limit=limit)
 
-        category_result = self.resolve_category_query_normalized(normalized_text, limit=limit)
-        if category_result is not None:
-            return category_result
-
-        candidates = self._candidate_items_from_text(normalized_text)
-
-        scored_items: list[tuple[float, MenuItem]] = []
-        for item in candidates:
-            if not item.available:
-                continue
-
-            score = self._score_item_labels(normalized_text, item)
-            if score > 0:
-                scored_items.append((score, item))
-
-        if not scored_items:
-            similar_items, categories = self.build_not_found_recovery_normalized(
-                normalized_text,
-                item_limit=3,
-                category_limit=4,
-            )
-            return MenuQueryResult(
-                type=MenuQueryType.NOT_FOUND,
-                suggested_items=similar_items,
-                suggested_categories=categories,
-            )
-
-        scored_items.sort(key=lambda pair: pair[0], reverse=True)
-        best_score, best_item = scored_items[0]
-
-        strong_items: list[MenuItem] = []
-        seen_item_ids: set[str] = set()
-
-        for score, item in scored_items:
-            if score < best_score * 0.85:
-                break
-            if item.item_id in seen_item_ids:
-                continue
-            seen_item_ids.add(item.item_id)
-            strong_items.append(item)
-
-        if best_score >= 6.0 and len(strong_items) == 1:
-            return MenuQueryResult(type=MenuQueryType.ITEM, item=best_item)
-
-        if len(strong_items) > 1:
-            return MenuQueryResult(
-                type=MenuQueryType.ITEM_AMBIGUOUS,
-                matched_items=strong_items[:limit],
-            )
-
-        similar_items, categories = self.build_not_found_recovery_normalized(
-            normalized_text,
-            item_limit=3,
-            category_limit=4,
-        )
-        return MenuQueryResult(
-            type=MenuQueryType.NOT_FOUND,
-            suggested_items=similar_items,
-            suggested_categories=categories,
-        )
-
-    # ======================================================
-    # EXISTING API
-    # ======================================================
-
-    def get_item(self, item_id: str) -> MenuItem:
-        return self.store.get_item(item_id)
-
-    def resolve_item(self, text: str) -> ItemResolution | None:
-        return self.resolve_item_normalized(normalize_text(text))
-
-    def resolve_item_normalized(self, normalized_text: str) -> ItemResolution | None:
-        if not normalized_text:
-            return None
-
-        candidates = self._candidate_items_from_text(normalized_text)
-
-        best_item: MenuItem | None = None
-        best_score = 0.0
-
-        for item in candidates:
-            score = self._score_item_labels(normalized_text, item)
-            if score > best_score:
-                best_score = score
-                best_item = item
-
-        if best_item is None or best_score < 6.5:
-            return None
-
-        return ItemResolution(item=best_item, score=best_score)
-
-    def build_not_found_recovery(
-        self,
-        text: str,
-        *,
-        item_limit: int = 3,
-        category_limit: int = 4,
-    ) -> tuple[list[MenuItem], list[dict]]:
-        return self.build_not_found_recovery_normalized(
-            normalize_text(text),
-            item_limit=item_limit,
-            category_limit=category_limit,
-        )
-
-    def build_not_found_recovery_normalized(
-        self,
-        normalized_text: str,
-        *,
-        item_limit: int = 3,
-        category_limit: int = 4,
-    ) -> tuple[list[MenuItem], list[dict]]:
-        similar_items = self._find_similar_items_normalized(normalized_text, limit=item_limit)
-        categories = self._top_browse_categories()
-        return similar_items, categories[:category_limit]
-
-    def _find_similar_items(self, text: str, *, limit: int = 3) -> list[MenuItem]:
-        return self._find_similar_items_normalized(normalize_text(text), limit=limit)
-
-    def _find_similar_items_normalized(
-        self,
-        normalized_text: str,
-        *,
-        limit: int = 3,
-    ) -> list[MenuItem]:
-        if not normalized_text:
-            return []
-
-        candidates = self._candidate_items_from_text(normalized_text)
-
-        scored: list[tuple[float, MenuItem]] = []
-        seen_ids: set[str] = set()
-
-        for item in candidates:
-            if not item.available:
-                continue
-
-            score = self._score_item_labels(normalized_text, item)
-
-            if score < 4.8 or item.item_id in seen_ids:
-                continue
-
-            seen_ids.add(item.item_id)
-            scored.append((score, item))
-
-        scored.sort(key=lambda pair: pair[0], reverse=True)
-        return [item for _, item in scored[:limit]]
-
-    def _top_browse_categories(self) -> list[dict]:
-        blocked = {
-            "ebt",
-            "gift card",
-        }
-
-        preferred = {
-            "tacos",
-            "drinks",
-            "desserts",
-            "pizza",
-            "soups",
-            "kids menu",
-            "specials",
-            "sandwiches",
-            "party platters",
-            "fried seafood platters",
-            "broiled seafood platters",
-            "fried combo platters",
-            "broiled combo platters",
-            "fried party wings",
-        }
-
-        ranked: list[tuple[int, int, str, dict]] = []
-
-        for category in self.store.categories.values():
-            name = str(category.get("name", "")).strip()
-            if not name:
-                continue
-
-            norm = normalize_text(name)
-            if not norm or norm in blocked:
-                continue
-
-            item_ids = category.get("item_ids", []) or []
-            item_count = sum(1 for item_id in item_ids if item_id in self.store.items)
-            if item_count <= 0:
-                continue
-
-            preferred_rank = 0 if norm in preferred else 1
-            ranked.append((preferred_rank, -item_count, name, category))
-
-        ranked.sort(key=lambda row: (row[0], row[1], row[2]))
-        return [category for _, _, _, category in ranked]
+    # ------------------------------------------------------------------
+    # IDLE AVAILABILITY RESOLUTION
+    # ------------------------------------------------------------------
 
     def resolve_idle_availability_query_normalized(
         self,
@@ -678,108 +126,49 @@ class MenuRepository:
         *,
         limit: int = 5,
     ) -> MenuQueryResult:
-        if not normalized_text:
-            similar_items, categories = self.build_not_found_recovery_normalized(
-                normalized_text,
-                item_limit=3,
-                category_limit=4,
-            )
-            return MenuQueryResult(
-                type=MenuQueryType.NOT_FOUND,
-                suggested_items=similar_items,
-                suggested_categories=categories,
-            )
-
-        category_result = self.resolve_category_query_normalized(normalized_text, limit=limit)
-        if category_result is not None:
-            return category_result
-
-        candidate_ids: set[str] = set()
-
-        for entry in self.store.find_entity(normalized_text, allowed_types={"item"}):
-            item_id = entry.get("item_id")
-            if item_id and self.store.is_discoverable_item(item_id):
-                candidate_ids.add(item_id)
-
-        exact_item = self.store.find_item_exact(normalized_text)
-        if exact_item is not None and self.store.is_discoverable_item(exact_item.item_id):
-            candidate_ids.add(exact_item.item_id)
-
-        for item_id in self.store.find_item_ids_by_alias(normalized_text):
-            if self.store.is_discoverable_item(item_id):
-                candidate_ids.add(item_id)
-
-        for item_id in self.store.find_item_ids_by_voice_label(normalized_text):
-            if self.store.is_discoverable_item(item_id):
-                candidate_ids.add(item_id)
-
-        candidates = (
-            [self.store.get_item(item_id) for item_id in candidate_ids if item_id in self.store.items]
-            if candidate_ids
-            else self.store.iter_discoverable_items()
+        return self._service.resolve_idle_availability_query_normalized(
+            normalized_text, limit=limit
         )
 
-        scored_items: list[tuple[float, MenuItem]] = []
-        for item in candidates:
-            if not item.available:
-                continue
+    # ------------------------------------------------------------------
+    # CANDIDATE-LOCAL / SIDE / MODIFIER RESOLUTION
+    # ------------------------------------------------------------------
 
-            score = self._score_item_labels(normalized_text, item)
-            if score > 0:
-                scored_items.append((score, item))
-
-        if not scored_items:
-            modifier_hits = self.store.find_modifier_entities(normalized_text)
-            if modifier_hits:
-                return MenuQueryResult(
-                    type=MenuQueryType.NOT_FOUND,
-                    suggested_items=[],
-                    suggested_categories=[],
-                )
-
-            similar_items, categories = self.build_not_found_recovery_normalized(
-                normalized_text,
-                item_limit=3,
-                category_limit=4,
-            )
-            return MenuQueryResult(
-                type=MenuQueryType.NOT_FOUND,
-                suggested_items=similar_items,
-                suggested_categories=categories,
-            )
-
-        scored_items.sort(key=lambda pair: pair[0], reverse=True)
-        best_score, best_item = scored_items[0]
-
-        strong_items: list[MenuItem] = []
-        seen_item_ids: set[str] = set()
-
-        for score, item in scored_items:
-            if score < best_score * 0.85:
-                break
-            if item.item_id in seen_item_ids:
-                continue
-            seen_item_ids.add(item.item_id)
-            strong_items.append(item)
-
-        if best_score >= 6.0 and len(strong_items) == 1:
-            return MenuQueryResult(type=MenuQueryType.ITEM, item=best_item)
-
-        if len(strong_items) > 1:
-            return MenuQueryResult(
-                type=MenuQueryType.ITEM_AMBIGUOUS,
-                matched_items=strong_items[:limit],
-            )
-
-        similar_items, categories = self.build_not_found_recovery_normalized(
-            normalized_text,
-            item_limit=3,
-            category_limit=4,
+    def resolve_item_within_candidates_normalized(
+        self,
+        *,
+        normalized_text: str,
+        candidate_item_ids: list[str] | tuple[str, ...],
+    ) -> MenuItem | None:
+        return self._service.resolve_item_within_candidates_normalized(
+            normalized_text=normalized_text,
+            candidate_item_ids=candidate_item_ids,
         )
-        return MenuQueryResult(
-            type=MenuQueryType.NOT_FOUND,
-            suggested_items=similar_items,
-            suggested_categories=categories,
+
+    def resolve_side_choice_within_group_normalized(
+        self,
+        *,
+        normalized_text: str,
+        group_id: str,
+        candidate_names_by_id: dict[str, tuple[str, ...]],
+    ) -> list[str]:
+        return self._service.resolve_side_choice_within_group_normalized(
+            normalized_text=normalized_text,
+            group_id=group_id,
+            candidate_names_by_id=candidate_names_by_id,
+        )
+
+    def resolve_modifier_choice_within_group_normalized(
+        self,
+        *,
+        normalized_text: str,
+        group_id: str,
+        candidate_names_by_id: dict[str, tuple[str, ...]],
+    ) -> list[str]:
+        return self._service.resolve_modifier_choice_within_group_normalized(
+            normalized_text=normalized_text,
+            group_id=group_id,
+            candidate_names_by_id=candidate_names_by_id,
         )
 
     def resolve_modifier_availability_for_item_normalized(
@@ -788,48 +177,13 @@ class MenuRepository:
         normalized_text: str,
         item_id: str,
     ) -> dict | None:
-        if not normalized_text or not item_id or item_id not in self.store.items:
-            return None
+        return self._service.resolve_modifier_availability_for_item_normalized(
+            normalized_text=normalized_text,
+            item_id=item_id,
+        )
 
-        item = self.store.get_item(item_id)
+    def resolve_item(self, text: str) -> ItemResolution | None:
+        return self._service.resolve_item(text)
 
-        for group in item.modifier_groups:
-            label_map = {
-                choice.modifier_id: choice.voice_labels
-                for choice in group.choices
-            }
-            matched_ids = self.resolve_modifier_choice_within_group_normalized(
-                normalized_text=normalized_text,
-                group_id=group.group_id,
-                candidate_names_by_id=label_map,
-            )
-            if len(matched_ids) == 1:
-                choice = next((c for c in group.choices if c.modifier_id == matched_ids[0]), None)
-                if choice is not None:
-                    return {
-                        "match_type": "modifier",
-                        "group_name": group.name,
-                        "modifier_name": choice.name,
-                        "price_cents": choice.price_cents,
-                    }
-
-        for group in item.side_groups:
-            label_map = {
-                choice.item_id: choice.voice_labels
-                for choice in group.choices
-            }
-            matched_ids = self.resolve_side_choice_within_group_normalized(
-                normalized_text=normalized_text,
-                group_id=group.group_id,
-                candidate_names_by_id=label_map,
-            )
-            if len(matched_ids) == 1:
-                choice = next((c for c in group.choices if c.item_id == matched_ids[0]), None)
-                if choice is not None:
-                    return {
-                        "match_type": "side",
-                        "group_name": group.name,
-                        "item_name": choice.name,
-                    }
-
-        return None
+    def resolve_item_normalized(self, normalized_text: str) -> ItemResolution | None:
+        return self._service.resolve_item_normalized(normalized_text)
