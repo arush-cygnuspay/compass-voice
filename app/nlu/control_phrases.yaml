@@ -1,0 +1,235 @@
+# app/nlu/control_phrases.yaml
+#
+# Single source of truth for all affirm / deny / control phrases.
+#
+# Each top-level key is a phrase category consumed by ControlPhraseLexicon.
+# match_type:
+#   candidate  – phrases are matched against the full candidate set produced
+#                by stripping leading/trailing fillers (see ControlPhraseLexicon).
+#   substring  – phrases are checked as substrings of the full normalized utterance
+#                (used for payment-state phrases that may be embedded mid-sentence).
+#
+# Rules:
+#   - All phrases are lowercased, apostrophe-free (normalize_text form).
+#   - No phrase may appear in more than one candidate category.
+#   - Resolution order inside ControlIntentResolver (CANCEL > DONE > DENY > AFFIRM)
+#     is enforced in code, not here — duplicate entries across categories are allowed
+#     only when one category always fires first.
+
+categories:
+
+  # ── Affirm ──────────────────────────────────────────────────────────────────
+  # Merged from linguistic_rules.AFFIRM_WORDS and control_intent_resolver._AFFIRM_PHRASES.
+  affirm:
+    match_type: candidate
+    phrases:
+      - yes
+      - yeah
+      - yep
+      - yup
+      - correct
+      - thats right
+      - that is right
+      - thats correct
+      - that is correct
+      - right
+      - okay
+      - ok
+      - sure
+      - sounds good
+      - mmhmm
+      - mhm
+      - fine
+      - go ahead
+      - please do
+      - do it
+      - confirm
+      - confirm it
+      - i confirm
+      - that is correct
+      - yes it is
+      - yeah its correct
+      - proceed
+      - continue
+      - place it
+      - continue to payment
+      - continue to checkout
+      - checkout
+      - that works
+      - thatll work
+      - that will work
+      - that is fine
+      - thats fine
+      - please continue
+      - please proceed
+      - all good
+      - looks good
+      - works for me
+
+  # ── Deny ────────────────────────────────────────────────────────────────────
+  # Merged from linguistic_rules.DENY_WORDS and control_intent_resolver._DENY_PHRASES.
+  # Note: "cancel" also appears in cancel_phrases; cancel fires first in the resolver.
+  deny:
+    match_type: candidate
+    phrases:
+      - no
+      - nope
+      - nah
+      - no thanks
+      - no thank you
+      - not that
+      - not that one
+      - not correct
+      - incorrect
+      - thats not right
+      - that is not right
+      - thats wrong
+      - that is wrong
+      - wrong
+      - change it
+      - i dont want that
+      - i do not want that
+      - i dont want any
+      - i do not want any
+      - no i dont want any
+      - no i do not want any
+      - ill pass
+      - leave it
+      - skip it
+      - none
+      - nothing
+      - negative
+      - not now
+      - dont
+      - do not
+      - stop
+      - cancel
+      - remove something
+      - go back
+
+  # ── Done ────────────────────────────────────────────────────────────────────
+  done:
+    match_type: candidate
+    phrases:
+      - done
+      - im done
+      - i am done
+      - thats it
+      - that is it
+      - thats all
+      - that is all
+      - no more
+      - nothing else
+      - all set
+      - good
+      - thats good
+      - that is good
+
+  # ── Options request ─────────────────────────────────────────────────────────
+  options:
+    match_type: candidate
+    phrases:
+      - options
+      - what are the options
+      - what are my options
+      - what can i choose
+      - what do you have
+      - tell me the options
+      - tell me the choices
+      - list the choices
+      - list the options
+      - available toppings
+      - what cheese do you have
+      - what sides do you have
+      - what sizes do you have
+
+  # ── Cancel ──────────────────────────────────────────────────────────────────
+  cancel:
+    match_type: candidate
+    phrases:
+      - cancel
+      - cancel that
+      - cancel it
+      - never mind
+      - start over
+      - restart
+      - restart this item
+      - restart the item
+      - forget it
+      - scratch that
+      - remove that
+
+  # ── Meta-clarify ────────────────────────────────────────────────────────────
+  meta_clarify:
+    match_type: candidate
+    phrases:
+      - what do you mean
+      - i dont understand
+      - i do not understand
+      - repeat that
+      - say that again
+      - what was that
+      - can you explain
+      - help
+
+  # ── Skip (optional fields, e.g. apt/suite) ──────────────────────────────────
+  skip:
+    match_type: candidate
+    phrases:
+      - none
+      - nothing
+      - skip
+      - skip it
+      - no thanks
+      - nothing else
+      - no more
+      - that is all
+      - thats all
+      - im good
+      - i am good
+
+  # ── Payment-state: stay on call ─────────────────────────────────────────────
+  stay_on_call:
+    match_type: substring
+    phrases:
+      - stay on the line
+      - stay on line
+      - stay with me
+      - stay here
+      - stay on the call
+      - wait on the line
+      - hold on the line
+
+  # ── Payment-state: after the call ───────────────────────────────────────────
+  after_call:
+    match_type: substring
+    phrases:
+      - after the call
+      - after this call
+      - i will do it after the call
+      - ill do it after the call
+      - i will complete it after the call
+      - ill complete it after the call
+      - i will do it later
+      - ill do it later
+      - ill do it later
+      - later
+      - not now
+
+  # ── Payment-state: cannot open link ─────────────────────────────────────────
+  cannot_open_link:
+    match_type: substring
+    phrases:
+      - cant open the link
+      - cannot open the link
+      - cant open the message
+      - cannot open the message
+      - cant open the sms
+      - cannot open the sms
+      - i cant open the link
+      - i cannot open the link
+      - i cant open the message
+      - i cannot open the message
+      - phone is to my ear
+      - while im on the phone
+      - while i am on the phone

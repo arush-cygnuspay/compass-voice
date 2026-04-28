@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
+from app.nlu.control_phrase_lexicon import DEFAULT_LEXICON as _LEXICON
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.nlu_result import NLUResult
 from app.nlu.query_normalization.text_preprocessor import normalize_text
@@ -156,202 +157,29 @@ _INTENT_RULES: dict[str, tuple[IntentRule, ...]] = _build_intent_rules()
 
 
 # ---------------------------------------------------------------------------
-# Phrase frozensets — deprecated safety net.
+# Phrase sets — loaded from control_phrases.yaml via ControlPhraseLexicon.
 #
-# The intent registry above is the source of truth for control intent
-# resolution. The frozensets below remain only to catch utterances the NLU
-# layer did not recognize. Do NOT add new control vocabulary here — register
-# the corresponding NLU label in ``_INTENT_RULES`` instead. Every match emits
-# ``phrase_fallback_used`` so fallback usage is visible in production.
+# ``_LEXICON`` (imported above) is the single source of truth for all phrase
+# sets.  Do NOT add new inline frozensets here — add entries to
+# ``app/nlu/control_phrases.yaml`` instead.
+#
+# The resolver still needs candidate-matching helpers; those live below as
+# private functions.  ``_LEXICON.get_phrases(category)`` returns a frozenset
+# that can be passed directly to ``_candidate_matches``.
 # ---------------------------------------------------------------------------
-_AFFIRM_PHRASES: frozenset[str] = frozenset(
-    {
-        "yes",
-        "yeah",
-        "yep",
-        "yup",
-        "correct",
-        "thats right",
-        "that is right",
-        "thats correct",
-        "that is correct",
-        "sounds good",
-        "that works",
-        "thatll work",
-        "that will work",
-        "that is fine",
-        "thats fine",
-        "confirm",
-        "confirm it",
-        "i confirm",
-        "proceed",
-        "continue",
-        "go ahead",
-        "please continue",
-        "please proceed",
-        "all good",
-        "looks good",
-        "works for me",
-    }
-)
-_DENY_PHRASES: frozenset[str] = frozenset(
-    {
-        "no",
-        "nope",
-        "nah",
-        "no thanks",
-        "no thank you",
-        "not that",
-        "not that one",
-        "not correct",
-        "incorrect",
-        "thats not right",
-        "that is not right",
-        "thats wrong",
-        "that is wrong",
-        "change it",
-        "i dont want that",
-        "i do not want that",
-        "i dont want any",
-        "i do not want any",
-        "no i dont want any",
-        "no i do not want any",
-        "ill pass",
-        "leave it",
-        "skip it",
-        "none",
-        "nothing",
-    }
-)
-_DONE_PHRASES: frozenset[str] = frozenset(
-    {
-        "done",
-        "im done",
-        "i am done",
-        "thats it",
-        "that is it",
-        "thats all",
-        "that is all",
-        "no more",
-        "nothing else",
-        "all set",
-        "good",
-        "thats good",
-        "that is good",
-    }
-)
-_OPTIONS_PHRASES: frozenset[str] = frozenset(
-    {
-        "options",
-        "what are the options",
-        "what are my options",
-        "what can i choose",
-        "what do you have",
-        "tell me the options",
-        "tell me the choices",
-        "list the choices",
-        "list the options",
-        "available toppings",
-        "what cheese do you have",
-        "what sides do you have",
-        "what sizes do you have",
-    }
-)
-_CANCEL_PHRASES: frozenset[str] = frozenset(
-    {
-        "cancel",
-        "cancel that",
-        "cancel it",
-        "never mind",
-        "start over",
-        "restart",
-        "restart this item",
-        "restart the item",
-        "forget it",
-        "scratch that",
-        "remove that",
-    }
-)
-_META_CLARIFY_PHRASES: frozenset[str] = frozenset(
-    {
-        "what do you mean",
-        "i dont understand",
-        "i do not understand",
-        "repeat that",
-        "say that again",
-        "what was that",
-        "can you explain",
-        "help",
-    }
-)
 
-# ---------------------------------------------------------------------------
-# State-gated phrase tuples for payment-mode utterances. Substring-matched
-# (to preserve parity with the legacy phase3_controls._contains_any path)
-# and only consulted when current_state ∈ _PAYMENT_STATES. These remain
-# deprecated safety nets — register the corresponding NLU label in
-# ``_INTENT_RULES`` instead.
-# ---------------------------------------------------------------------------
-_STAY_ON_CALL_PHRASES: tuple[str, ...] = (
-    "stay on the line",
-    "stay on line",
-    "stay with me",
-    "stay here",
-    "stay on the call",
-    "wait on the line",
-    "hold on the line",
-)
-_AFTER_CALL_PHRASES: tuple[str, ...] = (
-    "after the call",
-    "after this call",
-    "i will do it after the call",
-    "ill do it after the call",
-    "i will complete it after the call",
-    "ill complete it after the call",
-    "i will do it later",
-    "ill do it later",
-    "i'll do it later",
-    "later",
-    "not now",
-)
-_CANNOT_OPEN_LINK_PHRASES: tuple[str, ...] = (
-    "cant open the link",
-    "cannot open the link",
-    "cant open the message",
-    "cannot open the message",
-    "cant open the sms",
-    "cannot open the sms",
-    "i cant open the link",
-    "i cannot open the link",
-    "i cant open the message",
-    "i cannot open the message",
-    "phone is to my ear",
-    "while im on the phone",
-    "while i am on the phone",
-)
-
-# Skip phrases for optional fields (e.g. apt/suite). Candidate-matched
-# for parity with the legacy semantic_signals.OPTIONAL_SKIP_WORDS path
-# in ``is_optional_skip_response``. Only consulted when current_state ∈
-# _OPTIONAL_FIELD_STATES. Handler-specific phrasing like "no apartment"
-# / "no suite" is intentionally NOT included here — those are checked
-# at the handler call site against its own ``OPTIONAL_NONE_WORDS`` set
-# to preserve the exact-match behavior of the legacy code path.
-_SKIP_PHRASES: frozenset[str] = frozenset(
-    {
-        "none",
-        "nothing",
-        "skip",
-        "skip it",
-        "no thanks",
-        "nothing else",
-        "no more",
-        "that is all",
-        "thats all",
-        "im good",
-        "i am good",
-    }
-)
+# Convenience aliases resolved at module-load time so hot-path functions
+# skip dict lookups on every call.
+_AFFIRM_PHRASES: frozenset[str] = _LEXICON.get_phrases("affirm")
+_DENY_PHRASES: frozenset[str] = _LEXICON.get_phrases("deny")
+_DONE_PHRASES: frozenset[str] = _LEXICON.get_phrases("done")
+_OPTIONS_PHRASES: frozenset[str] = _LEXICON.get_phrases("options")
+_CANCEL_PHRASES: frozenset[str] = _LEXICON.get_phrases("cancel")
+_META_CLARIFY_PHRASES: frozenset[str] = _LEXICON.get_phrases("meta_clarify")
+_SKIP_PHRASES: frozenset[str] = _LEXICON.get_phrases("skip")
+_STAY_ON_CALL_PHRASES: tuple[str, ...] = _LEXICON.get_substring_phrases("stay_on_call")
+_AFTER_CALL_PHRASES: tuple[str, ...] = _LEXICON.get_substring_phrases("after_call")
+_CANNOT_OPEN_LINK_PHRASES: tuple[str, ...] = _LEXICON.get_substring_phrases("cannot_open_link")
 
 _OPTION_HELP_LABELS_SELECTION_GATED: frozenset[str] = frozenset(
     {
