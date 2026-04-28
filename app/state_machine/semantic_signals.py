@@ -3,8 +3,6 @@ from __future__ import annotations
 from app.intent.confirmation_utils import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.linguistic_rules import (
-    AFFIRM_WORDS,
-    DENY_WORDS,
     _signal_candidates,
     is_affirm_like_response,
     is_deny_like_response,
