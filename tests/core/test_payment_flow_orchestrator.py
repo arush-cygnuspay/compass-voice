@@ -18,6 +18,7 @@ from app.core.payment_flow_orchestrator import (
     PAYMENT_PENDING_REMINDER_INTERVAL_SECONDS,
     PaymentFlowOrchestrator,
 )
+from app.core.payment_response_classifier import PaymentResponseClassifier
 from app.state_machine.models.conversation_state import ConversationState
 
 
@@ -53,15 +54,19 @@ class PendingPromptIntervalTests(unittest.TestCase):
 
 
 class IsPaymentPendingResponseTests(unittest.TestCase):
+    """These tests previously targeted PaymentFlowOrchestrator._is_payment_pending_response.
+    The method has been extracted to PaymentResponseClassifier; tests now target
+    the shared classifier directly."""
+
     def test_true_for_waiting_for_payment_keys(self):
         self.assertTrue(
-            PaymentFlowOrchestrator._is_payment_pending_response(
+            PaymentResponseClassifier.is_payment_pending_response(
                 state=ConversationState.WAITING_FOR_PAYMENT,
                 response_key="waiting_for_payment",
             )
         )
         self.assertTrue(
-            PaymentFlowOrchestrator._is_payment_pending_response(
+            PaymentResponseClassifier.is_payment_pending_response(
                 state=ConversationState.WAITING_FOR_PAYMENT,
                 response_key="payment_not_confirmed_yet",
             )
@@ -69,7 +74,7 @@ class IsPaymentPendingResponseTests(unittest.TestCase):
 
     def test_true_for_waiting_for_checkout_completion_keys(self):
         self.assertTrue(
-            PaymentFlowOrchestrator._is_payment_pending_response(
+            PaymentResponseClassifier.is_payment_pending_response(
                 state=ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
                 response_key="waiting_for_checkout_completion",
             )
@@ -77,13 +82,13 @@ class IsPaymentPendingResponseTests(unittest.TestCase):
 
     def test_false_for_unrelated_state_or_key(self):
         self.assertFalse(
-            PaymentFlowOrchestrator._is_payment_pending_response(
+            PaymentResponseClassifier.is_payment_pending_response(
                 state=ConversationState.IDLE,
                 response_key="waiting_for_payment",
             )
         )
         self.assertFalse(
-            PaymentFlowOrchestrator._is_payment_pending_response(
+            PaymentResponseClassifier.is_payment_pending_response(
                 state=ConversationState.WAITING_FOR_PAYMENT,
                 response_key="ask_for_quantity",
             )

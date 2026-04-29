@@ -2,8 +2,7 @@
 
 Owns:
 - Payment-prompt cooldown intervals (env-loaded constants).
-- ``_is_payment_pending_response`` / ``_should_suppress_payment_prompt_replay``
-  classification.
+- ``_should_suppress_payment_prompt_replay`` cooldown logic.
 - Cart-edit confirmation resume.
 - Payment event emission (from payload + from command).
 - The auto-payment-check dispatch handler.
@@ -17,6 +16,7 @@ import time
 from typing import TYPE_CHECKING, Any
 
 from app.core.command_executor import CommandExecutor
+from app.core.payment_response_classifier import PaymentResponseClassifier
 from app.core.response_builder import ResponseBuilder
 from app.core.session_response_writer import SessionResponseWriter
 from app.core.turn_diagnostics import TurnDiagnostics
@@ -91,21 +91,6 @@ class PaymentFlowOrchestrator:
             return PAYMENT_PENDING_REMINDER_INTERVAL_SECONDS
         return 0.0
 
-    @staticmethod
-    def _is_payment_pending_response(
-        *,
-        state: ConversationState,
-        response_key: str,
-    ) -> bool:
-        if state == ConversationState.WAITING_FOR_PAYMENT:
-            return response_key in {"waiting_for_payment", "payment_not_confirmed_yet"}
-        if state == ConversationState.WAITING_FOR_CHECKOUT_COMPLETION:
-            return response_key in {
-                "waiting_for_checkout_completion",
-                "payment_not_confirmed_yet",
-            }
-        return False
-
     def _should_suppress_payment_prompt_replay(
         self,
         *,
@@ -117,7 +102,7 @@ class PaymentFlowOrchestrator:
         if cooldown_seconds <= 0:
             return False
 
-        if not self._is_payment_pending_response(
+        if not PaymentResponseClassifier.is_payment_pending_response(
             state=prior_state,
             response_key=response_key,
         ):
@@ -156,7 +141,7 @@ class PaymentFlowOrchestrator:
         if not last_key or last_at is None:
             return False
 
-        if not self._is_payment_pending_response(
+        if not PaymentResponseClassifier.is_payment_pending_response(
             state=prior_state,
             response_key=last_key,
         ):
