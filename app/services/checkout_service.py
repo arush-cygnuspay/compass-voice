@@ -224,7 +224,8 @@ class CheckoutService:
         postal_code: str | None,
         order_summary: dict[str, Any] | None = None,
     ) -> CheckoutSession:
-        order_number = self.order_number_generator.generate(order_number)
+        if not order_number or not order_number.isdigit():
+            order_number = self.order_number_generator.generate(restaurant_id)
         session = CheckoutSession.new(
             restaurant_id=restaurant_id,
             call_sid=call_sid,

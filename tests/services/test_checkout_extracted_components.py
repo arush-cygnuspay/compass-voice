@@ -217,10 +217,12 @@ class TestOrderNumberGenerator(unittest.TestCase):
         self.assertTrue(result.isdigit(), f"Not all digits: {result!r}")
         self.assertEqual(len(result), 7)
 
-    def test_passes_through_valid_digit_order_number(self):
+    def test_always_generates_fresh_number_ignoring_caller_arg(self):
+        # generate() always mints a new number; pass-through logic lives in the service.
         gen = OrderNumberGenerator()
-        result = gen.generate("1234567")
-        self.assertEqual(result, "1234567")
+        r = gen.generate("1234567")
+        self.assertTrue(r.isdigit())
+        self.assertEqual(len(r), 7)
 
     def test_mints_new_when_none(self):
         gen = OrderNumberGenerator()
@@ -234,30 +236,24 @@ class TestOrderNumberGenerator(unittest.TestCase):
         self.assertEqual(len(result), 7)
         self.assertTrue(result.isdigit())
 
-    def test_deterministic_with_injected_clock_and_random(self):
-        fixed_time = datetime(2024, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-        gen = OrderNumberGenerator(
-            clock=lambda: fixed_time,
-            randint=lambda a, b: 42,
-        )
-        result1 = gen.generate()
-        result2 = gen.generate()
-        self.assertEqual(result1, result2)
-        # 2 random prefix digits: 42; ts_part = int(1704067200.0*100) % 100_000 = 20000
-        self.assertEqual(result1, "4220000")
+    def test_deterministic_with_injected_clock_ms(self):
+        # 2024-01-01 00:00:00 UTC → 1704067200000 ms
+        # cs = 170406720000; ts_part = 170406720000 % 100_000 = 20000
+        # First call: seq=0 → "0020000"
+        fixed_ms = 1704067200000
+        gen = OrderNumberGenerator(clock_ms=lambda: fixed_ms)
+        result = gen.generate(now_ms=fixed_ms)
+        self.assertEqual(result, "0020000")
 
-    def test_random_prefix_in_range(self):
-        seen_prefixes = set()
-        for seed in range(50):
-            gen = OrderNumberGenerator(
-                clock=lambda: datetime(2024, 1, 1, tzinfo=timezone.utc),
-                randint=lambda a, b: a + (seed % (b - a + 1)),
-            )
-            r = gen.generate()
-            prefix = int(r[:2])
-            self.assertGreaterEqual(prefix, 10)
-            self.assertLessEqual(prefix, 99)
-            seen_prefixes.add(prefix)
+    def test_unique_within_same_centisecond(self):
+        # Consecutive calls with the same now_ms get distinct seq prefixes.
+        fixed_ms = 1704067200000
+        gen = OrderNumberGenerator()
+        results = [gen.generate(now_ms=fixed_ms) for _ in range(10)]
+        self.assertEqual(len(set(results)), 10, "Each same-ms call must be unique")
+        for r in results:
+            self.assertEqual(len(r), 7)
+            self.assertTrue(r.isdigit())
 
 
 # ===========================================================================
