@@ -113,7 +113,7 @@ class ItemQueueService:
             prev_quantity: Any = prev_payload.get("quantity", 1)
 
             # Set up context for the new item
-            ctx.reset_task()
+            ctx.reset_item_scope()
             ctx.pending_action = None
 
             if next_item.quantity and next_item.quantity > 0:
@@ -150,7 +150,7 @@ class ItemQueueService:
                 self.command_executor.execute(session, next_result.command)
 
             if next_result.reset_context:
-                ctx.reset()
+                ctx.reset_item_scope()
 
             # Do NOT set session.conversation_state here — TurnEngine applies
             # it after try_drain returns via HandlerResult.next_state.

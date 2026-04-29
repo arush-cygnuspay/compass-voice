@@ -237,7 +237,7 @@ class FlowGate:
             ConversationState.WAITING_FOR_SIZE,
             ConversationState.WAITING_FOR_QUANTITY,
         } and is_restart_item_request(text):
-            ctx.reset_task()
+            ctx.reset_item_scope()
             return FlowGateDecision(
                 output=TurnOutput(response_key="current_item_restarted"),
                 state_override=ConversationState.IDLE,
@@ -249,7 +249,7 @@ class FlowGate:
             ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
         }:
             if is_restart_order_request(text):
-                ctx.reset_task()
+                ctx.reset_order_scope()
                 ctx.resume_order_confirmation_after_edit = False
                 session.cart.clear()
                 self.payment_flow._reset_payment_wait_tracking(session)

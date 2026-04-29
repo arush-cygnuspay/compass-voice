@@ -132,7 +132,7 @@ class ItemResolutionHandler:
                 response_payload=payload,
             )
 
-        context.reset_task()
+        context.reset_item_scope()
         return HandlerResult(
             next_state=ConversationState.IDLE,
             response_key="item_not_found",

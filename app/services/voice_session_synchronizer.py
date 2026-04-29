@@ -140,7 +140,7 @@ class VoiceSessionSynchronizer:
 
         # ---- order completion --------------------------------------
         if mark_completed or checkout_session.payment_completed:
-            context.reset()
+            context.reset_session_scope()
             voice_session.cart.clear()
             voice_session.conversation_state = ConversationState.COMPLETED
             voice_session.last_response_key = "order_completed"

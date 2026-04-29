@@ -1151,7 +1151,7 @@ class TurnEngine:
                             )
 
         if result.reset_context:
-            ctx.reset()
+            ctx.reset_item_scope()
 
         # Apply engine-owned context mutations from HandlerResult.
         # Handlers express intent through these fields; TurnEngine is the sole writer.

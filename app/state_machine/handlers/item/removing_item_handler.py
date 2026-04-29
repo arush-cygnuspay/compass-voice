@@ -74,14 +74,14 @@ class RemovingItemHandler(BaseHandler):
                 action="cancel_item_removal",
                 kind=ControlIntentKind.CANCEL.value,
             )
-            context.reset()
+            context.reset_item_scope()
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="action_cancelled",
             )
 
         if decision == "deny":
-            context.reset()
+            context.reset_item_scope()
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_removal_cancelled",
@@ -97,7 +97,7 @@ class RemovingItemHandler(BaseHandler):
                 )
 
             item_name = confirmation.get("item_name", "item")
-            context.reset()
+            context.reset_item_scope()
 
             return HandlerResult(
                 next_state=ConversationState.IDLE,

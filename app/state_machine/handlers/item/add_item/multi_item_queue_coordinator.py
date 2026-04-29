@@ -75,7 +75,7 @@ class MultiItemQueueCoordinator:
         # Set up context for the first item
         first_slots = first_segment.slots if first_segment.slots else get_last_slots(context)
 
-        context.reset_task()
+        context.reset_item_scope()
         context.pending_action = PendingAction.ADD_ITEM
         context.awaiting_flow_confirmation = False
         context.interrupt_proposal = None
