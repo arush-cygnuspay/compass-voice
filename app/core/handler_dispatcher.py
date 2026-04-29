@@ -162,10 +162,15 @@ class HandlerDispatcher:
 
         current_count = int(session.reprompt_count_by_field.get(field, 0) or 0)
         next_count = current_count + 1
+
+        # Always stamp the 1-based miss count so renderers can tier their prompts.
+        payload = dict(result.response_payload or {})
+        payload["reprompt_count"] = next_count
+        result.response_payload = payload
+
         if next_count < 3:
             return result
 
-        payload = dict(result.response_payload or {})
         payload["reprompt_escalation"] = True
         original_response_key = result.response_key
         if field == "side":
@@ -178,7 +183,6 @@ class HandlerDispatcher:
             result.response_key = "repeat_side_size_options"
         elif field == "quantity":
             result.response_key = "invalid_quantity_option"
-        result.response_payload = payload
         log_control_intent_event(
             "reprompt_escalated",
             field=field,

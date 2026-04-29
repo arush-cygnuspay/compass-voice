@@ -306,12 +306,14 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
                         field_name="size",
                     )
                 self._clear_pending_size_confirmation(context)
+                _list_requested = control_intent.kind == ControlIntentKind.OPTIONS_REQUEST
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_SIZE,
                     response_key="repeat_size_options",
                     response_payload={
                         "item_name": pending.item_name,
                         "available_sizes": available_sizes,
+                        **({"list_options_requested": True} if _list_requested else {}),
                     },
                 )
 
@@ -358,6 +360,7 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
                     response_payload={
                         "item_name": pending.item_name,
                         "available_sizes": available_sizes,
+                        "list_options_requested": True,
                     },
                 )
 
