@@ -276,20 +276,41 @@ def _top_modifier_choices(
 
 
 def ask_for_side(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> str:
-    item = menu_repo.store.get_item(context.current_item_id)
-    group = item.side_groups[context.current_side_group_index]
-    group_payload = _current_side_payload(context, menu_repo, payload)
+    payload = payload or {}
 
-    noun = (getattr(group, "prompt_noun", None) or _GENERIC_SIDE_NOUN).strip() or _GENERIC_SIDE_NOUN
-    verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
-    min_selector = int(group_payload.get("min_selector", 0) or 0)
-    top_choices = group_payload.get("top_choices") or []
+    # Initialise from pre-computed resume payload so stale context degrades
+    # gracefully.  The try block overwrites these with live menu data when
+    # context is intact (normal ordering flow — no behaviour change).
+    item_name: str | None = None
+    noun = _GENERIC_SIDE_NOUN
+    verb = "would you like"
+    min_selector = 0
+    top_choices: list[str] = list(payload.get("top_choices") or [])
+
+    try:
+        item = menu_repo.store.get_item(context.current_item_id)
+        group = item.side_groups[context.current_side_group_index]
+        item_name = item.name
+        noun = (getattr(group, "prompt_noun", None) or _GENERIC_SIDE_NOUN).strip() or _GENERIC_SIDE_NOUN
+        verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
+        group_payload = _current_side_payload(context, menu_repo, payload)
+        min_selector = int(group_payload.get("min_selector", 0) or 0)
+        top_choices = group_payload.get("top_choices") or top_choices
+    except Exception:
+        pass
+
+    item_name = (
+        item_name
+        or payload.get("current_item_name")
+        or getattr(context, "current_item_name", None)
+        or "your item"
+    )
 
     examples = _format_examples(top_choices)
     if examples:
         prompt = f"Any {noun} {verb}, like {examples}?"
     else:
-        prompt = f"Any {noun} {verb} with your {item.name}?"
+        prompt = f"Any {noun} {verb} with your {item_name}?"
 
     if min_selector == 0:
         return f"{prompt} You can say none."
@@ -297,29 +318,51 @@ def ask_for_side(context: ConversationContext, menu_repo: MenuRepository, payloa
 
 
 def ask_for_modifier(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> str:
-    item = menu_repo.store.get_item(context.current_item_id)
-    group = item.modifier_groups[context.current_modifier_group_index]
-    group_payload = _current_modifier_payload(context, menu_repo, payload)
+    payload = payload or {}
 
-    noun = (getattr(group, "prompt_noun", None) or _GENERIC_MODIFIER_NOUN).strip() or _GENERIC_MODIFIER_NOUN
-    verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
-    min_selector = int(group_payload.get("min_selector", 0) or 0)
-    top_choices = group_payload.get("top_choices") or []
+    item_name: str | None = None
+    noun = _GENERIC_MODIFIER_NOUN
+    verb = "would you like"
+    min_selector = 0
+    top_choices: list[str] = list(payload.get("top_choices") or [])
+
+    try:
+        item = menu_repo.store.get_item(context.current_item_id)
+        group = item.modifier_groups[context.current_modifier_group_index]
+        item_name = item.name
+        noun = (getattr(group, "prompt_noun", None) or _GENERIC_MODIFIER_NOUN).strip() or _GENERIC_MODIFIER_NOUN
+        verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
+        group_payload = _current_modifier_payload(context, menu_repo, payload)
+        min_selector = int(group_payload.get("min_selector", 0) or 0)
+        top_choices = group_payload.get("top_choices") or top_choices
+    except Exception:
+        pass
+
+    item_name = (
+        item_name
+        or payload.get("current_item_name")
+        or getattr(context, "current_item_name", None)
+        or "your item"
+    )
 
     examples = _format_examples(top_choices)
     if examples:
         prompt = f"Any {noun} {verb}, like {examples}?"
     else:
-        prompt = f"Any {noun} {verb} on your {item.name}?"
+        prompt = f"Any {noun} {verb} on your {item_name}?"
 
     if min_selector == 0:
         return f"{prompt} You can say none."
     return prompt
 
 
-def ask_for_size(context: ConversationContext, menu_repo: MenuRepository) -> str:
-    item = menu_repo.store.get_item(context.current_item_id)
-    return f"What size would you like for {item.name}?"
+def ask_for_size(context: ConversationContext, menu_repo: MenuRepository, payload: dict | None = None) -> str:
+    payload = payload or {}
+    item_name = payload.get("current_item_name")
+    if not item_name:
+        item = menu_repo.store.get_item(context.current_item_id)
+        item_name = item.name
+    return f"What size would you like for {item_name}?"
 
 
 def ask_item_quantity(payload: dict) -> str:
