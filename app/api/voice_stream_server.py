@@ -41,6 +41,7 @@ from app.realtime.deepgram_stt_client import (
 from app.realtime.deepgram_tts_client import DeepgramTTSClient
 from app.realtime.conversation_session import ConversationSession
 from app.realtime.tts_exceptions import TTSFailureError
+from app.core.session_task_manager import SessionTaskManager
 from app.realtime.turn_commit_controller import TurnCommitController
 from app.session.repository import load_existing_session, load_session, save_session
 from app.session.session import Session
@@ -544,6 +545,8 @@ async def twilio_media_ws(websocket: WebSocket):
     await websocket.accept()
 
     stream_session = StreamSession()
+    session_mgr = SessionTaskManager()
+    session_id = str(id(stream_session))
     dg_stt_client: DeepgramSTTClient | None = None
     dg_stt_started = False
     dg_tts_client = DeepgramTTSClient()
@@ -1406,8 +1409,16 @@ async def twilio_media_ws(websocket: WebSocket):
                     ),
                 )
 
-                stt_connect_task = asyncio.create_task(_start_stt_client_in_background())
-                tts_connect_task = asyncio.create_task(_connect_tts_in_background())
+                stt_connect_task = session_mgr.create_task(
+                    session_id,
+                    _start_stt_client_in_background(),
+                    name="stt_connect",
+                )
+                tts_connect_task = session_mgr.create_task(
+                    session_id,
+                    _connect_tts_in_background(),
+                    name="tts_connect",
+                )
 
                 if not welcome_sent:
                     # Always ask the device-type question first via TTS.
@@ -1509,6 +1520,8 @@ async def twilio_media_ws(websocket: WebSocket):
         if stream_session.active_trace is not None:
             _finalize_active_trace(app=app, stream_session=stream_session)
     finally:
+        playback_generation += 1
+        await session_mgr.cleanup(session_id)
         await conv_session.cancel_payment_auto_check()
         if dg_stt_client is not None:
             await dg_stt_client.close()
