@@ -138,9 +138,6 @@ class AddItemHandler(BaseHandler):
 
         context.reset_task()
         context.pending_action = PendingAction.ADD_ITEM
-        context.awaiting_flow_confirmation = False
-        context.interrupt_proposal = None
-        context.awaiting_confirmation_for = None
 
         if (
             not item_slot_value

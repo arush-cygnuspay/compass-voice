@@ -592,6 +592,13 @@ class TurnEngine:
                 session=session,
             )
 
+            if gate_result.awaiting_flow_confirmation is not None:
+                ctx.awaiting_flow_confirmation = gate_result.awaiting_flow_confirmation
+            if gate_result.interrupt_proposal is not None:
+                ctx.interrupt_proposal = gate_result.interrupt_proposal
+            if gate_result.prompt_field is not None:
+                ctx.current_prompt_field = gate_result.prompt_field
+
             session.conversation_state = gate_result.next_state
             self.response_writer._apply_session_response(
                 session=session,
@@ -1122,6 +1129,15 @@ class TurnEngine:
 
         if result.reset_context:
             ctx.reset()
+
+        # Apply engine-owned context mutations from HandlerResult.
+        # Handlers express intent through these fields; TurnEngine is the sole writer.
+        if result.awaiting_flow_confirmation is not None:
+            ctx.awaiting_flow_confirmation = result.awaiting_flow_confirmation
+        if result.interrupt_proposal is not None:
+            ctx.interrupt_proposal = result.interrupt_proposal
+        if result.prompt_field is not None:
+            ctx.current_prompt_field = result.prompt_field
 
         session.conversation_state = result.next_state
 

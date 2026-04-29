@@ -53,13 +53,13 @@ class CartHandler(BaseHandler):
                 )
 
             context.return_state = current_state
-            context.awaiting_flow_confirmation = True
-            context.interrupt_proposal = None
+            context.interrupt_proposal = None  # no interrupt proposal — user deliberately cleared cart
             context.awaiting_confirmation_for = {"type": "clear_cart"}
 
             return HandlerResult(
                 next_state=ConversationState.CANCELLATION_CONFIRMATION,
                 response_key="confirm_clear_cart",
+                awaiting_flow_confirmation=True,
             )
 
         return HandlerResult(
