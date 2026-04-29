@@ -49,6 +49,42 @@ def _get_env_path(name: str, default_relative_path: str) -> Path:
     return _resolve_project_path(value)
 
 
+def _validate_model_paths(
+    intent_model_dir: Path,
+    intent_labels_main_path: Path,
+    intent_labels_sub_path: Path,
+    slot_model_dir: Path,
+) -> None:
+    """Fail fast with actionable messages if any model path is missing."""
+    checks: list[tuple[Path, str, list[str]]] = [
+        (intent_model_dir, "COMPASS_INTENT_MODEL_DIR", ["config.json", "model.safetensors"]),
+        (intent_labels_main_path, "COMPASS_INTENT_LABELS_MAIN", []),
+        (intent_labels_sub_path, "COMPASS_INTENT_LABELS_SUB", []),
+        (slot_model_dir, "COMPASS_SLOT_MODEL_DIR", ["config.cfg", "meta.json"]),
+    ]
+    errors: list[str] = []
+    for path, env_var, required_children in checks:
+        if not path.exists():
+            errors.append(
+                f"  ✗ {env_var}\n"
+                f"      resolved : {path}\n"
+                f"      fix      : set env var or place model at that path"
+            )
+            continue
+        for child in required_children:
+            if not (path / child).exists():
+                errors.append(
+                    f"  ✗ {env_var} — missing required file: {child}\n"
+                    f"      resolved dir : {path}"
+                )
+
+    if errors:
+        raise RuntimeError("\n".join(["[runtime] Model path validation failed:"] + errors))
+
+    print(f"[runtime] intent_model_dir={intent_model_dir}")
+    print(f"[runtime] slot_model_dir={slot_model_dir}")
+
+
 def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
     data_root = _restaurant_data_root(restaurant_id)
 
@@ -57,28 +93,46 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
 
     print(f"[runtime] project_root={_project_root()}")
     print(f"[runtime] data_root={data_root}")
-    print(f"[runtime] menu_path={menu_path}")
-    print(f"[runtime] entity_index_path={entity_index_path}")
     print(f"[runtime] menu_exists={menu_path.exists()}")
     print(f"[runtime] entity_exists={entity_index_path.exists()}")
 
+    # -----------------------------------------------------------------------
+    # Model paths — canonical location: app/artifacts/models/
+    # Relative paths are resolved from _project_root() so they work both
+    # in local development and inside Docker (WORKDIR /app, COPY . .).
+    #
+    # Override any path via env var (absolute or project-root-relative):
+    #   COMPASS_INTENT_MODEL_DIR   — intent model bundle directory
+    #   COMPASS_INTENT_LABELS_MAIN — path to labels_main.json
+    #   COMPASS_INTENT_LABELS_SUB  — path to labels_sub.json
+    #   COMPASS_SLOT_MODEL_DIR     — spaCy slot model directory
+    # -----------------------------------------------------------------------
+    _INTENT_BASE = "app/artifacts/models/intent/distilbert-multihead-intent"
+
     intent_model_dir = _get_env_path(
         "COMPASS_INTENT_MODEL_DIR",
-        "app/ml/models/distilbert-multihead-intent",
+        _INTENT_BASE,
     )
     intent_labels_main_path = _get_env_path(
         "COMPASS_INTENT_LABELS_MAIN",
-        "app/ml/config/labels_main.json",
+        f"{_INTENT_BASE}/labels_main.json",
     )
     intent_labels_sub_path = _get_env_path(
         "COMPASS_INTENT_LABELS_SUB",
-        "app/ml/config/labels_sub.json",
+        f"{_INTENT_BASE}/labels_sub.json",
     )
     intent_device = os.getenv("COMPASS_INTENT_DEVICE", "auto").strip()
 
     slot_model_dir = _get_env_path(
         "COMPASS_SLOT_MODEL_DIR",
-        "app/ml/models/spacy_slot_trf_out/model-best",
+        "app/artifacts/models/slot/model-best",
+    )
+
+    _validate_model_paths(
+        intent_model_dir=intent_model_dir,
+        intent_labels_main_path=intent_labels_main_path,
+        intent_labels_sub_path=intent_labels_sub_path,
+        slot_model_dir=slot_model_dir,
     )
 
     try:

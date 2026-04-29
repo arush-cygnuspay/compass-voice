@@ -284,9 +284,14 @@ def benchmark_predict_intent(
 
 
 if __name__ == "__main__":
-    MODEL_DIR = r"D:\Working\Cygnus\compass-voice\app\ml\models\distilbert-multihead-intent"
-    LABELS_MAIN_PATH = r"D:\Working\Cygnus\compass-voice\app\ml\config\labels_main.json"
-    LABELS_SUB_PATH = r"D:\Working\Cygnus\compass-voice\app\ml\config\labels_sub.json"
+    from pathlib import Path as _Path
+
+    _PROJECT_ROOT = _Path(__file__).resolve().parents[3]
+    _INTENT_DIR = _PROJECT_ROOT / "app" / "artifacts" / "models" / "intent" / "distilbert-multihead-intent"
+
+    MODEL_DIR = str(os.getenv("COMPASS_INTENT_MODEL_DIR") or _INTENT_DIR)
+    LABELS_MAIN_PATH = str(os.getenv("COMPASS_INTENT_LABELS_MAIN") or (_INTENT_DIR / "labels_main.json"))
+    LABELS_SUB_PATH = str(os.getenv("COMPASS_INTENT_LABELS_SUB") or (_INTENT_DIR / "labels_sub.json"))
 
     bundle = get_intent_bundle(
         model_dir=MODEL_DIR,
@@ -312,65 +317,3 @@ if __name__ == "__main__":
         print(f"Device      : {result['device']}")
         print(f"AMP         : {result['amp']}")
         print("-" * 60)
-    # # -------------------------------------------------
-    # # Configure paths
-    # # -------------------------------------------------
-    # MODEL_DIR = r"app/ml/models/distilbert-multihead-intent"
-    # LABELS_MAIN_PATH = os.path.join(MODEL_DIR, "labels_main.json")
-    # LABELS_SUB_PATH = os.path.join(MODEL_DIR, "labels_sub.json")
-    #
-    # # Optional:
-    # # os.environ["COMPASS_INTENT_DEVICE"] = "cuda"   # "auto", "cpu", or "cuda"i w
-    # # os.environ["COMPASS_INTENT_USE_AMP"] = "1"     # enable AMP on CUDA
-    # # os.environ["COMPASS_INTENT_DEBUG"] = "1"       # print device/model debug info
-    #
-    # # -------------------------------------------------
-    # # Load bundle once
-    # # -------------------------------------------------
-    # bundle = get_intent_bundle(
-    #     model_dir=MODEL_DIR,
-    #     labels_main_path=LABELS_MAIN_PATH,
-    #     labels_sub_path=LABELS_SUB_PATH,
-    #     device=None,  # None => uses env or auto
-    # )sss
-    #
-    # # -------------------------------------------------
-    # # Put your test queries here
-    # # -------------------------------------------------
-    # queries = [
-    #     "add 2 chicken burgers with small coke and no onions",
-    #     "show me the cart",
-    #     "checkout",
-    #     "remove the fries",
-    #     "what drinks do you have",
-    # ]
-    #
-    # # -------------------------------------------------
-    # # Predict
-    # # -------------------------------------------------
-    # results = predict_intent(queries, bundle, max_length=64)
-    #
-    # print("\n=== Intent Predictions ===\n")
-    # for i, result in enumerate(results, start=1):
-    #     print(f"Query {i}: {result['text']}")
-    #     print(f"  Main Intent : {result['pred_main_intent']} ({result['confidence_main']:.4f})")
-    #     print(f"  Sub Intent  : {result['pred_sub_intent']} ({result['confidence_sub']:.4f})")
-    #     print(f"  Device      : {result['device']}")
-    #     print(f"  AMP         : {result['amp']}")
-    #     print("-" * 60)
-    #
-    # # -------------------------------------------------
-    # # Optional benchmark
-    # # -------------------------------------------------
-    # run_benchmark = False
-    # if run_benchmark:
-    #     benchmark = benchmark_predict_intent(
-    #         texts=queries,
-    #         bundle=bundle,
-    #         max_length=64,
-    #         warmup_runs=10,
-    #         measured_runs=50,
-    #     )
-    #     print("\n=== Benchmark ===")
-    #     for k, v in benchmark.items():
-    #         print(f"{k}: {v}")
