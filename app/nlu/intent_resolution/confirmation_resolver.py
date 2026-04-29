@@ -1,3 +1,4 @@
+# app/nlu/intent_resolution/confirmation_resolver.py
 from __future__ import annotations
 
 import os
@@ -315,5 +316,3 @@ def is_denial(
         )
         == "deny"
     )
-
-

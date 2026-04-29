@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.intent.confirmation_utils import is_affirmation, is_denial
+from app.nlu.intent_resolution.confirmation_resolver import is_affirmation, is_denial
 from app.nlu.control_phrase_lexicon import DEFAULT_LEXICON as _LEXICON
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.nlu_result import NLUResult

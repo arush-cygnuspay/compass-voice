@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from app.intent.confirmation_utils import resolve_confirmation_decision
+from app.nlu.intent_resolution.confirmation_resolver import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.linguistic_rules import (
     _signal_candidates,
