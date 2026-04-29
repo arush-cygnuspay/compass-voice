@@ -20,9 +20,9 @@ from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.core.command_executor import CommandExecutor
-from app.core.flow_control.flow_decision import FlowAction
-from app.core.flow_control.flow_control_policy import FlowControlPolicy
-from app.core.flow_gate import FlowGate, FlowGateDecision
+from app.state_machine.policy.flow_decision import FlowAction
+from app.state_machine.policy.flow_control_policy import FlowControlPolicy
+from app.state_machine.policy.flow_gate import FlowGate, FlowGateDecision
 from app.core.handler_dispatcher import HandlerDispatcher
 from app.core.item_queue_service import ItemQueueService
 from app.core.nlu_orchestrator import INTENT_MIN_CONF, NluOrchestrator
