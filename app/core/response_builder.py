@@ -137,7 +137,7 @@ class ResponseBuilder:
             "confirm_item": self._confirm_item,
             "ask_for_side": ask_for_side,
             "ask_for_modifier": ask_for_modifier,
-            "ask_for_size": lambda c, m, p: ask_for_size(c, m),
+            "ask_for_size": ask_for_size,
             "ask_for_side_size": self._ask_for_side_size,
             "ask_for_quantity": lambda c, m, p: ask_item_quantity(p),
             "confirm_item_ambiguous": confirm_item_ambiguous,
