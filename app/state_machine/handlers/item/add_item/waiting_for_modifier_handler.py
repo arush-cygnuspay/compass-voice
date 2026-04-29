@@ -19,7 +19,7 @@ from app.state_machine.models.conversation_context import (
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.models.pending_item_models import ModifierSelection
 from app.state_machine.handler_result import HandlerResult
-from app.state_machine.handlers.base_handler import BaseHandler
+from app.state_machine.handlers.item.add_item.group_resolution_handler import GroupResolutionHandler
 from app.state_machine.handlers.item.add_item.add_item_handler import PendingItemCaptureHelper
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     ReadyToFinalize,
@@ -79,7 +79,7 @@ class _PrefilledModifierGroups:
     overflow_max_selector: int = 0
 
 
-class WaitingForModifierHandler(BaseHandler):
+class WaitingForModifierHandler(GroupResolutionHandler):
     """
     Resolve modifier selections strictly from the active pending item snapshot.
 
@@ -515,56 +515,6 @@ class WaitingForModifierHandler(BaseHandler):
             "remaining_to_min": max(min_selector - selected_count, 0),
             "remaining_to_max": max(max_selector - selected_count, 0),
         }
-
-    def _step_to_result(
-        self,
-        context: ConversationContext,
-        step,
-        *,
-        matched_names: list[str] | None = None,
-        unmatched_names: list[str] | None = None,
-        match_debug: dict[str, object] | None = None,
-    ) -> HandlerResult:
-        pending = context.pending_add_item
-        if pending is None:
-            return HandlerResult(
-                next_state=ConversationState.ERROR_RECOVERY,
-                response_key="item_context_missing",
-            )
-
-        if isinstance(step, ReadyToFinalize):
-            payload = {
-                "item_name": pending.item_name,
-                "quantity": context.quantity or 1,
-            }
-            if matched_names:
-                payload["matched_names"] = matched_names
-            if unmatched_names:
-                payload["unmatched_names"] = unmatched_names
-            payload.update(self._match_debug_payload(match_debug))
-            return HandlerResult(
-                next_state=ConversationState.IDLE,
-                response_key="item_added_successfully",
-                response_payload=payload,
-                command=step.command.to_dict(),
-                reset_context=True,
-            )
-
-        payload = step.response_payload or {}
-        if matched_names:
-            payload["matched_names"] = matched_names
-        if unmatched_names:
-            payload["unmatched_names"] = unmatched_names
-        payload.update(self._match_debug_payload(match_debug))
-        return HandlerResult(
-            next_state=step.next_state,
-            response_key=step.response_key,
-            response_payload=payload,
-        )
-
-    @staticmethod
-    def _match_debug_payload(match_debug: dict[str, object] | None) -> dict[str, object]:
-        return dict(match_debug or {})
 
     @staticmethod
     def _all_modifier_choice_phrases(pending) -> list[str]:

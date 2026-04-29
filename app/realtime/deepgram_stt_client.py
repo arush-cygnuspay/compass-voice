@@ -13,6 +13,8 @@ from dotenv import load_dotenv
 from websockets.asyncio.client import connect
 from websockets.exceptions import ConnectionClosed
 
+from app.realtime.deepgram_event_parser import DeepgramEventParser, TYPE_ONLY_EVENTS
+
 
 TranscriptCallback = Callable[[str, bool, dict], Awaitable[None]]
 EventCallback = Callable[[str, dict], Awaitable[None]]
@@ -158,31 +160,42 @@ class DeepgramSTTClient:
                     await self._emit_event("binary_message", {"size": len(raw_message)})
                     continue
 
+                # Fast lane: peek the event type without a full JSON parse.
+                msg_type = DeepgramEventParser.peek_event_type(raw_message)
+
+                if msg_type in TYPE_ONLY_EVENTS:
+                    # These events are fully handled by name — no consumer reads
+                    # their payload, so skip the full parse entirely.
+                    await self._emit_event(f"message:{msg_type}", {"type": msg_type})
+                    continue
+
+                # Full parse required: Results, Error, unknown/missing type.
                 try:
-                    payload = json.loads(raw_message)
-                except json.JSONDecodeError:
+                    payload = DeepgramEventParser.parse(raw_message)
+                except ValueError:
                     await self._emit_event("text_message", {"raw": raw_message})
                     continue
 
-                msg_type = payload.get("type", "Unknown")
+                # Resolve type from full payload when peek missed (no "type" key).
+                if msg_type is None:
+                    msg_type = payload.get("type", "Unknown")
+
                 await self._emit_event(f"message:{msg_type}", payload)
 
                 if msg_type == "Error":
                     await self._emit_error("error", payload)
                     continue
 
-                transcript = ""
-                is_final = False
-
                 if msg_type == "Results":
                     channel = payload.get("channel", {})
                     alternatives = channel.get("alternatives", [])
+                    transcript = ""
                     if alternatives:
                         transcript = (alternatives[0].get("transcript", "") or "").strip()
                     is_final = bool(payload.get("is_final", False))
 
-                if transcript and self.callbacks.on_transcript is not None:
-                    await self.callbacks.on_transcript(transcript, is_final, payload)
+                    if transcript and self.callbacks.on_transcript is not None:
+                        await self.callbacks.on_transcript(transcript, is_final, payload)
 
         except ConnectionClosed as exc:
             await self._emit_event(

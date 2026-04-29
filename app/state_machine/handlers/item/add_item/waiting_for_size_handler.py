@@ -19,7 +19,7 @@ from app.state_machine.models.conversation_context import (
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
-from app.state_machine.handlers.base_handler import BaseHandler
+from app.state_machine.handlers.item.add_item.group_resolution_handler import GroupResolutionHandler
 from app.state_machine.handlers.item.add_item.add_item_handler import PendingItemCaptureHelper
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     ReadyToFinalize,
@@ -227,7 +227,7 @@ class _VariantMatchMixin:
         )
 
 
-class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
+class WaitingForSizeHandler(GroupResolutionHandler, _VariantMatchMixin):
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
         self.menu_repo = menu_repo
         self.capture_helper = PendingItemCaptureHelper()
@@ -542,28 +542,4 @@ class WaitingForSizeHandler(BaseHandler, _VariantMatchMixin):
             normalized_user_text=normalized_user_text,
         )
 
-    def _step_to_result(self, context: ConversationContext, step) -> HandlerResult:
-        pending = context.pending_add_item
-        if pending is None:
-            return HandlerResult(
-                next_state=ConversationState.ERROR_RECOVERY,
-                response_key="item_context_missing",
-            )
 
-        if isinstance(step, ReadyToFinalize):
-            return HandlerResult(
-                next_state=ConversationState.IDLE,
-                response_key="item_added_successfully",
-                response_payload={
-                    "item_name": pending.item_name,
-                    "quantity": context.quantity or 1,
-                },
-                command=step.command.to_dict(),
-                reset_context=True,
-            )
-
-        return HandlerResult(
-            next_state=step.next_state,
-            response_key=step.response_key,
-            response_payload=step.response_payload,
-        )
