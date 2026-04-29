@@ -7,18 +7,17 @@ and starts the next item's add-item flow. Behavior moved verbatim from
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
+from app.config.nlu import get_nlu_config
 from app.core.command_executor import CommandExecutor
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.models.conversation_state import ConversationState
 
 # Maximum number of queued items processed in one try_drain call.
-# Items beyond this limit are rejected and logged to prevent unbounded
-# iterative loops on pathological multi-item utterances.
-MAX_QUEUE_DEPTH: int = int(os.getenv("COMPASS_MAX_ITEM_QUEUE_DEPTH", "20"))
+# Sourced from config — no direct os.getenv at module level.
+MAX_QUEUE_DEPTH: int = get_nlu_config().max_item_queue_depth
 
 
 class ItemQueueService:

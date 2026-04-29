@@ -13,7 +13,6 @@ re-exported from ``turn_engine`` for backwards compatibility.
 """
 from __future__ import annotations
 
-import os
 import time
 from typing import Any
 
@@ -21,10 +20,11 @@ from app.diagnostics.turn_event import TurnEvent
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
+from app.config.realtime import get_realtime_config
 from app.state_machine.models.conversation_state import ConversationState
 
-
-TURN_TIMING_ENABLED = os.getenv("COMPASS_TURN_TIMING_ENABLED", "0") == "1"
+# Sourced from config — no direct os.getenv at module level.
+TURN_TIMING_ENABLED: bool = get_realtime_config().turn_timing_enabled
 
 
 FALLBACK_RESPONSE_KEYS: set[str] = {

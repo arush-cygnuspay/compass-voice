@@ -11,10 +11,10 @@ Behavior moved verbatim from ``turn_engine.py``.
 """
 from __future__ import annotations
 
-import os
 import time
 from typing import TYPE_CHECKING, Any
 
+from app.config.payment import get_payment_config
 from app.contracts.command_result import CommandResult
 from app.core.command_executor import CommandExecutor
 from app.core.payment_response_classifier import PaymentResponseClassifier
@@ -35,29 +35,12 @@ if TYPE_CHECKING:
     from app.core.turn_engine import TurnOutput
 
 
-def _load_pending_reminder_interval(*env_names: str, default: float) -> float:
-    for env_name in env_names:
-        raw = os.getenv(env_name)
-        if raw is None or not raw.strip():
-            continue
-        value = float(raw)
-        if value <= 0:
-            return 0.0
-        return max(20.0, value)
-    return max(20.0, default)
-
-
-CHECKOUT_PENDING_REMINDER_INTERVAL_SECONDS = _load_pending_reminder_interval(
-    "CHECKOUT_PENDING_REMINDER_INTERVAL_SECONDS",
-    "COMPASS_CHECKOUT_PENDING_REMINDER_INTERVAL_SECONDS",
-    "COMPASS_PAYMENT_STATUS_PROMPT_COOLDOWN_SECONDS",
-    default=30.0,
+# Sourced from config — no direct os.getenv at module level.
+CHECKOUT_PENDING_REMINDER_INTERVAL_SECONDS: float = (
+    get_payment_config().checkout_pending_reminder_interval_seconds
 )
-PAYMENT_PENDING_REMINDER_INTERVAL_SECONDS = _load_pending_reminder_interval(
-    "PAYMENT_PENDING_REMINDER_INTERVAL_SECONDS",
-    "COMPASS_PAYMENT_PENDING_REMINDER_INTERVAL_SECONDS",
-    "COMPASS_PAYMENT_STATUS_PROMPT_COOLDOWN_SECONDS",
-    default=30.0,
+PAYMENT_PENDING_REMINDER_INTERVAL_SECONDS: float = (
+    get_payment_config().payment_pending_reminder_interval_seconds
 )
 
 

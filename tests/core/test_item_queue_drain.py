@@ -455,8 +455,11 @@ def test_max_queue_depth_configurable_via_env(monkeypatch):
     monkeypatch.setenv("COMPASS_MAX_ITEM_QUEUE_DEPTH", "7")
     import importlib
     import app.core.item_queue_service as module
+    from app.config.nlu import get_nlu_config
+    get_nlu_config.cache_clear()
     importlib.reload(module)
     try:
         assert module.MAX_QUEUE_DEPTH == 7
     finally:
+        get_nlu_config.cache_clear()
         importlib.reload(module)
