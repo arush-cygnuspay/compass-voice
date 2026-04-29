@@ -193,9 +193,16 @@ app/data/checkout_sessions/
 app/data/payment_link_sessions/
 app/data/payment_sessions/
 app/data/evals/
-app/ml/models/
-app/ml/artifacts/
-app/ml/config/
 *.safetensors
 *.bin
 *.pt
+
+# ============================================================
+# Canonical production model artifacts — must NOT be ignored.
+# The global *.safetensors / *.bin / *.pt rules above would
+# swallow these, so we explicitly negate them here.
+# Do NOT move these lines above the binary ignore rules.
+# ============================================================
+!artifacts/
+!artifacts/models/
+!artifacts/models/**
