@@ -5,7 +5,7 @@ from difflib import SequenceMatcher
 from typing import Sequence
 
 from app.core.pending_action import PendingAction
-from app.intent.confirmation_utils import resolve_confirmation_decision
+from app.nlu.intent_resolution.confirmation_resolver import resolve_confirmation_decision
 from app.menu.models import MenuItem
 from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository

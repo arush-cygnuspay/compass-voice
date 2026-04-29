@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 
-from app.intent.confirmation_utils import resolve_confirmation_decision
+from app.nlu.intent_resolution.confirmation_resolver import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
 from app.state_machine.handlers.base_handler import BaseHandler

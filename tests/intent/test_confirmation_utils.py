@@ -1,4 +1,4 @@
-from app.intent.confirmation_utils import (
+from app.nlu.intent_resolution.confirmation_resolver import (
     is_affirmation,
     resolve_confirmation_decision,
 )
