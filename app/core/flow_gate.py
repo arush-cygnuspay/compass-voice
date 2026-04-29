@@ -5,7 +5,8 @@ context. Behavior moved verbatim from ``turn_engine.py``.
 """
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Optional
 
 from app.core.payment_flow_orchestrator import PaymentFlowOrchestrator
 from app.core.session_response_writer import SessionResponseWriter
@@ -40,6 +41,19 @@ from app.state_machine.semantic_signals import (
 
 if TYPE_CHECKING:
     from app.core.turn_engine import TurnOutput
+
+
+@dataclass(frozen=True, slots=True)
+class FlowGateDecision:
+    """Return type of _handle_phase3_control_shortcuts.
+
+    ``output`` — the TurnOutput to return (None means "continue processing").
+    ``state_override`` — the ConversationState TurnEngine must apply before
+    continuing or returning.  None means "do not touch session.conversation_state".
+    """
+
+    output: Optional["TurnOutput"]
+    state_override: Optional[ConversationState]
 
 
 CONFIRMING_ORDER_EXIT_TO_IDLE_INTENTS: set[Intent] = {
@@ -118,7 +132,8 @@ class FlowGate:
 
         resume = self.resume_prompt_builder.build(session)
 
-        session.conversation_state = preserved_state
+        # Do NOT mutate session.conversation_state here — TurnEngine applies
+        # TurnOutput.next_state after this method returns.
         session.last_intent = intent_result.intent
 
         if resume is None:
@@ -131,6 +146,7 @@ class FlowGate:
             return TurnOutput(
                 response_key=result.response_key,
                 response_payload=result.response_payload,
+                next_state=preserved_state,
             )
 
         resume_key, resume_payload = resume
@@ -150,6 +166,7 @@ class FlowGate:
         return TurnOutput(
             response_key="readonly_interrupt_with_resume",
             response_payload=combined_payload,
+            next_state=preserved_state,
         )
 
     def _readonly_interrupt_handler_name(self, intent: Intent) -> str | None:
@@ -180,7 +197,7 @@ class FlowGate:
         state_before: ConversationState,
         intent_result: IntentResult,
         nlu: Any,
-    ) -> "TurnOutput | None":
+    ) -> "FlowGateDecision | None":
         from app.core.turn_engine import TurnOutput
 
         text = getattr(nlu, "normalized_text", "") or ""
@@ -194,19 +211,22 @@ class FlowGate:
                 event_name="user_requested_agent",
                 metadata={"reason": "direct_request"},
             )
-            return TurnOutput(
-                response_key="transferring_to_human_agent",
-                response_payload={
-                    "transfer_number": HUMAN_AGENT_TRANSFER_NUMBER,
-                    "_payment_events": [
-                        {
-                            "event_name": "user_requested_agent",
-                            "metadata": {"reason": "direct_request"},
-                        }
-                    ],
-                },
-                end_call_after_playback=True,
-                transfer_call_to_number=HUMAN_AGENT_TRANSFER_NUMBER,
+            return FlowGateDecision(
+                output=TurnOutput(
+                    response_key="transferring_to_human_agent",
+                    response_payload={
+                        "transfer_number": HUMAN_AGENT_TRANSFER_NUMBER,
+                        "_payment_events": [
+                            {
+                                "event_name": "user_requested_agent",
+                                "metadata": {"reason": "direct_request"},
+                            }
+                        ],
+                    },
+                    end_call_after_playback=True,
+                    transfer_call_to_number=HUMAN_AGENT_TRANSFER_NUMBER,
+                ),
+                state_override=None,
             )
 
         if state_before in {
@@ -218,8 +238,10 @@ class FlowGate:
             ConversationState.WAITING_FOR_QUANTITY,
         } and is_restart_item_request(text):
             ctx.reset_task()
-            session.conversation_state = ConversationState.IDLE
-            return TurnOutput(response_key="current_item_restarted")
+            return FlowGateDecision(
+                output=TurnOutput(response_key="current_item_restarted"),
+                state_override=ConversationState.IDLE,
+            )
 
         if state_before in {
             ConversationState.CONFIRMING_ORDER,
@@ -231,25 +253,29 @@ class FlowGate:
                 ctx.resume_order_confirmation_after_edit = False
                 session.cart.clear()
                 self.payment_flow._reset_payment_wait_tracking(session)
-                session.conversation_state = ConversationState.IDLE
-                return TurnOutput(response_key="order_restart_ready")
-
-            if is_repeat_order_summary_request(text):
-                session.conversation_state = ConversationState.CONFIRMING_ORDER
-                return TurnOutput(
-                    response_key="confirm_order_summary",
-                    response_payload=self.cart_summary_builder.build(session.cart),
+                return FlowGateDecision(
+                    output=TurnOutput(response_key="order_restart_ready"),
+                    state_override=ConversationState.IDLE,
                 )
 
-            correction_output = self._handle_prepayment_quantity_correction(
+            if is_repeat_order_summary_request(text):
+                return FlowGateDecision(
+                    output=TurnOutput(
+                        response_key="confirm_order_summary",
+                        response_payload=self.cart_summary_builder.build(session.cart),
+                    ),
+                    state_override=ConversationState.CONFIRMING_ORDER,
+                )
+
+            correction_decision = self._handle_prepayment_quantity_correction(
                 session=session,
                 state_before=state_before,
                 intent_result=intent_result,
                 normalized_text=text,
                 nlu_result=nlu_result,
             )
-            if correction_output is not None:
-                return correction_output
+            if correction_decision is not None:
+                return correction_decision
 
             if intent_result.intent in {
                 Intent.ADD_ITEM,
@@ -267,7 +293,8 @@ class FlowGate:
                     event_name="order_corrected_before_payment",
                     metadata={"intent": intent_result.intent.value},
                 )
-                session.conversation_state = ConversationState.IDLE
+                # output=None: continue processing with the updated state.
+                return FlowGateDecision(output=None, state_override=ConversationState.IDLE)
 
         return None
 
@@ -279,7 +306,7 @@ class FlowGate:
         intent_result: IntentResult,
         normalized_text: str,
         nlu_result: NLUResult | None = None,
-    ) -> "TurnOutput | None":
+    ) -> "FlowGateDecision | None":
         from app.core.turn_engine import TurnOutput
 
         if (
@@ -316,13 +343,15 @@ class FlowGate:
                 "quantity": quantity,
             },
         )
-        session.conversation_state = ConversationState.CONFIRMING_ORDER
-        return TurnOutput(
-            response_key="confirm_order_summary",
-            response_payload={
-                **self.cart_summary_builder.build(session.cart),
-                "updated_order": True,
-            },
+        return FlowGateDecision(
+            output=TurnOutput(
+                response_key="confirm_order_summary",
+                response_payload={
+                    **self.cart_summary_builder.build(session.cart),
+                    "updated_order": True,
+                },
+            ),
+            state_override=ConversationState.CONFIRMING_ORDER,
         )
 
     def _apply_idle_shortcuts(
@@ -448,18 +477,26 @@ class FlowGate:
         ctx = session.conversation_context
         return ctx.order_type not in {"pickup", "delivery"}
 
-    def _normalize_order_type_gate_state(self, session: Session) -> None:
+    def _compute_order_type_gate_state(
+        self, session: Session
+    ) -> "ConversationState | None":
+        """Return WAITING_FOR_ORDER_TYPE if the order type is still unresolved
+        and it is safe to gate on it, otherwise None.
+
+        TurnEngine is responsible for applying the returned state.
+        """
         if session.conversation_state == ConversationState.COMPLETED:
-            return
+            return None
         # Don't clobber the device-type gate or the human-handoff state.
         if session.conversation_state in {
             ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
             ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
             ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
         }:
-            return
+            return None
         if self._order_type_required(session):
-            session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
+            return ConversationState.WAITING_FOR_ORDER_TYPE
+        return None
 
     def _combine_order_type_and_followup_response(
         self,

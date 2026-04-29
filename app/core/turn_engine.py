@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import os
 import time
+import uuid
 from dataclasses import dataclass
 from typing import Any
 
@@ -21,10 +22,12 @@ from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.core.command_executor import CommandExecutor
 from app.core.flow_control.flow_decision import FlowAction
 from app.core.flow_control.flow_control_policy import FlowControlPolicy
-from app.core.flow_gate import FlowGate
+from app.core.flow_gate import FlowGate, FlowGateDecision
 from app.core.handler_dispatcher import HandlerDispatcher
 from app.core.item_queue_service import ItemQueueService
 from app.core.nlu_orchestrator import INTENT_MIN_CONF, NluOrchestrator
+from app.core.session_turn_lock_manager import SessionTurnLockManager
+from app.core.turn_snapshot import TurnSnapshot
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.nlu_resolver import resolve_nlu
 from app.core.payment_flow_orchestrator import PaymentFlowOrchestrator
@@ -71,6 +74,9 @@ class TurnOutput:
     # this PSTN number after the spoken response finishes playing. Used
     # to hand landline callers off to a human agent.
     transfer_call_to_number: str | None = None
+    # Desired next conversation state — applied by TurnEngine after the turn.
+    # None means "leave session.conversation_state unchanged".
+    next_state: "ConversationState | None" = None
 
 
 ROUTE_DEBUG_ENABLED = os.getenv("COMPASS_ROUTE_DEBUG_ENABLED", "0") == "1"
@@ -458,6 +464,8 @@ class TurnEngine:
     ) -> TurnOutput:
         t_total_start = time.perf_counter()
         ctx = session.conversation_context
+        session.current_turn_id = uuid.uuid4().hex
+        snapshot = TurnSnapshot.capture(session)
 
         if session.conversation_state == ConversationState.COMPLETED:
             return self.response_writer._hydrate_output(
@@ -556,9 +564,14 @@ class TurnEngine:
         # PAYMENT_AUTO_CHECK_DELAY_SECONDS of silence.  Bypass NLU entirely
         # and call the payment verifier directly — O(1) path, no model inference.
         if user_text == "__auto_payment_check__":
-            return self.payment_flow._handle_auto_payment_check(session)
+            payment_output = self.payment_flow._handle_auto_payment_check(session)
+            if payment_output.next_state is not None:
+                session.conversation_state = payment_output.next_state
+            return payment_output
 
-        self.flow_gate._normalize_order_type_gate_state(session)
+        order_type_gate = self.flow_gate._compute_order_type_gate_state(session)
+        if order_type_gate is not None:
+            session.conversation_state = order_type_gate
 
         if session.conversation_state == ConversationState.WAITING_FOR_ORDER_TYPE:
             handler: WaitingForOrderTypeHandler = self.dispatcher.get_handler("waiting_for_order_type_handler")
@@ -658,64 +671,72 @@ class TurnEngine:
         self.diagnostics._trace_set_attr(trace, "normalized_text", normalized_text)
         self.diagnostics._trace_set_nlu_fields(trace=trace, nlu=nlu)
 
-        phase3_shortcut = self.flow_gate._handle_phase3_control_shortcuts(
+        phase3_decision = self.flow_gate._handle_phase3_control_shortcuts(
             session=session,
             state_before=state_before,
             intent_result=intent_result,
             nlu=nlu,
         )
-        if phase3_shortcut is not None:
-            self.response_writer._apply_session_response(
-                session=session,
-                intent=intent_result.intent,
-                response_key=phase3_shortcut.response_key,
-                response_payload=phase3_shortcut.response_payload,
-            )
-            self.payment_flow._emit_payment_events_from_payload(
-                session=session,
-                state_before=state_before,
-                payload=phase3_shortcut.response_payload,
-            )
+        if phase3_decision is not None:
+            # Apply the state override before doing anything else so that
+            # diagnostics and session response reflect the post-transition state.
+            if phase3_decision.state_override is not None:
+                session.conversation_state = phase3_decision.state_override
 
-            total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            _diag = self.diagnostics._update_session_diagnostics(
-                session=session,
-                state_before=state_before,
-                nlu=nlu,
-                response_key=phase3_shortcut.response_key,
-                response_payload=phase3_shortcut.response_payload,
-            )
-            self._record_turn_event(
-                session=session,
-                state_before=state_before,
-                nlu=nlu,
-                result=None,
-                response_key=phase3_shortcut.response_key,
-                response_payload=phase3_shortcut.response_payload,
-                diag=_diag,
-                preprocess_ms=t_preprocess * 1000.0,
-                nlu_ms=t_nlu * 1000.0,
-                flow_ms=0.0,
-                route_ms=0.0,
-                handler_ms=0.0,
-                total_ms=total_ms,
-            )
-            self.diagnostics._finalize_trace_and_timing(
-                trace=trace,
-                session=session,
-                response_key=phase3_shortcut.response_key,
-                total_start_monotonic=t_total_start,
-                total_ms=total_ms,
-                preprocess_ms=t_preprocess * 1000.0,
-                nlu_ms=t_nlu * 1000.0,
-                flow_ms=0.0,
-                route_ms=0.0,
-                handler_ms=0.0,
-            )
-            return self.response_writer._hydrate_output(
-                session=session,
-                output=phase3_shortcut,
-            )
+            if phase3_decision.output is not None:
+                phase3_shortcut = phase3_decision.output
+                self.response_writer._apply_session_response(
+                    session=session,
+                    intent=intent_result.intent,
+                    response_key=phase3_shortcut.response_key,
+                    response_payload=phase3_shortcut.response_payload,
+                )
+                self.payment_flow._emit_payment_events_from_payload(
+                    session=session,
+                    state_before=state_before,
+                    payload=phase3_shortcut.response_payload,
+                )
+
+                total_ms = (time.perf_counter() - t_total_start) * 1000.0
+                _diag = self.diagnostics._update_session_diagnostics(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    response_key=phase3_shortcut.response_key,
+                    response_payload=phase3_shortcut.response_payload,
+                )
+                self._record_turn_event(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    result=None,
+                    response_key=phase3_shortcut.response_key,
+                    response_payload=phase3_shortcut.response_payload,
+                    diag=_diag,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=0.0,
+                    route_ms=0.0,
+                    handler_ms=0.0,
+                    total_ms=total_ms,
+                )
+                self.diagnostics._finalize_trace_and_timing(
+                    trace=trace,
+                    session=session,
+                    response_key=phase3_shortcut.response_key,
+                    total_start_monotonic=t_total_start,
+                    total_ms=total_ms,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=0.0,
+                    route_ms=0.0,
+                    handler_ms=0.0,
+                )
+                return self.response_writer._hydrate_output(
+                    session=session,
+                    output=phase3_shortcut,
+                )
+            # output is None — continue processing with updated state.
 
         session.conversation_state = self.flow_gate._rewrite_confirming_order_to_idle_if_needed(
             session=session,
@@ -942,6 +963,8 @@ class TurnEngine:
                     route_ms=0.0,
                     handler_ms=0.0,
                 )
+                if readonly_output.next_state is not None:
+                    session.conversation_state = readonly_output.next_state
                 return readonly_output
 
         if flow.action == FlowAction.REWRITE and flow.effective_intent is not None:
@@ -1139,18 +1162,18 @@ class TurnEngine:
         if result.prompt_field is not None:
             ctx.current_prompt_field = result.prompt_field
 
-        session.conversation_state = result.next_state
-
         # ── Multi-item queue drain ────────────────────────────
-        # When an item was just added to cart and we return to IDLE,
-        # check if there are queued items from a multi-item utterance.
-        # If so, auto-start the next queued item.
+        # Drain guard uses current_result.next_state (not session.conversation_state)
+        # so that state is not applied until after the drain chain resolves.
         queue_drain_result = self.item_queue_service.try_drain(
             session=session,
             current_result=result,
         )
         if queue_drain_result is not None:
             result = queue_drain_result
+
+        # Apply state after drain so queue drain can still inspect next_state.
+        session.conversation_state = result.next_state
 
         result = self.payment_flow._maybe_resume_confirmation_after_cart_edit(
             session=session,

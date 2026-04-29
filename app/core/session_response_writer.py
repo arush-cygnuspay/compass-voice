@@ -95,6 +95,7 @@ class SessionResponseWriter:
         response_payload: dict[str, Any] | None,
         end_call_after_playback: bool = False,
         transfer_call_to_number: str | None = None,
+        next_state: Any = None,
     ) -> "TurnOutput":
         from app.core.turn_engine import TurnOutput
         return TurnOutput(
@@ -104,6 +105,7 @@ class SessionResponseWriter:
             spoken_response_text="",
             end_call_after_playback=end_call_after_playback,
             transfer_call_to_number=transfer_call_to_number,
+            next_state=next_state,
         )
 
     @staticmethod
@@ -137,4 +139,5 @@ class SessionResponseWriter:
             spoken_response_text=spoken_text,
             end_call_after_playback=output.end_call_after_playback,
             transfer_call_to_number=output.transfer_call_to_number,
+            next_state=output.next_state,
         )

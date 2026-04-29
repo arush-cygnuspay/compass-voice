@@ -350,7 +350,8 @@ class PaymentFlowOrchestrator:
         if result.command:
             self.command_executor.execute(session, result.command)
 
-        session.conversation_state = result.next_state
+        # Do NOT set session.conversation_state here — TurnEngine applies it
+        # from TurnOutput.next_state after this method returns.
         suppress_payment_replay = self._should_suppress_payment_prompt_replay(
             session=session,
             prior_state=state,
@@ -370,11 +371,13 @@ class PaymentFlowOrchestrator:
                 payload=result.response_payload,
             )
 
+        is_completed = result.next_state == ConversationState.COMPLETED
         if suppress_payment_replay:
             return self.response_writer._build_silent_output(
                 response_key=result.response_key,
                 response_payload=result.response_payload,
-                end_call_after_playback=(result.next_state == ConversationState.COMPLETED),
+                end_call_after_playback=is_completed,
+                next_state=result.next_state,
             )
 
         return self.response_writer._hydrate_output(
@@ -382,6 +385,7 @@ class PaymentFlowOrchestrator:
             output=TurnOutput(
                 response_key=result.response_key,
                 response_payload=result.response_payload,
-                end_call_after_playback=(result.next_state == ConversationState.COMPLETED),
+                end_call_after_playback=is_completed,
+                next_state=result.next_state,
             ),
         )

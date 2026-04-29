@@ -106,18 +106,16 @@ class FlowGateOrderTypeGateTests(unittest.TestCase):
         gate = _make_gate()
         session = Session(session_id="s1", restaurant_id="demo")
         session.conversation_state = ConversationState.IDLE
-        # order_type is None → required → state should flip
-        gate._normalize_order_type_gate_state(session)
-        self.assertEqual(
-            session.conversation_state, ConversationState.WAITING_FOR_ORDER_TYPE
-        )
+        # order_type is None → required → compute returns WAITING_FOR_ORDER_TYPE
+        result = gate._compute_order_type_gate_state(session)
+        self.assertEqual(result, ConversationState.WAITING_FOR_ORDER_TYPE)
 
     def test_normalize_order_type_gate_state_does_not_clobber_completed(self):
         gate = _make_gate()
         session = Session(session_id="s1", restaurant_id="demo")
         session.conversation_state = ConversationState.COMPLETED
-        gate._normalize_order_type_gate_state(session)
-        self.assertEqual(session.conversation_state, ConversationState.COMPLETED)
+        result = gate._compute_order_type_gate_state(session)
+        self.assertIsNone(result)
 
 
 def _make_nlu(
@@ -160,7 +158,8 @@ class FlowGateAgentRequestTests(unittest.TestCase):
             nlu=nlu,
         )
         self.assertIsNotNone(result)
-        self.assertEqual(result.response_key, "transferring_to_human_agent")
+        self.assertIsNotNone(result.output)
+        self.assertEqual(result.output.response_key, "transferring_to_human_agent")
 
     def test_phrase_fallback_triggers_transfer_when_nlu_is_none_intent(self):
         gate = _make_gate()
@@ -178,7 +177,8 @@ class FlowGateAgentRequestTests(unittest.TestCase):
             nlu=nlu,
         )
         self.assertIsNotNone(result)
-        self.assertEqual(result.response_key, "transferring_to_human_agent")
+        self.assertIsNotNone(result.output)
+        self.assertEqual(result.output.response_key, "transferring_to_human_agent")
 
     def test_unrelated_text_no_agent_transfer(self):
         gate = _make_gate()
@@ -196,8 +196,8 @@ class FlowGateAgentRequestTests(unittest.TestCase):
             intent_result=intent_result,
             nlu=nlu,
         )
-        if result is not None:
-            self.assertNotEqual(result.response_key, "transferring_to_human_agent")
+        if result is not None and result.output is not None:
+            self.assertNotEqual(result.output.response_key, "transferring_to_human_agent")
 
     def test_no_agent_transfer_for_empty_text(self):
         gate = _make_gate()
@@ -213,8 +213,8 @@ class FlowGateAgentRequestTests(unittest.TestCase):
             intent_result=intent_result,
             nlu=nlu,
         )
-        if result is not None:
-            self.assertNotEqual(result.response_key, "transferring_to_human_agent")
+        if result is not None and result.output is not None:
+            self.assertNotEqual(result.output.response_key, "transferring_to_human_agent")
 
 
 class FlowGateQuantityCorrectionTests(unittest.TestCase):
