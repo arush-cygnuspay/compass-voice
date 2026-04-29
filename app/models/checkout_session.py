@@ -1,7 +1,6 @@
 # app/models/checkout_session.py
 from __future__ import annotations
 
-import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -14,18 +13,6 @@ def utc_now() -> datetime:
 
 def default_expiry(hours: int = 2) -> datetime:
     return utc_now() + timedelta(hours=hours)
-
-
-def generate_order_number() -> str:
-    """Return a unique 7-digit all-numeric order number.
-
-    Format: <2 random digits><last 5 digits of unix-centiseconds>
-    e.g. 4738291  — guaranteed to be only digits, human-readable length,
-    and practically collision-free within any 115-day rolling window.
-    """
-    ts_part = int(utc_now().timestamp() * 100) % 100_000   # 0-99999 (5 digits)
-    rnd_part = random.randint(10, 99)                        # 2 random digits (prefix)
-    return f"{rnd_part}{ts_part:05d}"                        # always 7 digits
 
 
 @dataclass(slots=True)
@@ -80,11 +67,6 @@ class CheckoutSession:
         postal_code: str | None,
         order_summary: dict[str, Any] | None = None,
     ) -> "CheckoutSession":
-        # Ensure order_number is always a real digits-only number.
-        # Replace None or legacy placeholder "TEST123" with a generated one.
-        if not order_number or not order_number.isdigit():
-            order_number = generate_order_number()
-
         return cls(
             token=secrets.token_urlsafe(24),
             restaurant_id=restaurant_id,
