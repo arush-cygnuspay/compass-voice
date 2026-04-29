@@ -346,7 +346,7 @@ class PaymentFlowOrchestrator:
         )
 
         if result.reset_context:
-            ctx.reset()
+            ctx.reset_item_scope()
         if result.command:
             self.command_executor.execute(session, result.command)
 

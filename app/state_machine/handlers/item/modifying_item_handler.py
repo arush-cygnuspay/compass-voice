@@ -96,7 +96,7 @@ class ModifyingItemHandler(BaseHandler):
             )
 
         if decision == "cancel":
-            context.reset()
+            context.reset_item_scope()
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="action_cancelled",
@@ -104,7 +104,7 @@ class ModifyingItemHandler(BaseHandler):
 
         if action_type == "replace_item_collect":
             if decision == "deny":
-                context.reset()
+                context.reset_item_scope()
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
                     response_key="item_replacement_cancelled",
@@ -134,7 +134,7 @@ class ModifyingItemHandler(BaseHandler):
             )
 
         if decision == "deny":
-            context.reset()
+            context.reset_item_scope()
             cancel_key = "item_modification_cancelled" if action_type == "modify_item" else "item_replacement_cancelled"
             return HandlerResult(
                 next_state=ConversationState.IDLE,
@@ -202,7 +202,7 @@ class ModifyingItemHandler(BaseHandler):
         item,
         cart_item_id: str,
     ) -> HandlerResult:
-        context.reset_task()
+        context.reset_item_scope()
         context.pending_action = PendingAction.MODIFY_ITEM
         context.current_item_id = item.item_id
         context.current_item_name = item.name

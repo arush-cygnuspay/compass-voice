@@ -136,7 +136,7 @@ class AddItemHandler(BaseHandler):
         category_slot_value = first_slot_value(slots, "CATEGORY", "MENU_CATEGORY")
         modifier_slot_value = first_slot_value(slots, "MODIFIER")
 
-        context.reset_task()
+        context.reset_item_scope()
         context.pending_action = PendingAction.ADD_ITEM
 
         if (

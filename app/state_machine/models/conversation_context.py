@@ -387,7 +387,16 @@ class ConversationContext:
         self.last_intent_confidence = nlu.intent_confidence
         self.last_slots = nlu.slots
 
-    def reset_task(self) -> None:
+    def reset_item_scope(self) -> None:
+        """Clear current item/add/modify flow data only.
+
+        Covers everything a single add-item or modify-item turn owns:
+        item identity, variants, sides, modifiers, quantity, pending
+        actions, prompt fields, and flow-confirmation state.
+
+        Does NOT touch: pending_item_queue, order_type, delivery_address,
+        last_nlu/slots, or caller_device_type.
+        """
         self.current_item_id = None
         self.current_item_name = None
         self.candidate_item_id = None
@@ -427,11 +436,23 @@ class ConversationContext:
         self.group_multi_select_announced.clear()
         self.reprompt_attempts.clear()
 
-    def clear_item_queue(self) -> None:
+    def reset_order_scope(self) -> None:
+        """Clear item scope AND the pending item queue.
+
+        Use when the order is cancelled or restarted so that stale
+        queued items from multi-item utterances cannot bleed into the
+        next order.
+        """
+        self.reset_item_scope()
         self.pending_item_queue.clear()
 
-    def reset_all(self) -> None:
-        self.reset_task()
+    def reset_session_scope(self) -> None:
+        """Full context reset — use only on order completion or session end.
+
+        Clears everything including NLU history, delivery address, and the
+        pending item queue.
+        """
+        self.reset_item_scope()
         self.pending_item_queue.clear()
         self.last_user_text = None
         self.last_nlu = None
@@ -439,8 +460,19 @@ class ConversationContext:
         self.last_slots = ()
         self.delivery_address = DeliveryAddress()
 
+    # ── Backward-compatible wrappers (do not remove — test code uses these) ──
+
+    def reset_task(self) -> None:
+        self.reset_item_scope()
+
+    def clear_item_queue(self) -> None:
+        self.pending_item_queue.clear()
+
+    def reset_all(self) -> None:
+        self.reset_session_scope()
+
     def reset(self) -> None:
-        self.reset_task()
+        self.reset_item_scope()
 
     def to_dict(self) -> dict:
         return {

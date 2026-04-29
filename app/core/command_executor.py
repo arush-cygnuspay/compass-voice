@@ -8,15 +8,34 @@ SEND_SMS, transfer_call.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 from typing import Any
 
 from app.session.session import Session
+from app.services.sms_exceptions import PermanentSmsError, TransientSmsError
 from app.services.sms_service import SmsSendRequest, SmsSendResult, SmsService
 
 logger = logging.getLogger(__name__)
 
 SMS_MAX_RETRIES = 2
+
+
+def _derive_idempotency_key(session_id: str, command_id: str) -> str:
+    """Return sha256(session_id:command_id) as a hex digest."""
+    raw = f"{session_id}:{command_id}".encode()
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _derive_command_id(payload: dict[str, Any]) -> str:
+    """Deterministic ID for an SMS command from its payload contents.
+
+    Using a content-hash means the same logical SMS always gets the same
+    idempotency key within a session, even across process restarts.
+    """
+    serialized = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(serialized.encode()).hexdigest()[:16]
 
 
 class CommandExecutor:
@@ -46,7 +65,7 @@ class CommandExecutor:
             return {"ok": True}
 
         if cmd_type == "SEND_SMS":
-            return self._send_sms(payload)
+            return self._send_sms(session, payload)
 
         if cmd_type == "transfer_call":
             return {
@@ -74,8 +93,12 @@ class CommandExecutor:
         session.cart.add_item(cart_item)
         return {"ok": True}
 
-    def _send_sms(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def _send_sms(self, session: Session, payload: dict[str, Any]) -> dict[str, Any]:
         template = payload["template"]
+        session_id = getattr(session, "session_id", "") or ""
+
+        command_id = _derive_command_id(payload)
+        idempotency_key = _derive_idempotency_key(session_id, command_id)
 
         sms_request = SmsSendRequest(
             template=template,
@@ -84,28 +107,45 @@ class CommandExecutor:
             link=payload.get("link", ""),
             area=payload.get("area", ""),
             summary_text=payload.get("summary_text", ""),
+            idempotency_key=idempotency_key,
         )
 
         sms_result: SmsSendResult | None = None
         attempts_made = 0
+        last_error_code: str = "sms_send_failed"
+        last_error_message: str = "SMS send failed."
 
-        for _ in range(SMS_MAX_RETRIES):
-            attempts_made += 1
+        for attempt in range(1, SMS_MAX_RETRIES + 1):
+            attempts_made = attempt
             try:
                 sms_result = self.sms_service.send(sms_request)
-                if sms_result.ok:
-                    break
-            except Exception:
-                logger.exception(
-                    "SMS send attempt %d failed for template=%s",
-                    attempts_made, template,
+                break  # success
+            except PermanentSmsError as exc:
+                last_error_code = exc.error_code or "sms_permanent_error"
+                last_error_message = str(exc)
+                logger.error(
+                    "SMS permanent failure (no retry) attempt=%d template=%s "
+                    "error_code=%s idempotency_key=%s: %s",
+                    attempt, template, last_error_code, idempotency_key, exc,
                 )
+                break  # do not retry permanent failures
+            except TransientSmsError as exc:
+                last_error_code = exc.error_code or "sms_transient_error"
+                last_error_message = str(exc)
+                logger.warning(
+                    "SMS transient failure attempt=%d/%d template=%s "
+                    "error_code=%s idempotency_key=%s: %s",
+                    attempt, SMS_MAX_RETRIES, template,
+                    last_error_code, idempotency_key, exc,
+                )
+                # continue to next attempt
 
         return {
-            "ok": bool(sms_result and sms_result.ok),
+            "ok": sms_result is not None,
             "sid": sms_result.sid if sms_result else None,
-            "error_code": sms_result.error_code if sms_result else "sms_send_failed",
-            "error_message": sms_result.error_message if sms_result else "SMS send failed.",
+            "error_code": None if sms_result else last_error_code,
+            "error_message": None if sms_result else last_error_message,
             "template": template,
             "attempts_made": attempts_made,
+            "idempotency_key": idempotency_key,
         }

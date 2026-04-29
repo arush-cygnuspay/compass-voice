@@ -227,7 +227,7 @@ class ConfirmingHandler(BaseHandler):
                 )
 
             if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
-                context.reset_task()
+                context.reset_item_scope()
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
                     response_key="item_cancelled_successfully",
@@ -479,7 +479,7 @@ class ConfirmingHandler(BaseHandler):
     ) -> HandlerResult:
         existing_quantity = context.quantity
 
-        context.reset_task()
+        context.reset_item_scope()
         context.pending_action = PendingAction.ADD_ITEM
         context.quantity = existing_quantity
 

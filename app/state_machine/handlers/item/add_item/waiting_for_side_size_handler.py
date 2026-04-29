@@ -261,7 +261,7 @@ class WaitingForSideSizeHandler(BaseHandler, _VariantMatchMixin):
                     action="cancel_pending_item",
                     kind=control_intent.kind.value,
                 )
-                context.reset_task()
+                context.reset_item_scope()
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
                     response_key="item_cancelled_successfully",
@@ -305,7 +305,7 @@ class WaitingForSideSizeHandler(BaseHandler, _VariantMatchMixin):
                     action="cancel_pending_item",
                     kind=control_intent.kind.value,
                 )
-                context.reset_task()
+                context.reset_item_scope()
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
                     response_key="item_cancelled_successfully",

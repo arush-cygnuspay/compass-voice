@@ -643,25 +643,26 @@ class CheckoutService:
                 or session.confirmation_link
                 or ""
             )
-            sms_result = self.sms_service.send(
-                SmsSendRequest(
-                    template="order_confirmation",
-                    phone_number=phone_number,
-                    order_number=order_number,
-                    link=order_link,
+            from app.services.sms_exceptions import SmsError
+            try:
+                sms_result = self.sms_service.send(
+                    SmsSendRequest(
+                        template="order_confirmation",
+                        phone_number=phone_number,
+                        order_number=order_number,
+                        link=order_link,
+                    )
                 )
-            )
-            if sms_result.ok:
                 logger.info(
                     "Order-confirmation SMS sent to %s (sid=%s)",
                     phone_number,
                     sms_result.sid,
                 )
-            else:
+            except SmsError as exc:
                 logger.error(
                     "Failed to send order-confirmation SMS: code=%s msg=%s",
-                    sms_result.error_code,
-                    sms_result.error_message,
+                    getattr(exc, "error_code", None),
+                    exc,
                 )
         else:
             surface = "chat_ui" if not session.call_sid else "twilio"
