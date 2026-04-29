@@ -15,6 +15,7 @@ import os
 import time
 from typing import TYPE_CHECKING, Any
 
+from app.contracts.command_result import CommandResult
 from app.core.command_executor import CommandExecutor
 from app.core.payment_response_classifier import PaymentResponseClassifier
 from app.core.response_builder import ResponseBuilder
@@ -253,7 +254,7 @@ class PaymentFlowOrchestrator:
         state_before: ConversationState,
         response_key: str,
         command: dict[str, Any] | None,
-        command_result: dict[str, Any] | None,
+        command_result: CommandResult | None,
     ) -> None:
         if not command or not command_result:
             return
@@ -268,7 +269,7 @@ class PaymentFlowOrchestrator:
 
         metadata = {
             "template": template,
-            "sid": command_result.get("sid"),
+            "sid": command_result.sid,
         }
         if response_key in {"payment_link_sent", "checkout_link_sent"}:
             self._log_payment_event(

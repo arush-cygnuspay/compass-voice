@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
+from app.contracts.command_result import CommandResult
 from app.core.command_executor import CommandExecutor
 from app.core.response_builder import ResponseBuilder
 from app.core.turn_diagnostics import REPROMPT_RESPONSE_KEYS, TurnDiagnostics
@@ -135,7 +136,7 @@ class HandlerDispatcher:
         self,
         session: Session,
         command: dict[str, Any],
-    ) -> dict[str, Any]:
+    ) -> CommandResult:
         return self.command_executor.execute(session, command)
 
     def _apply_reprompt_guardrail(

@@ -13,6 +13,7 @@ import json
 import logging
 from typing import Any
 
+from app.contracts.command_result import CommandResult
 from app.session.session import Session
 from app.services.sms_exceptions import PermanentSmsError, TransientSmsError
 from app.services.sms_service import SmsSendRequest, SmsSendResult, SmsService
@@ -44,12 +45,8 @@ class CommandExecutor:
     def __init__(self, sms_service: SmsService) -> None:
         self.sms_service = sms_service
 
-    def execute(self, session: Session, command: dict[str, Any]) -> dict[str, Any]:
-        """
-        Execute a handler command and return a result dict.
-
-        Always returns {"ok": bool, ...}. Raises ValueError for unknown types.
-        """
+    def execute(self, session: Session, command: dict[str, Any]) -> CommandResult:
+        """Execute a handler command and return a typed CommandResult."""
         cmd_type = command.get("type")
         payload = command.get("payload") or {}
 
@@ -58,28 +55,28 @@ class CommandExecutor:
 
         if cmd_type == "CLEAR_CART":
             session.cart.clear()
-            return {"ok": True}
+            return CommandResult(ok=True)
 
         if cmd_type == "REMOVE_ITEM_FROM_CART":
             session.cart.remove_item(payload["cart_item_id"])
-            return {"ok": True}
+            return CommandResult(ok=True)
 
         if cmd_type == "SEND_SMS":
             return self._send_sms(session, payload)
 
         if cmd_type == "transfer_call":
-            return {
-                "ok": True,
-                "transport_only": True,
-                "transfer_number": command.get("transfer_number"),
-            }
+            return CommandResult(
+                ok=True,
+                transport_only=True,
+                transfer_number=command.get("transfer_number"),
+            )
 
         raise ValueError(f"Unknown command type: {cmd_type}")
 
     # ── Private helpers ──────────────────────────────────────────────────
 
     @staticmethod
-    def _add_item_to_cart(session: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    def _add_item_to_cart(session: Session, payload: dict[str, Any]) -> CommandResult:
         from app.cart.cart_item import CartItem
 
         cart_item = CartItem.create(
@@ -91,9 +88,9 @@ class CommandExecutor:
             modifiers=payload.get("modifiers", {}),
         )
         session.cart.add_item(cart_item)
-        return {"ok": True}
+        return CommandResult(ok=True)
 
-    def _send_sms(self, session: Session, payload: dict[str, Any]) -> dict[str, Any]:
+    def _send_sms(self, session: Session, payload: dict[str, Any]) -> CommandResult:
         template = payload["template"]
         session_id = getattr(session, "session_id", "") or ""
 
@@ -140,12 +137,12 @@ class CommandExecutor:
                 )
                 # continue to next attempt
 
-        return {
-            "ok": sms_result is not None,
-            "sid": sms_result.sid if sms_result else None,
-            "error_code": None if sms_result else last_error_code,
-            "error_message": None if sms_result else last_error_message,
-            "template": template,
-            "attempts_made": attempts_made,
-            "idempotency_key": idempotency_key,
-        }
+        return CommandResult(
+            ok=sms_result is not None,
+            sid=sms_result.sid if sms_result else None,
+            error_code=None if sms_result else last_error_code,
+            error_message=None if sms_result else last_error_message,
+            template=template,
+            attempts_made=attempts_made,
+            idempotency_key=idempotency_key,
+        )
