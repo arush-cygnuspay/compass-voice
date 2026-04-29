@@ -151,7 +151,7 @@ class RepromptEscalatedEventTests(unittest.TestCase):
             response_key="repeat_side_options",
         )
 
-        HandlerDispatcher._apply_reprompt_guardrail(
+        out = HandlerDispatcher._apply_reprompt_guardrail(
             engine,
             session=session,
             state_before=ConversationState.WAITING_FOR_SIDE,
@@ -159,6 +159,57 @@ class RepromptEscalatedEventTests(unittest.TestCase):
         )
 
         self.assertEqual(len(self.capture.events), 0)
+        # reprompt_count must be stamped even when escalation threshold not yet hit.
+        self.assertEqual(out.response_payload.get("reprompt_count"), 2)
+        self.assertNotIn("reprompt_escalation", out.response_payload)
+
+    def test_first_miss_stamps_reprompt_count_1(self):
+        engine = _StubEngine()
+        session = _make_session(
+            ConversationState.WAITING_FOR_SIZE,
+            "size",
+            prior_count=0,
+        )
+        result = HandlerResult(
+            next_state=ConversationState.WAITING_FOR_SIZE,
+            response_key="repeat_size_options",
+        )
+
+        out = HandlerDispatcher._apply_reprompt_guardrail(
+            engine,
+            session=session,
+            state_before=ConversationState.WAITING_FOR_SIZE,
+            result=result,
+        )
+
+        self.assertEqual(out.response_payload.get("reprompt_count"), 1)
+        self.assertNotIn("reprompt_escalation", out.response_payload)
+        self.assertEqual(len(self.capture.events), 0)
+
+    def test_size_escalation_stamps_reprompt_count_and_escalation_flag(self):
+        engine = _StubEngine()
+        session = _make_session(
+            ConversationState.WAITING_FOR_SIZE,
+            "size",
+            prior_count=2,
+        )
+        result = HandlerResult(
+            next_state=ConversationState.WAITING_FOR_SIZE,
+            response_key="repeat_size_options",
+            response_payload={"item_name": "Burger"},
+        )
+
+        out = HandlerDispatcher._apply_reprompt_guardrail(
+            engine,
+            session=session,
+            state_before=ConversationState.WAITING_FOR_SIZE,
+            result=result,
+        )
+
+        self.assertEqual(out.response_payload.get("reprompt_count"), 3)
+        self.assertTrue(out.response_payload.get("reprompt_escalation"))
+        # size field keeps its own key on escalation
+        self.assertEqual(out.response_key, "repeat_size_options")
 
 
 if __name__ == "__main__":

@@ -4,6 +4,7 @@ from __future__ import annotations
 import re
 
 from app.menu.repository import MenuRepository
+from app.policies.prompt_reprompt_policy import PromptRepromptPolicy, RepromptAction
 from app.state_machine.models.conversation_context import ConversationContext
 from app.utils.top_k_choices import get_top_k_choices
 
@@ -389,6 +390,18 @@ def repeat_side_options(context, menu_repo, payload) -> str:
 
 def repeat_modifier_options(context, menu_repo, payload) -> str:
     feedback = _build_entity_feedback(payload or {})
+    miss_count = int((payload or {}).get("reprompt_count") or 0)
+    action = PromptRepromptPolicy.next_action("modifier", miss_count)
+
+    if action == RepromptAction.CONCISE:
+        return f"{feedback}Which option?" if feedback else "Which option?"
+
+    if action == RepromptAction.LIST_OPTIONS_HINT:
+        hint = "I didn't catch that. Say 'list options' to hear all choices."
+        return f"{feedback}{hint}" if feedback else hint
+
+    # FULL_OPTIONS (miss_count=0 / backward-compat) and ESCALATE_OR_SKIP both
+    # show the full progress prompt so the user always has a recovery path.
     modifier_payload = _current_modifier_payload(context, menu_repo, payload)
     if modifier_payload.get("top_choices") or modifier_payload.get("all_choices"):
         prompt = _progress_prompt(
@@ -618,15 +631,32 @@ def repeat_size_options(context, menu_repo, payload) -> str:
     item = menu_repo.store.get_item(context.current_item_id)
     labels = [variant.label for variant in (item.pricing.variants or []) if variant.label]
     options = _format_options(labels)
+    item_name = item.name
 
-    if payload.get("reprompt_escalation"):
+    # Explicit OPTIONS_REQUEST always bypasses tier logic and shows the full list.
+    if (payload or {}).get("list_options_requested"):
         if options:
-            return f"Please say one of these sizes for {item.name}: {options}."
-        return f"Please say the size for {item.name}."
+            return f"Available sizes for {item_name} are {options}."
+        return f"What size would you like for {item_name}?"
 
+    miss_count = int((payload or {}).get("reprompt_count") or 0)
+    action = PromptRepromptPolicy.next_action("size", miss_count)
+
+    if action == RepromptAction.FULL_OPTIONS:
+        if options:
+            return f"Available sizes for {item_name} are {options}."
+        return f"What size would you like for {item_name}?"
+
+    if action == RepromptAction.CONCISE:
+        return f"What size for {item_name}?"
+
+    if action == RepromptAction.LIST_OPTIONS_HINT:
+        return f"I didn't catch that. Say 'list options' to hear all sizes for {item_name}."
+
+    # ESCALATE_OR_SKIP — also reached when reprompt_escalation=True
     if options:
-        return f"Available sizes for {item.name} are {options}."
-    return f"What size would you like for {item.name}?"
+        return f"Please say one of these sizes for {item_name}: {options}."
+    return f"Please say the size for {item_name}."
 
 
 def item_context_missing(context, menu_repo, payload) -> str:
