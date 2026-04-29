@@ -169,16 +169,20 @@ class TestConfirmationDecisionHelper:
         helper = self._helper()
         with patch(
             "app.state_machine.handlers.item.add_item.confirmation_decision_helper.determine_next_add_item_step"
-        ) as mock_step, patch(
-            "app.state_machine.handlers.item.add_item.confirmation_decision_helper.build_add_item_command",
-            return_value={"op": "add"},
-        ):
-            from app.state_machine.handlers.item.add_item.add_item_flow import AddItemNextStep
-            mock_step.return_value = AddItemNextStep(
-                next_state=ConversationState.FINALIZING_ADD_ITEM,
-                response_key="item_added_successfully",
-                response_payload={},
+        ) as mock_step:
+            from app.state_machine.handlers.item.add_item.add_item_flow import (
+                AddItemCommand,
+                ReadyToFinalize,
             )
+            stub_command = AddItemCommand(
+                item_id="burger_1",
+                quantity=1,
+                variant_id=None,
+                sides={},
+                side_variants={},
+                modifiers={},
+            )
+            mock_step.return_value = ReadyToFinalize(command=stub_command)
             result = helper.build_handler_result(
                 context=ctx,
                 item=item,
@@ -189,7 +193,7 @@ class TestConfirmationDecisionHelper:
 
         assert result.response_key == "item_added_successfully"
         assert result.next_state == ConversationState.IDLE
-        assert result.command == {"op": "add"}
+        assert result.command == stub_command.to_dict()
         assert result.reset_context is True
         assert result.response_payload["item_name"] == "Zinger Burger"
         assert result.response_payload["prefilled_summary"] == "with Coke"

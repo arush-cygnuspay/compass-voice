@@ -22,7 +22,7 @@ from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.item.add_item.add_item_handler import PendingItemCaptureHelper
 from app.state_machine.handlers.item.add_item.add_item_flow import (
-    build_add_item_command,
+    ReadyToFinalize,
     determine_next_add_item_step,
 )
 from app.state_machine.handlers.item.add_item.modifier_group_resolver import (
@@ -532,7 +532,7 @@ class WaitingForModifierHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
+        if isinstance(step, ReadyToFinalize):
             payload = {
                 "item_name": pending.item_name,
                 "quantity": context.quantity or 1,
@@ -546,7 +546,7 @@ class WaitingForModifierHandler(BaseHandler):
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
                 response_payload=payload,
-                command=build_add_item_command(context),
+                command=step.command.to_dict(),
                 reset_context=True,
             )
 

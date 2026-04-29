@@ -9,7 +9,8 @@ from app.menu.models import (
 )
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.handlers.item.add_item.add_item_flow import (
-    build_add_item_command,
+    AddItemCommand,
+    ReadyToFinalize,
     determine_next_add_item_step,
 )
 from app.state_machine.handlers.item.add_item.pending_add_item_factory import build_pending_add_item
@@ -169,7 +170,7 @@ def test_determine_next_step_moves_to_quantity_after_modifier_phase_done():
     assert context.current_prompt_field == "quantity"
 
 
-def test_determine_next_step_finalizes_when_all_required_fields_present():
+def test_determine_next_step_returns_ready_to_finalize_when_all_required_fields_present():
     context = ConversationContext()
     context.pending_add_item = build_pending_add_item(make_full_item())
     context.selected_variant_id = "regular"
@@ -179,11 +180,15 @@ def test_determine_next_step_finalizes_when_all_required_fields_present():
 
     step = determine_next_add_item_step(context)
 
-    assert step.next_state == ConversationState.FINALIZING_ADD_ITEM
-    assert step.response_key == "finalize_add_item"
+    assert isinstance(step, ReadyToFinalize)
+    assert isinstance(step.command, AddItemCommand)
+    assert step.command.item_id == "meal_1"
+    assert step.command.quantity == 2
+    assert step.command.variant_id == "regular"
+    assert step.command.sides == {"side_1": ["fries"]}
 
 
-def test_build_add_item_command_uses_context_values():
+def test_ready_to_finalize_command_to_dict_produces_cart_command():
     context = ConversationContext()
     context.pending_add_item = build_pending_add_item(make_full_item())
     context.quantity = 2
@@ -199,8 +204,12 @@ def test_build_add_item_command_uses_context_values():
             )
         ]
     }
+    context.skipped_modifier_groups = set()
 
-    command = build_add_item_command(context)
+    step = determine_next_add_item_step(context)
+
+    assert isinstance(step, ReadyToFinalize)
+    command = step.command.to_dict()
 
     assert command["type"] == "ADD_ITEM_TO_CART"
     assert command["payload"]["item_id"] == "meal_1"

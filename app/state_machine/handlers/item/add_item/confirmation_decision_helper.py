@@ -4,7 +4,7 @@ from __future__ import annotations
 from app.menu.models import MenuItem
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.item.add_item.add_item_flow import (
-    build_add_item_command,
+    ReadyToFinalize,
     determine_next_add_item_step,
 )
 from app.state_machine.models.conversation_context import ConversationContext
@@ -16,7 +16,7 @@ class ConfirmationDecisionHelper:
 
     Receives the post-prefill context and the prefill summaries, calls
     determine_next_add_item_step(), and returns the appropriate HandlerResult:
-    either an immediate add-to-cart (FINALIZING_ADD_ITEM) or a waiting-state
+    either an immediate add-to-cart (ReadyToFinalize) or a waiting-state
     prompt for the next unresolved group.
     """
 
@@ -31,7 +31,7 @@ class ConfirmationDecisionHelper:
     ) -> HandlerResult:
         step = determine_next_add_item_step(context)
 
-        if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
+        if isinstance(step, ReadyToFinalize):
             payload: dict = {
                 "item_name": item.name,
                 "quantity": context.quantity or 1,
@@ -44,7 +44,7 @@ class ConfirmationDecisionHelper:
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
                 response_payload=payload,
-                command=build_add_item_command(context),
+                command=step.command.to_dict(),
                 reset_context=True,
             )
 

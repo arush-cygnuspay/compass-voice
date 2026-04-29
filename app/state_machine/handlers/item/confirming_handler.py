@@ -23,7 +23,7 @@ from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.item.add_item.add_item_flow import (
-    build_add_item_command,
+    ReadyToFinalize,
     determine_next_add_item_step,
 )
 from app.state_machine.handlers.item.add_item.pending_add_item_factory import (
@@ -490,7 +490,7 @@ class ConfirmingHandler(BaseHandler):
 
         step = determine_next_add_item_step(context)
 
-        if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
+        if isinstance(step, ReadyToFinalize):
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
@@ -498,7 +498,7 @@ class ConfirmingHandler(BaseHandler):
                     "item_name": item.name,
                     "quantity": context.quantity or 1,
                 },
-                command=build_add_item_command(context),
+                command=step.command.to_dict(),
                 reset_context=True,
             )
 
