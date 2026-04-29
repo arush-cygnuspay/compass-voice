@@ -12,3 +12,6 @@ node_modules
 mypy_cache
 notebooks
 *.ipynb
+
+# Exclude project-root-level artifacts/ if it exists (models live at app/artifacts/models/)
+app/artifacts/
