@@ -20,6 +20,7 @@ class Session:
 
     session_id: str
     restaurant_id: str
+    current_turn_id: Optional[str] = None
 
     conversation_state: ConversationState = ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE
     conversation_context: ConversationContext = field(default_factory=ConversationContext)
