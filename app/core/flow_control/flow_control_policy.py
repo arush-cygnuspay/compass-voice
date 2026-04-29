@@ -6,16 +6,13 @@ from typing import Any, Mapping
 
 from app.core.flow_control.flow_decision import FlowAction, FlowDecision
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.intent_resolution.intent_metadata import INTENT_REGISTRY
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
-
-
 from app.state_machine.flow_sets import (
     ACTIVE_TASK_STATES,
-    CHECKOUT_ATTEMPT_INTENTS,
     DELIVERY_GATING_STATES,
     MID_ITEM_BLOCKING_STATES,
-    READ_ONLY_INTERRUPT_INTENTS,
 )
 
 
@@ -41,7 +38,7 @@ class FlowControlPolicy:
     ) -> FlowDecision:
         payload = _GuardPayload(state=state, context=context)
 
-        if intent in CHECKOUT_ATTEMPT_INTENTS and state in MID_ITEM_BLOCKING_STATES:
+        if INTENT_REGISTRY.get(intent).blocks_mid_item and state in MID_ITEM_BLOCKING_STATES:
             return FlowDecision(
                 action=FlowAction.BLOCK,
                 response_key="checkout_blocked_finish_current_item",
@@ -63,7 +60,7 @@ class FlowControlPolicy:
             return FlowDecision(action=FlowAction.PASS)
 
         if (
-            intent in READ_ONLY_INTERRUPT_INTENTS
+            INTENT_REGISTRY.get(intent).readonly
             and state in ACTIVE_TASK_STATES
             and state != ConversationState.CANCELLATION_CONFIRMATION
         ):
