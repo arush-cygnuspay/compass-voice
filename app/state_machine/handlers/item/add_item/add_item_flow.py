@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 from app.state_machine.models.conversation_context import ConversationContext, PendingAddItem
 from app.state_machine.models.conversation_state import ConversationState
@@ -17,7 +18,44 @@ class AddItemNextStep:
     response_payload: dict | None = None
 
 
-def determine_next_add_item_step(context: ConversationContext) -> AddItemNextStep:
+@dataclass(frozen=True, slots=True)
+class AddItemCommand:
+    """Immutable snapshot of the finalized item data ready to be sent to the cart."""
+
+    item_id: str
+    quantity: int
+    variant_id: Optional[str]
+    sides: dict
+    side_variants: dict
+    modifiers: dict
+
+    def to_dict(self) -> dict:
+        return {
+            "type": "ADD_ITEM_TO_CART",
+            "payload": {
+                "item_id": self.item_id,
+                "quantity": self.quantity,
+                "variant_id": self.variant_id,
+                "sides": self.sides,
+                "side_variants": self.side_variants,
+                "modifiers": self.modifiers,
+            },
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ReadyToFinalize:
+    """
+    Explicit flow outcome returned by determine_next_add_item_step when all
+    required item attributes are resolved and the item is ready to be added to
+    the cart.  Callers convert this into a terminal HandlerResult directly —
+    no router lookup or pseudo-state transition occurs.
+    """
+
+    command: AddItemCommand
+
+
+def determine_next_add_item_step(context: ConversationContext) -> AddItemNextStep | ReadyToFinalize:
     pending = context.pending_add_item
     if pending is None:
         return AddItemNextStep(
@@ -102,40 +140,27 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
             response_payload={"item_name": pending.item_name},
         )
 
-    return AddItemNextStep(
-        next_state=ConversationState.FINALIZING_ADD_ITEM,
-        response_key="finalize_add_item",
-        response_payload={"item_name": pending.item_name},
+    return ReadyToFinalize(
+        command=AddItemCommand(
+            item_id=pending.item_id,
+            quantity=context.quantity or 1,
+            variant_id=context.selected_variant_id,
+            sides=dict(context.selected_side_groups),
+            side_variants=dict(context.selected_side_variants),
+            modifiers={
+                group_id: [
+                    {
+                        "modifier_id": sel.modifier_id,
+                        "name": sel.name,
+                        "action": sel.action,
+                        "instruction": sel.instruction,
+                    }
+                    for sel in selections
+                ]
+                for group_id, selections in context.selected_modifier_groups.items()
+            },
+        )
     )
-
-
-def build_add_item_command(context: ConversationContext) -> dict:
-    pending = context.pending_add_item
-    if pending is None:
-        raise ValueError("pending_add_item is missing")
-
-    return {
-        "type": "ADD_ITEM_TO_CART",
-        "payload": {
-            "item_id": pending.item_id,
-            "quantity": context.quantity or 1,
-            "variant_id": context.selected_variant_id,
-            "sides": dict(context.selected_side_groups),
-            "side_variants": dict(context.selected_side_variants),
-            "modifiers": {
-                    group_id: [
-                        {
-                            "modifier_id": sel.modifier_id,
-                            "name": sel.name,
-                            "action": sel.action,
-                            "instruction": sel.instruction,
-                        }
-                        for sel in selections
-                    ]
-                    for group_id, selections in context.selected_modifier_groups.items()
-                },
-        },
-    }
 
 
 def _has_valid_variant_selected(context: ConversationContext, pending: PendingAddItem) -> bool:

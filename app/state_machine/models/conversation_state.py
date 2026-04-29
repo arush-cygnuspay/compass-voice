@@ -27,7 +27,6 @@ class ConversationState(str, Enum):
     WAITING_FOR_SIDE_SIZE = "waiting_for_side_size"
     WAITING_FOR_MODIFIER = "waiting_for_modifier"
     WAITING_FOR_QUANTITY = "waiting_for_quantity"
-    FINALIZING_ADD_ITEM = "finalizing_add_item"
 
     # Modify / remove flows
     MODIFYING_ITEM = "modifying_item"

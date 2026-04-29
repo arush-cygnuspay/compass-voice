@@ -12,7 +12,7 @@ from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.item.add_item.add_item_flow import (
-    build_add_item_command,
+    ReadyToFinalize,
     determine_next_add_item_step,
 )
 from app.utils.quantity_detection import detect_quantity, normalize_quantity
@@ -265,7 +265,7 @@ class WaitingForQuantityHandler(BaseHandler):
                 response_key="item_context_missing",
             )
 
-        if step.next_state == ConversationState.FINALIZING_ADD_ITEM:
+        if isinstance(step, ReadyToFinalize):
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
@@ -273,7 +273,7 @@ class WaitingForQuantityHandler(BaseHandler):
                     "item_name": pending.item_name,
                     "quantity": context.quantity or 1,
                 },
-                command=build_add_item_command(context),
+                command=step.command.to_dict(),
                 reset_context=True,
             )
 
