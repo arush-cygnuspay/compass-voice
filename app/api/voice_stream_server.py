@@ -39,8 +39,7 @@ from app.realtime.deepgram_stt_client import (
     DeepgramSTTConfig,
 )
 from app.realtime.deepgram_tts_client import DeepgramTTSClient
-from app.realtime.barge_in_policy import is_actionable_barge_in
-from app.realtime.realtime_conversation_state import RealtimePhase
+from app.realtime.conversation_session import ConversationSession
 from app.realtime.turn_commit_controller import TurnCommitController
 from app.session.repository import load_existing_session, load_session, save_session
 from app.session.session import Session
@@ -99,25 +98,6 @@ DYNAMIC_RESPONSE_KEYS = {
     "order_type_captured_delivery",
     "confirm_order_summary",
 }
-
-# Response keys emitted right after sending a checkout/payment link.
-# Any of these arms the auto-confirm timer so the agent silently probes
-# payment status ~50 s later without needing a user prompt.
-PAYMENT_LINK_SENT_KEYS: frozenset[str] = frozenset({
-    "ask_delivery_address_method",
-    "checkout_link_sent",
-    "payment_link_sent",
-})
-
-# States where an automatic payment-status probe is meaningful.
-_PAYMENT_AWAITING_STATES: frozenset[ConversationState] = frozenset({
-    ConversationState.WAITING_FOR_PAYMENT,
-    ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
-})
-
-# Seconds to wait before the first (and each repeated) auto-confirm probe.
-# Mid-point of the requested 45-60 s window.
-PAYMENT_AUTO_CHECK_DELAY_SECONDS: int = 50
 
 _WELCOME_AUDIO_BYTES_CACHE: bytes | None = None
 
@@ -568,12 +548,8 @@ async def twilio_media_ws(websocket: WebSocket):
     dg_tts_client = DeepgramTTSClient()
 
     restaurant_id = "demo"
-    app_session: Session | None = None
 
     controller = TurnCommitController()
-    phase = RealtimePhase.LISTENING
-    pending_interrupt_text: str | None = None
-    processing_lock = asyncio.Lock()
 
     active_mark_name: str | None = None
     mark_counter = 0
@@ -589,10 +565,12 @@ async def twilio_media_ws(websocket: WebSocket):
     if twilio_account_sid and twilio_auth_token:
         twilio_client = Client(twilio_account_sid, twilio_auth_token)
 
-    should_end_call_after_playback = False
-    pending_transfer_number: str | None = None
     websocket_close_requested = False
-    _payment_check_task: asyncio.Task | None = None
+
+    # ConversationSession + transport adapter are constructed below, after
+    # the local closures they wrap (``speak_response_text``,
+    # ``_interrupt_bot_playback``, etc.) are defined.
+    conv_session: ConversationSession | None = None
 
     async def _transfer_live_call(target_number: str) -> None:
         """Initiate a transfer to ``target_number`` by closing the WebSocket.
@@ -617,7 +595,11 @@ async def twilio_media_ws(websocket: WebSocket):
                 "call_sid": stream_session.call_sid,
                 "stream_sid": stream_session.stream_sid,
                 "target_number": target_number,
-                "session_state": getattr(app_session, "conversation_state", None),
+                "session_state": getattr(
+                    conv_session.app_session if conv_session else None,
+                    "conversation_state",
+                    None,
+                ),
             },
         )
         # Closing the WebSocket releases the <Connect><Stream> block.
@@ -745,9 +727,9 @@ async def twilio_media_ws(websocket: WebSocket):
         await websocket.send_text(json.dumps(message))
 
     async def _interrupt_bot_playback(reason: str) -> None:
-        nonlocal phase, active_mark_name, bot_playback_started_at, playback_generation
+        nonlocal active_mark_name, bot_playback_started_at, playback_generation
 
-        if phase != RealtimePhase.SPEAKING:
+        if conv_session is None or not conv_session.is_speaking():
             return
 
         _debug_log(
@@ -785,7 +767,7 @@ async def twilio_media_ws(websocket: WebSocket):
         active_mark_name = None
         stream_session.active_trace_mark_name = None
         bot_playback_started_at = None
-        phase = RealtimePhase.LISTENING
+        conv_session.set_phase_listening()
 
     async def _send_burst_frames(
         burst_bytes: bytes,
@@ -1003,35 +985,17 @@ async def twilio_media_ws(websocket: WebSocket):
             )
             return False
 
-    def _build_response_texts(turn_output: Any) -> tuple[str, str]:
-        internal_text = _normalize_response_text(
-            getattr(turn_output, "internal_response_text", None)
-        )
-        spoken_text = _normalize_response_text(
-            getattr(turn_output, "spoken_response_text", None)
-        )
-
-        if not internal_text:
-            raise ValueError(
-                f"TurnEngine returned empty internal_response_text for response_key="
-                f"{getattr(turn_output, 'response_key', 'unknown')}"
-            )
-
-        if not spoken_text:
-            spoken_text = internal_text
-
-        return internal_text, spoken_text
-
     async def speak_response_text(
         spoken_text: str,
         trace: RealtimeTurnTrace | None = None,
         end_call_after_playback: bool = False,
     ) -> None:
-        nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at, playback_generation, pending_transfer_number
+        nonlocal active_mark_name, mark_counter, bot_playback_started_at, playback_generation
 
         cleaned = _normalize_response_text(spoken_text)
         if not cleaned:
-            phase = RealtimePhase.LISTENING
+            if conv_session is not None:
+                conv_session.set_phase_listening()
             return
 
         if trace is not None:
@@ -1044,7 +1008,8 @@ async def twilio_media_ws(websocket: WebSocket):
         generation = 0
 
         for attempt in range(1, max_attempts + 1):
-            phase = RealtimePhase.SPEAKING
+            if conv_session is not None:
+                conv_session.set_phase_speaking()
             bot_playback_started_at = time.monotonic()
             playback_generation += 1
             generation = playback_generation
@@ -1093,31 +1058,33 @@ async def twilio_media_ws(websocket: WebSocket):
             _trace_add_note(trace, "tts_empty_audio_attempt", attempt)
 
             if attempt >= max_attempts:
-                phase = RealtimePhase.LISTENING
+                if conv_session is not None:
+                    conv_session.set_phase_listening()
                 bot_playback_started_at = None
 
-                # Transfer takes precedence over a plain hangup when both
-                # have been requested for the same turn.
-                if pending_transfer_number:
-                    target = pending_transfer_number
-                    pending_transfer_number = None
-                    await _transfer_live_call(target)
-                elif end_call_after_playback:
+                handled = False
+                if conv_session is not None:
+                    handled = await conv_session.handle_playback_failure(
+                        end_call_after_playback=end_call_after_playback,
+                    )
+                if not handled and end_call_after_playback:
                     await _end_live_call()
 
                 return
 
-            phase = RealtimePhase.LISTENING
+            if conv_session is not None:
+                conv_session.set_phase_listening()
             bot_playback_started_at = None
 
             reconnected = await _reconnect_tts_client(reason="empty_audio_retry")
             _trace_add_note(trace, "tts_empty_audio_reconnected", reconnected)
             if not reconnected:
-                if pending_transfer_number:
-                    target = pending_transfer_number
-                    pending_transfer_number = None
-                    await _transfer_live_call(target)
-                elif end_call_after_playback:
+                handled = False
+                if conv_session is not None:
+                    handled = await conv_session.handle_playback_failure(
+                        end_call_after_playback=end_call_after_playback,
+                    )
+                if not handled and end_call_after_playback:
                     await _end_live_call()
                 return
 
@@ -1134,6 +1101,9 @@ async def twilio_media_ws(websocket: WebSocket):
         # If a transfer is pending we must NOT end the call here — that
         # would tear down the leg before Twilio can dial the human agent.
         # The mark handler will perform the transfer once playback ends.
+        pending_transfer_number = (
+            conv_session.pending_transfer_number if conv_session else None
+        )
         if end_call_after_playback and not pending_transfer_number:
             _debug_log(
                 "[TWILIO CALL END AFTER PLAYBACK]",
@@ -1163,13 +1133,14 @@ async def twilio_media_ws(websocket: WebSocket):
         )
 
     async def speak_cached_welcome_audio() -> None:
-        nonlocal phase, active_mark_name, mark_counter, bot_playback_started_at, playback_generation
+        nonlocal active_mark_name, mark_counter, bot_playback_started_at, playback_generation
 
         audio_bytes = _get_welcome_audio_bytes()
         if not audio_bytes:
             raise ValueError("Welcome audio is empty.")
 
-        phase = RealtimePhase.SPEAKING
+        if conv_session is not None:
+            conv_session.set_phase_speaking()
         bot_playback_started_at = time.monotonic()
         playback_generation += 1
         generation = playback_generation
@@ -1184,7 +1155,8 @@ async def twilio_media_ws(websocket: WebSocket):
             return
 
         if streamed_bytes <= 0:
-            phase = RealtimePhase.LISTENING
+            if conv_session is not None:
+                conv_session.set_phase_listening()
             bot_playback_started_at = None
             raise ValueError("Welcome audio produced no outbound media.")
 
@@ -1203,81 +1175,23 @@ async def twilio_media_ws(websocket: WebSocket):
             },
         )
 
-    async def _schedule_payment_auto_check() -> None:
-        """Arm (or re-arm) a background timer that probes payment status.
+    class _TwilioVoiceTransport:
+        """Adapter exposing the WebSocket-handler closures to
+        :class:`ConversationSession` via the
+        :class:`app.realtime.voice_transport.VoiceTransport` interface.
 
-        Fires once after PAYMENT_AUTO_CHECK_DELAY_SECONDS of silence and
-        silently re-arms itself while the order is still unpaid, so the
-        agent keeps checking every ~50 s until payment clears or the call
-        ends.  Cancelled automatically when the WebSocket closes.
+        Holds no state of its own; every method delegates to the local
+        closure variables of ``twilio_media_ws`` so the conversation
+        layer remains transport-agnostic.
         """
-        nonlocal _payment_check_task
 
-        if _payment_check_task is not None and not _payment_check_task.done():
-            _payment_check_task.cancel()
+        def is_barge_in_disabled(self) -> bool:
+            return disable_barge_in
 
-        async def _probe() -> None:
-            try:
-                await asyncio.sleep(PAYMENT_AUTO_CHECK_DELAY_SECONDS)
-            except asyncio.CancelledError:
-                return
-            # Only probe when the call is idle and still in a payment state.
-            if (
-                app_session is None
-                or app_session.conversation_state not in _PAYMENT_AWAITING_STATES
-                or phase != RealtimePhase.LISTENING
-            ):
-                return
-            await process_committed_turn("__auto_payment_check__")
-            # Re-arm if payment is still pending after the probe.
-            if (
-                app_session is not None
-                and app_session.conversation_state in _PAYMENT_AWAITING_STATES
-            ):
-                await _schedule_payment_auto_check()
+        def debug_log(self, event: str, payload: dict[str, Any]) -> None:
+            _debug_log(event, payload)
 
-        _payment_check_task = asyncio.create_task(_probe())
-
-    async def process_committed_turn(user_text: str) -> None:
-        nonlocal phase, pending_interrupt_text, app_session, should_end_call_after_playback, pending_transfer_number
-
-        if app_session is None:
-            return
-
-        cleaned = " ".join(user_text.split()).strip()
-        if not cleaned:
-            return
-
-        if phase == RealtimePhase.SPEAKING:
-            if disable_barge_in:
-                return
-
-            if not is_actionable_barge_in(app_session, cleaned):
-                _debug_log(
-                    "[BARGE IN IGNORED]",
-                    {
-                        "stream_sid": stream_session.stream_sid,
-                        "state": getattr(app_session, "conversation_state", None),
-                        "text": cleaned,
-                    },
-                )
-                return
-
-            await _interrupt_bot_playback(reason="actionable_user_turn")
-
-        if phase == RealtimePhase.PROCESSING:
-            pending_interrupt_text = cleaned
-            _debug_log(
-                "[INTERRUPT BUFFERED]",
-                {
-                    "stream_sid": stream_session.stream_sid,
-                    "text": cleaned,
-                },
-            )
-            return
-
-        async with processing_lock:
-            phase = RealtimePhase.PROCESSING
+        def begin_turn_trace(self, *, user_text: str) -> RealtimeTurnTrace | None:
             stream_session.turn_index += 1
 
             if stream_session.active_trace is not None:
@@ -1288,81 +1202,64 @@ async def twilio_media_ws(websocket: WebSocket):
                     reset_utterance_tracking=False,
                 )
 
+            if conv_session is None or conv_session.app_session is None:
+                return None
+
             trace = _build_turn_trace(
                 stream_session=stream_session,
-                app_session=app_session,
-                user_text=cleaned,
+                app_session=conv_session.app_session,
+                user_text=user_text,
             )
             stream_session.active_trace = trace
+            return trace
 
-            turn_output = app.state.engine.process_turn(
-                session=app_session,
-                user_text=cleaned,
-                trace=trace,
-            )
-
-            save_session(app_session)
-
-            _trace_set_attr(trace, "responder_start_monotonic", time.perf_counter())
-            internal_response_text, spoken_response_text = _build_response_texts(turn_output)
-            _trace_set_attr(trace, "responder_end_monotonic", time.perf_counter())
-            _trace_set_attr(trace, "response_key", turn_output.response_key)
+        def annotate_response_trace(
+            self,
+            trace: RealtimeTurnTrace | None,
+            *,
+            responder_start_monotonic: float | None,
+            responder_end_monotonic: float | None,
+            response_key: str,
+            internal_response_text: str,
+            spoken_response_text: str,
+            end_call_after_playback: bool,
+        ) -> None:
+            if trace is None:
+                return
+            _trace_set_attr(trace, "responder_start_monotonic", responder_start_monotonic)
+            _trace_set_attr(trace, "responder_end_monotonic", responder_end_monotonic)
+            _trace_set_attr(trace, "response_key", response_key)
             _trace_set_attr(trace, "response_text", internal_response_text)
             _trace_set_attr(trace, "spoken_response_text", spoken_response_text)
-            _trace_set_attr(
-                trace,
-                "end_call_after_playback",
-                bool(getattr(turn_output, "end_call_after_playback", False)),
-            )
+            _trace_set_attr(trace, "end_call_after_playback", bool(end_call_after_playback))
 
-            should_end_call_after_playback = bool(
-                getattr(turn_output, "end_call_after_playback", False)
-            )
-            pending_transfer_number = (
-                getattr(turn_output, "transfer_call_to_number", None) or None
-            )
-
-            print(
-                "[TURN OUTPUT]",
-                {
-                    "response_key": turn_output.response_key,
-                    "session_state": getattr(app_session, "conversation_state", None),
-                    "end_call_after_playback": should_end_call_after_playback,
-                    "pending_transfer_number": pending_transfer_number,
-                },
-            )
-
-            if pending_transfer_number:
-                target = pending_transfer_number
-                pending_transfer_number = None
-                should_end_call_after_playback = False
-                print(
-                    "[TURN OUTPUT] Initiating immediate transfer handoff",
-                    {
-                        "target": target,
-                        "call_sid": stream_session.call_sid,
-                    },
-                )
-                await _transfer_live_call(target)
-                return
-
+        async def speak_response(
+            self,
+            spoken_text: str,
+            *,
+            trace: RealtimeTurnTrace | None,
+            end_call_after_playback: bool,
+        ) -> None:
             await speak_response_text(
-                spoken_response_text,
+                spoken_text,
                 trace=trace,
-                end_call_after_playback=should_end_call_after_playback,
+                end_call_after_playback=end_call_after_playback,
             )
 
-            # Arm the silent auto-confirm probe when a payment/checkout
-            # link has just been spoken.  The probe fires after
-            # PAYMENT_AUTO_CHECK_DELAY_SECONDS and re-arms itself while
-            # the order remains unpaid — no user input required.
-            if turn_output.response_key in PAYMENT_LINK_SENT_KEYS:
-                await _schedule_payment_auto_check()
+        async def interrupt_playback(self, reason: str) -> None:
+            await _interrupt_bot_playback(reason)
 
-            if pending_interrupt_text and phase == RealtimePhase.LISTENING:
-                buffered = pending_interrupt_text
-                pending_interrupt_text = None
-                await process_committed_turn(buffered)
+        async def transfer_call(self, target_number: str) -> None:
+            await _transfer_live_call(target_number)
+
+        async def end_call(self) -> None:
+            await _end_live_call()
+
+    conv_session = ConversationSession(
+        app_session=None,
+        engine=app.state.engine,
+        transport=_TwilioVoiceTransport(),
+    )
 
     async def on_dg_transcript(transcript: str, is_final: bool, payload: dict) -> None:
         committed = controller.on_transcript(transcript, is_final)
@@ -1371,18 +1268,16 @@ async def twilio_media_ws(websocket: WebSocket):
             stream_session.last_dg_final_transcript_monotonic = time.perf_counter()
 
         if committed is not None:
-            await process_committed_turn(committed.text)
+            await conv_session.process_committed_turn(committed.text)
             return
 
         speech_final = bool(payload.get("speech_final", False))
         if speech_final:
             committed = controller.on_speech_final()
             if committed is not None:
-                await process_committed_turn(committed.text)
+                await conv_session.process_committed_turn(committed.text)
 
     async def on_dg_event(name: str, payload: dict) -> None:
-        nonlocal phase, bot_playback_started_at
-
         if name == "message:SpeechStarted":
             controller.on_speech_started()
             now = time.perf_counter()
@@ -1392,7 +1287,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 stream_session.current_utterance_first_media_monotonic = now
             stream_session.current_utterance_last_media_monotonic = now
 
-            if phase == RealtimePhase.SPEAKING:
+            if conv_session.is_speaking():
                 if disable_barge_in:
                     return
 
@@ -1407,7 +1302,7 @@ async def twilio_media_ws(websocket: WebSocket):
         elif name == "message:UtteranceEnd":
             committed = controller.on_utterance_end()
             if committed is not None:
-                await process_committed_turn(committed.text)
+                await conv_session.process_committed_turn(committed.text)
 
     async def on_dg_error(name: str, payload: dict) -> None:
         print(
@@ -1494,7 +1389,10 @@ async def twilio_media_ws(websocket: WebSocket):
                 )
 
                 if stream_session.call_sid:
-                    app_session = load_session(stream_session.call_sid, restaurant_id)
+                    conv_session.load_app_session(
+                        stream_session.call_sid,
+                        restaurant_id,
+                    )
 
                 dg_stt_client = DeepgramSTTClient(
                     config=DeepgramSTTConfig(
@@ -1552,7 +1450,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 stream_session.inbound_audio_bytes += len(audio_bytes)
 
                 now = time.perf_counter()
-                if phase in {RealtimePhase.LISTENING, RealtimePhase.PROCESSING}:
+                if conv_session.is_listening() or conv_session.is_processing():
                     if stream_session.current_utterance_first_media_monotonic is None:
                         stream_session.current_utterance_first_media_monotonic = now
                     stream_session.current_utterance_last_media_monotonic = now
@@ -1581,41 +1479,23 @@ async def twilio_media_ws(websocket: WebSocket):
                             utc_now_iso(),
                         )
 
-                    if phase == RealtimePhase.SPEAKING:
-                        phase = RealtimePhase.LISTENING
-
                     _finalize_active_trace(app=app, stream_session=stream_session)
 
                     print(
                         "[MARK HANDLER]",
                         {
                             "mark_name": mark_name,
-                            "pending_transfer_number": pending_transfer_number,
-                            "should_end_call_after_playback": should_end_call_after_playback,
-                            "session_state": getattr(app_session, "conversation_state", None),
+                            "pending_transfer_number": conv_session.pending_transfer_number,
+                            "should_end_call_after_playback": conv_session.should_end_call_after_playback,
+                            "session_state": getattr(
+                                conv_session.app_session,
+                                "conversation_state",
+                                None,
+                            ),
                         },
                     )
 
-                    if pending_transfer_number:
-                        target = pending_transfer_number
-                        pending_transfer_number = None
-                        should_end_call_after_playback = False
-                        print(
-                            "[MARK HANDLER] Triggering transfer",
-                            {"target": target},
-                        )
-                        await _transfer_live_call(target)
-                        continue
-
-                    if should_end_call_after_playback:
-                        should_end_call_after_playback = False
-                        await _end_live_call()
-                        continue
-
-                    if pending_interrupt_text:
-                        buffered = pending_interrupt_text
-                        pending_interrupt_text = None
-                        await process_committed_turn(buffered)
+                    await conv_session.on_playback_completed()
 
             elif event == "stop":
                 print(
@@ -1638,8 +1518,7 @@ async def twilio_media_ws(websocket: WebSocket):
         if stream_session.active_trace is not None:
             _finalize_active_trace(app=app, stream_session=stream_session)
     finally:
-        if _payment_check_task is not None and not _payment_check_task.done():
-            _payment_check_task.cancel()
+        await conv_session.cancel_payment_auto_check()
         if dg_stt_client is not None:
             await dg_stt_client.close()
         await dg_tts_client.close()
@@ -1654,3 +1533,4 @@ if __name__ == "__main__":
         port=5000,
         reload=False,
     )
+

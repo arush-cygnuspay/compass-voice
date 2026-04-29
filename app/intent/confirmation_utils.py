@@ -21,6 +21,14 @@ _LEADING_FILLERS: tuple[str, ...] = (
     "uh",
     "um",
     "hmm",
+    # Align with control_intent_resolver so candidates like "yeah go ahead"
+    # strip to "go ahead" before set-membership matching.
+    "okay",
+    "ok",
+    "yeah",
+    "yep",
+    "yup",
+    "yes",
 )
 _TRAILING_FILLERS: tuple[str, ...] = (
     "please",
@@ -177,25 +185,25 @@ def _decision_from_classifier_label(
     if not label:
         return "unknown"
 
-    normalized = normalize_text(label)
+    # Normalise to space-separated lowercase so both "cancel_order" and
+    # "cancel order" reach the same comparison bucket.  Do NOT use
+    # normalize_text here because that strips underscores via the punctuation
+    # translation table, turning "cancel_order" into "cancelorder".
+    normalized = label.lower().strip().replace("_", " ").replace("-", " ")
+    normalized = " ".join(normalized.split())
     if not normalized:
         return "unknown"
 
-    if normalized in {Intent.AFFIRM.value, Intent.CONFIRM.value, "affirm", "confirm"}:
+    if normalized in {"affirm", "confirm"}:
         return "affirm"
 
-    if expect_confirmation and normalized in {Intent.CONFIRM_ORDER.value, "confirm order"}:
+    if expect_confirmation and normalized in {"confirm order"}:
         return "affirm"
 
-    if normalized in {Intent.DENY.value, "deny"}:
+    if normalized in {"deny"}:
         return "deny"
 
-    if normalized in {
-        Intent.CANCEL.value,
-        Intent.CANCEL_ORDER.value,
-        "cancel",
-        "cancel order",
-    }:
+    if normalized in {"cancel", "cancel order"}:
         return "cancel"
 
     return "unknown"
@@ -210,29 +218,17 @@ def _fallback_phrase_decision(
     if not candidates:
         return "unknown"
 
-    if any(
-        candidate in _CANCEL_PHRASES or any(phrase in candidate for phrase in _CANCEL_PHRASES)
-        for candidate in candidates
-    ):
+    if any(candidate in _CANCEL_PHRASES for candidate in candidates):
         return "cancel"
 
-    if any(
-        candidate in _DENY_PHRASES or any(phrase in candidate for phrase in _DENY_PHRASES)
-        for candidate in candidates
-    ):
+    if any(candidate in _DENY_PHRASES for candidate in candidates):
         return "deny"
 
-    if any(
-        candidate in _STRONG_AFFIRM_PHRASES
-        or any(phrase in candidate for phrase in _STRONG_AFFIRM_PHRASES)
-        for candidate in candidates
-    ):
+    if any(candidate in _STRONG_AFFIRM_PHRASES for candidate in candidates):
         return "affirm"
 
     if expect_confirmation and any(
-        candidate in _WEAK_AFFIRM_PHRASES
-        or any(phrase in candidate for phrase in _WEAK_AFFIRM_PHRASES)
-        for candidate in candidates
+        candidate in _WEAK_AFFIRM_PHRASES for candidate in candidates
     ):
         return "affirm"
 

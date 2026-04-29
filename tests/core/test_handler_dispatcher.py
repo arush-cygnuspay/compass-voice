@@ -45,10 +45,6 @@ from app.menu.store import MenuStore
 from app.services.checkout_service import CheckoutService
 
 
-class _StubLogger:
-    enabled = False
-
-
 class _StubSmsService:
     def is_configured(self):
         return False
@@ -74,11 +70,7 @@ def _build_dispatcher() -> HandlerDispatcher:
         checkout_service=CheckoutService(),
         responder=ResponseBuilder(menu_repo),
         command_executor=CommandExecutor(sms),
-        diagnostics=TurnDiagnostics(
-            menu_repo=menu_repo,
-            nlu_logger=_StubLogger(),
-            responder=ResponseBuilder(menu_repo),
-        ),
+        diagnostics=TurnDiagnostics(backends=[]),
     )
 
 

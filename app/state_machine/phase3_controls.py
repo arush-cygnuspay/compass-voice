@@ -1,6 +1,9 @@
 # app/state_machine/phase3_controls.py
 from __future__ import annotations
 
+from app.nlu.control_decision_service import DEFAULT_SERVICE as _control_service
+from app.nlu.intent_resolution.intent import Intent
+from app.nlu.nlu_result import NLUResult
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 
 
@@ -52,31 +55,6 @@ _RESEND_LINK_PHRASES: tuple[str, ...] = (
     "resend it",
 )
 
-_AGENT_REQUEST_PHRASES: tuple[str, ...] = (
-    "agent",
-    "operator",
-    "person",
-    "human",
-    "team member",
-    "representative",
-    "customer service",
-    "connect me to a person",
-    "connect me to someone",
-    "let me talk to someone",
-    "i need a person",
-    "i need an agent",
-)
-
-_STUCK_PHRASES: tuple[str, ...] = (
-    "im stuck",
-    "i am stuck",
-    "this isnt working",
-    "this is not working",
-    "not working",
-    "having trouble",
-    "not helping",
-)
-
 _RESTART_ITEM_PHRASES: tuple[str, ...] = (
     "start over",
     "restart this item",
@@ -125,14 +103,21 @@ def detect_payment_wait_mode_choice(text: str) -> str | None:
     return None
 
 
-def is_live_agent_request(text: str) -> bool:
-    normalized = normalized_control_text(text)
-    if not normalized:
-        return False
-    return _contains_any(normalized, _AGENT_REQUEST_PHRASES) or _contains_any(
-        normalized,
-        _STUCK_PHRASES,
-    )
+def is_live_agent_request(
+    text: str,
+    nlu_result: NLUResult | None = None,
+) -> bool:
+    """Return True when *text* (optionally with *nlu_result*) signals a live-agent transfer.
+
+    Resolution order:
+    1. NLU intent Intent.REQUEST_AGENT above confidence threshold.
+    2. Phrase fallback via FallbackPhraseMatcher (logs fallback_hit for retraining).
+
+    The *nlu_result* parameter is optional for backward-compatibility with
+    call sites that do not yet pass an NLU result.
+    """
+    decision = _control_service.resolve_agent_request(text, nlu_result)
+    return decision.intent == Intent.REQUEST_AGENT
 
 
 def is_restart_item_request(text: str) -> bool:
