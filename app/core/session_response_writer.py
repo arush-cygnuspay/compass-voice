@@ -4,11 +4,6 @@ Owns the writes to ``Session`` that record the final ``response_key`` /
 ``response_payload`` for a turn, and constructs the ``TurnOutput``
 that the transport layer consumes. Behavior moved verbatim from
 ``turn_engine.py``.
-
-The private static ``_is_payment_pending_response`` helper is duplicated
-here so that ``_apply_session_response`` can call it without a
-dependency on ``PaymentFlowOrchestrator`` (which will own the canonical
-copy in a later commit). Both copies must remain identical.
 """
 from __future__ import annotations
 
@@ -17,6 +12,7 @@ from typing import Any
 
 from typing import TYPE_CHECKING
 
+from app.core.payment_response_classifier import PaymentResponseClassifier
 from app.core.response_builder import ResponseBuilder
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
@@ -33,21 +29,6 @@ class SessionResponseWriter:
     def __init__(self, responder: ResponseBuilder, menu_repo: MenuRepository) -> None:
         self.responder = responder
         self.menu_repo = menu_repo
-
-    @staticmethod
-    def _is_payment_pending_response(
-        *,
-        state: ConversationState,
-        response_key: str,
-    ) -> bool:
-        if state == ConversationState.WAITING_FOR_PAYMENT:
-            return response_key in {"waiting_for_payment", "payment_not_confirmed_yet"}
-        if state == ConversationState.WAITING_FOR_CHECKOUT_COMPLETION:
-            return response_key in {
-                "waiting_for_checkout_completion",
-                "payment_not_confirmed_yet",
-            }
-        return False
 
     def _apply_session_response(
         self,
@@ -66,7 +47,7 @@ class SessionResponseWriter:
 
         delivery = getattr(session.conversation_context, "delivery_address", None)
         if delivery is not None:
-            if self._is_payment_pending_response(
+            if PaymentResponseClassifier.is_payment_pending_response(
                 state=session.conversation_state,
                 response_key=response_key,
             ):
