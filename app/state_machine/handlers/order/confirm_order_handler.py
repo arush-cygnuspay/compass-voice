@@ -223,10 +223,10 @@ class ConfirmOrderHandler(BaseHandler):
                     return self._build_payment_link_result(session, context)
 
                 if not delivery.area or not delivery.postal_code:
-                    context.current_prompt_field = "delivery_area"
                     return HandlerResult(
                         next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
                         response_key="ask_for_delivery_area",
+                        prompt_field="delivery_area",
                     )
 
                 can_use_checkout_link = (
@@ -279,7 +279,6 @@ class ConfirmOrderHandler(BaseHandler):
                     )
 
                 delivery.source = "voice"
-                context.current_prompt_field = "delivery_house_number"
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
                     response_key="checkout_link_unavailable_fallback_voice",
@@ -287,6 +286,7 @@ class ConfirmOrderHandler(BaseHandler):
                         "area": delivery.area,
                         "postal_code": delivery.postal_code,
                     },
+                    prompt_field="delivery_house_number",
                 )
 
             delivery.source = delivery.source or "voice"

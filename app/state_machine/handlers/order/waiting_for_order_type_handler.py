@@ -89,12 +89,12 @@ class WaitingForOrderTypeHandler(BaseHandler):
 
         context.delivery_address.reset_for_new_delivery()
         context.onboarding_complete = False
-        context.current_prompt_field = "delivery_area"
 
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
             response_key="ask_for_delivery_area",
             response_payload={"order_type": "delivery"},
+            prompt_field="delivery_area",
         )
 
     def _resolve_order_type(self, text: str) -> str | None:

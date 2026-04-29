@@ -316,18 +316,17 @@ class WaitingForSideHandler(BaseHandler):
             )
 
         if intent in SOFT_SWITCH_INTENTS:
-            context.awaiting_flow_confirmation = True
             context.return_state = ConversationState.WAITING_FOR_SIDE
-            context.interrupt_proposal = InterruptProposal(
-                text=normalized_user_text,
-                predicted_main_intent=None,
-                predicted_sub_intent=intent.value,
-            )
-
             return HandlerResult(
                 next_state=ConversationState.CANCELLATION_CONFIRMATION,
                 response_key="confirm_cancel_current_item_for_new_request",
                 response_payload={"item_name": pending.item_name},
+                awaiting_flow_confirmation=True,
+                interrupt_proposal=InterruptProposal(
+                    text=normalized_user_text,
+                    predicted_main_intent=None,
+                    predicted_sub_intent=intent.value,
+                ),
             )
 
         return HandlerResult(

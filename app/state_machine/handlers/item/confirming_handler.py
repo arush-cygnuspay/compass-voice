@@ -274,18 +274,17 @@ class ConfirmingHandler(BaseHandler):
             if intent in SOFT_SWITCH_INTENTS:
                 item_name = confirmation.get("value_name") or "this item"
 
-                context.awaiting_flow_confirmation = True
                 context.return_state = ConversationState.CONFIRMING_ITEM
-                context.interrupt_proposal = InterruptProposal(
-                    text=user_text,
-                    predicted_main_intent=None,
-                    predicted_sub_intent=intent.value,
-                )
-
                 return HandlerResult(
                     next_state=ConversationState.CANCELLATION_CONFIRMATION,
                     response_key="confirm_cancel_current_item_for_new_request",
                     response_payload={"item_name": item_name},
+                    awaiting_flow_confirmation=True,
+                    interrupt_proposal=InterruptProposal(
+                        text=user_text,
+                        predicted_main_intent=None,
+                        predicted_sub_intent=intent.value,
+                    ),
                 )
 
             matched_selected = self._resolve_selected_candidate_reaffirmation(
@@ -487,9 +486,6 @@ class ConfirmingHandler(BaseHandler):
         context.current_item_id = item.item_id
         context.current_item_name = item.name
         context.candidate_item_id = item.item_id
-        context.awaiting_confirmation_for = None
-        context.awaiting_flow_confirmation = False
-        context.interrupt_proposal = None
         context.pending_add_item = build_pending_add_item(item)
 
         step = determine_next_add_item_step(context)
