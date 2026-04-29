@@ -98,13 +98,15 @@ class StubSmsService:
         return self.configured
 
     def send(self, request):
+        from app.services.sms_exceptions import PermanentSmsError
+        from app.services.sms_service import SmsSendResult
         self.requests.append(request)
-        return SimpleNamespace(
-            ok=self.configured,
-            sid="SM-TEST" if self.configured else None,
-            error_code=None if self.configured else "not_configured",
-            error_message=None if self.configured else "not configured",
-        )
+        if not self.configured:
+            raise PermanentSmsError(
+                "Twilio SMS is not configured.",
+                error_code="sms_not_configured",
+            )
+        return SmsSendResult(ok=True, sid="SM-TEST")
 
 
 class StubCheckoutService:

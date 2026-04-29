@@ -23,7 +23,12 @@ from typing import Any, Callable
 
 from app.realtime.barge_in_policy import is_actionable_barge_in
 from app.realtime.realtime_conversation_state import RealtimePhase
+from app.realtime.tts_exceptions import TTSFailureError
 from app.realtime.voice_transport import VoiceTransport
+from app.services.payment_auto_check_scheduler import (
+    PaymentAutoCheckConfig,
+    PaymentAutoCheckScheduler,
+)
 from app.session.repository import (
     load_session as _default_load_session,
     save_session as _default_save_session,
@@ -46,9 +51,9 @@ PAYMENT_AWAITING_STATES: frozenset[ConversationState] = frozenset({
     ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
 })
 
-# Seconds to wait before the first (and each repeated) auto-confirm probe.
-# Mid-point of the requested 45-60 s window.
-PAYMENT_AUTO_CHECK_DELAY_SECONDS: int = 50
+# Initial delay before the first auto-confirm probe.  Subsequent probes
+# use exponential backoff (see PaymentAutoCheckConfig).
+PAYMENT_AUTO_CHECK_DELAY_SECONDS: int = 30
 
 AUTO_PAYMENT_CHECK_TEXT = "__auto_payment_check__"
 
@@ -107,14 +112,32 @@ class ConversationSession:
         self.transport = transport
         self._save_session_fn = save_session_fn
         self._load_session_fn = load_session_fn
-        self._payment_auto_check_delay_seconds = payment_auto_check_delay_seconds
 
         self.phase: RealtimePhase = RealtimePhase.LISTENING
         self.pending_interrupt_text: str | None = None
         self._processing_lock = asyncio.Lock()
-        self._payment_check_task: asyncio.Task | None = None
         self.should_end_call_after_playback = False
         self.pending_transfer_number: str | None = None
+
+        async def _payment_probe() -> bool:
+            if (
+                self.app_session is None
+                or self.app_session.conversation_state not in PAYMENT_AWAITING_STATES
+            ):
+                return False
+            await self.process_committed_turn(AUTO_PAYMENT_CHECK_TEXT)
+            return (
+                self.app_session is not None
+                and self.app_session.conversation_state in PAYMENT_AWAITING_STATES
+            )
+
+        self._payment_scheduler = PaymentAutoCheckScheduler(
+            get_phase=lambda: self.phase,
+            dispatch_probe=_payment_probe,
+            config=PaymentAutoCheckConfig(
+                initial_delay=payment_auto_check_delay_seconds,
+            ),
+        )
 
     # ------------------------------------------------------------------ phase
     def set_phase_listening(self) -> None:
@@ -150,45 +173,29 @@ class ConversationSession:
         return self.app_session
 
     # ---------------------------------------------------- payment auto-check
+
+    @property
+    def _payment_check_task(self) -> asyncio.Task | None:
+        """Compatibility shim: exposes the scheduler's live task for tests."""
+        state = self._payment_scheduler.state
+        return state.task if state is not None else None
+
     async def cancel_payment_auto_check(self) -> None:
-        task = self._payment_check_task
-        if task is not None and not task.done():
-            task.cancel()
-        self._payment_check_task = None
+        self._payment_scheduler.cancel()
 
     async def schedule_payment_auto_check(self) -> None:
-        """Arm (or re-arm) a background timer that probes payment status.
+        """Arm the payment auto-check scheduler (single-flight, idempotent).
 
-        Fires once after ``payment_auto_check_delay_seconds`` of silence
-        and silently re-arms itself while the order is still unpaid, so
-        the agent keeps checking every ~50 s until payment clears or the
-        call ends.  Cancelled automatically when the WebSocket closes.
+        Starts exponential-backoff probing after the configured initial
+        delay.  Calling this while probing is already active is a no-op,
+        so it is safe to call unconditionally after each payment-link
+        response.  The scheduler stops automatically when:
+        * the probe returns False (payment confirmed / session gone), or
+        * the maximum attempt count is reached (escalation).
+        Cancelled explicitly when the WebSocket closes via
+        ``cancel_payment_auto_check()``.
         """
-        if self._payment_check_task is not None and not self._payment_check_task.done():
-            self._payment_check_task.cancel()
-
-        self._payment_check_task = asyncio.create_task(self._run_payment_auto_check())
-
-    async def _run_payment_auto_check(self) -> None:
-        try:
-            await asyncio.sleep(self._payment_auto_check_delay_seconds)
-        except asyncio.CancelledError:
-            return
-
-        if (
-            self.app_session is None
-            or self.app_session.conversation_state not in PAYMENT_AWAITING_STATES
-            or self.phase != RealtimePhase.LISTENING
-        ):
-            return
-
-        await self.process_committed_turn(AUTO_PAYMENT_CHECK_TEXT)
-
-        if (
-            self.app_session is not None
-            and self.app_session.conversation_state in PAYMENT_AWAITING_STATES
-        ):
-            await self.schedule_payment_auto_check()
+        self._payment_scheduler.schedule()
 
     # ----------------------------------------------------- committed turns
     async def process_committed_turn(self, user_text: str) -> None:
@@ -289,16 +296,32 @@ class ConversationSession:
                 await self.transport.transfer_call(target)
                 return
 
-            await self.transport.speak_response(
-                spoken_response_text,
-                trace=trace,
-                end_call_after_playback=self.should_end_call_after_playback,
-            )
+            try:
+                await self.transport.speak_response(
+                    spoken_response_text,
+                    trace=trace,
+                    end_call_after_playback=self.should_end_call_after_playback,
+                )
+            except TTSFailureError as exc:
+                print(
+                    "[TTS_FAILURE_HANDLED]",
+                    {
+                        "attempts": exc.attempts,
+                        "provider": exc.provider,
+                        "error": str(exc),
+                    },
+                )
+                handled = await self.handle_playback_failure(
+                    end_call_after_playback=self.should_end_call_after_playback,
+                )
+                if not handled:
+                    # No pending transfer/end-call flag — end gracefully to
+                    # prevent the caller from sitting in silence.
+                    await self.transport.end_call()
+                return
 
-            # Arm the silent auto-confirm probe when a payment/checkout
-            # link has just been spoken.  The probe fires after
-            # ``payment_auto_check_delay_seconds`` and re-arms itself
-            # while the order remains unpaid — no user input required.
+            # Arm the single-flight payment probe when a checkout/payment
+            # link has just been spoken.  No-op if already scheduled.
             if turn_output.response_key in PAYMENT_LINK_SENT_KEYS:
                 await self.schedule_payment_auto_check()
 

@@ -49,7 +49,16 @@ class VoiceTransport(Protocol):
         *,
         trace: Any | None,
         end_call_after_playback: bool,
-    ) -> None: ...
+    ) -> None:
+        """Synthesise and stream ``spoken_text`` to the caller.
+
+        Raises:
+            TTSFailureError: All synthesis retry attempts were exhausted
+                without producing audio.  The caller must apply a fallback
+                (transfer or graceful end-call) rather than returning to
+                LISTENING.
+        """
+        ...
 
     async def interrupt_playback(self, reason: str) -> None: ...
 
