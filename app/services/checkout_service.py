@@ -16,6 +16,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import json
 
+from app.config.payment import get_payment_config
 from app.models.checkout_session import CheckoutSession
 from app.models.payment_link_session import PaymentLinkSession
 from app.repositories.checkout_session_repository import (
@@ -46,53 +47,48 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Module-level constants — kept here so tests can patch them via
 #   patch.object(checkout_service_module, "CHECKOUT_DATA_DIR", ...)
+# Sourced from PaymentConfig; this module no longer calls os.getenv directly.
 # ---------------------------------------------------------------------------
 
-PAYMENT_POLL_INTERVAL_SECONDS = float(os.getenv("COMPASS_PAYMENT_POLL_INTERVAL", "6"))
-PAYMENT_POLL_MAX_DURATION_SECONDS = float(
-    os.getenv("COMPASS_PAYMENT_POLL_MAX_DURATION", "900")
-)
+def _init_module_constants() -> None:
+    global PAYMENT_POLL_INTERVAL_SECONDS, PAYMENT_POLL_MAX_DURATION_SECONDS
+    global CHECKOUT_DATA_DIR, PAYMENT_LINK_SESSION_DATA_DIR
+    global CHECKOUT_INDEX_DIR, CHECKOUT_ORDER_INDEX_DIR
+    global PAYMENT_LINK_INDEX_DIR, PAYMENT_LINK_BY_CHECKOUT_INDEX_DIR
+    global PAYMENT_LINK_BY_REQUEST_INDEX_DIR
+    global PUBLIC_CHECKOUT_BASE_URL, REVERSE_GEOCODE_URL, REVERSE_GEOCODE_USER_AGENT
+    cfg = get_payment_config()
 
-CHECKOUT_DATA_DIR = Path(
-    os.getenv("COMPASS_CHECKOUT_DATA_DIR", "app/data/checkout_sessions")
-)
-CHECKOUT_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PAYMENT_POLL_INTERVAL_SECONDS = cfg.payment_poll_interval_seconds
+    PAYMENT_POLL_MAX_DURATION_SECONDS = cfg.payment_poll_max_duration_seconds
 
-PAYMENT_LINK_SESSION_DATA_DIR = Path(
-    os.getenv("COMPASS_PAYMENT_LINK_SESSION_DATA_DIR", "app/data/payment_link_sessions")
-)
-PAYMENT_LINK_SESSION_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    CHECKOUT_DATA_DIR = cfg.checkout_data_dir
+    CHECKOUT_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-# These derived constants are kept so existing test patches remain valid.
-# CheckoutSessionRepository computes them from the root dirs at init time.
-CHECKOUT_INDEX_DIR = CHECKOUT_DATA_DIR / "_indexes"
-CHECKOUT_ORDER_INDEX_DIR = CHECKOUT_INDEX_DIR / "by_order_number"
-PAYMENT_LINK_INDEX_DIR = PAYMENT_LINK_SESSION_DATA_DIR / "_indexes"
-PAYMENT_LINK_BY_CHECKOUT_INDEX_DIR = PAYMENT_LINK_INDEX_DIR / "latest_by_checkout_token"
-PAYMENT_LINK_BY_REQUEST_INDEX_DIR = PAYMENT_LINK_INDEX_DIR / "by_request_id"
+    PAYMENT_LINK_SESSION_DATA_DIR = cfg.payment_link_session_data_dir
+    PAYMENT_LINK_SESSION_DATA_DIR.mkdir(parents=True, exist_ok=True)
 
-for _directory in (
-    CHECKOUT_INDEX_DIR,
-    CHECKOUT_ORDER_INDEX_DIR,
-    PAYMENT_LINK_INDEX_DIR,
-    PAYMENT_LINK_BY_CHECKOUT_INDEX_DIR,
-    PAYMENT_LINK_BY_REQUEST_INDEX_DIR,
-):
-    _directory.mkdir(parents=True, exist_ok=True)
+    CHECKOUT_INDEX_DIR = CHECKOUT_DATA_DIR / "_indexes"
+    CHECKOUT_ORDER_INDEX_DIR = CHECKOUT_INDEX_DIR / "by_order_number"
+    PAYMENT_LINK_INDEX_DIR = PAYMENT_LINK_SESSION_DATA_DIR / "_indexes"
+    PAYMENT_LINK_BY_CHECKOUT_INDEX_DIR = PAYMENT_LINK_INDEX_DIR / "latest_by_checkout_token"
+    PAYMENT_LINK_BY_REQUEST_INDEX_DIR = PAYMENT_LINK_INDEX_DIR / "by_request_id"
 
-PUBLIC_CHECKOUT_BASE_URL = os.getenv(
-    "COMPASS_PUBLIC_CHECKOUT_BASE_URL",
-    "https://65dd-2407-aa80-116-319-88f6-6b6d-ed8b-deaa.ngrok-free.app/checkout",
-).rstrip("/")
+    for _directory in (
+        CHECKOUT_INDEX_DIR,
+        CHECKOUT_ORDER_INDEX_DIR,
+        PAYMENT_LINK_INDEX_DIR,
+        PAYMENT_LINK_BY_CHECKOUT_INDEX_DIR,
+        PAYMENT_LINK_BY_REQUEST_INDEX_DIR,
+    ):
+        _directory.mkdir(parents=True, exist_ok=True)
 
-REVERSE_GEOCODE_URL = os.getenv(
-    "COMPASS_REVERSE_GEOCODE_URL",
-    "https://nominatim.openstreetmap.org/reverse",
-).strip()
-REVERSE_GEOCODE_USER_AGENT = os.getenv(
-    "COMPASS_REVERSE_GEOCODE_USER_AGENT",
-    "CompassCheckout/1.0 (support@cygnuspayments.com)",
-).strip()
+    PUBLIC_CHECKOUT_BASE_URL = cfg.public_checkout_base_url
+    REVERSE_GEOCODE_URL = cfg.reverse_geocode_url
+    REVERSE_GEOCODE_USER_AGENT = cfg.reverse_geocode_user_agent
+
+
+_init_module_constants()
 
 RESTAURANT_DATA_ROOT = Path("app/data/restaurants")
 

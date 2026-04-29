@@ -1,73 +1,15 @@
-# app/state_machine/flow_sets.py
-"""
-Centralized intent and state sets used across the FSM.
+# app/state_machine/flow_sets/intent_policy.py
+"""Intent behavior policy and group-selection signal sets.
 
-All handler-level intent/state allowlists should import from here.
-This file is the SINGLE SOURCE OF TRUTH for:
-- Which intents trigger a soft-switch (interruption confirmation) in waiting states
-- Which intents mean "done with current group" vs "done with entire order"
-- Which intents are allowed through gating during delivery/waiting states
-- Which phrases signal done/skip/more-options in group selection
+Import from here — or from the parent package ``app.state_machine.flow_sets`` —
+to get intent groupings and phrase-matching helpers.  This module is the single
+source of truth for which intents trigger soft-switches, group-done signals,
+and delivery gating pass-throughs.
 """
 from __future__ import annotations
 
-from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.nlu.intent_resolution.intent import Intent
-from app.state_machine.models.conversation_state import ConversationState
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# STATE GROUPINGS
-# ─────────────────────────────────────────────────────────────────────────────
-
-ADD_ITEM_FLOW_STATES: set[ConversationState] = {
-    ConversationState.CONFIRMING_ITEM,
-    ConversationState.WAITING_FOR_SIZE,
-    ConversationState.WAITING_FOR_SIDE,
-    ConversationState.WAITING_FOR_SIDE_SIZE,
-    ConversationState.WAITING_FOR_MODIFIER,
-    ConversationState.WAITING_FOR_QUANTITY,
-}
-
-ORDER_FLOW_STATES: set[ConversationState] = {
-    ConversationState.CONFIRMING_ORDER,
-    ConversationState.WAITING_FOR_PAYMENT,
-}
-
-DELIVERY_GATING_STATES: set[ConversationState] = {
-    ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
-    ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
-}
-
-MID_ITEM_BLOCKING_STATES: set[ConversationState] = {
-    ConversationState.CONFIRMING_ITEM,
-    ConversationState.WAITING_FOR_SIDE,
-    ConversationState.WAITING_FOR_SIDE_SIZE,
-    ConversationState.WAITING_FOR_MODIFIER,
-    ConversationState.WAITING_FOR_SIZE,
-    ConversationState.WAITING_FOR_QUANTITY,
-    ConversationState.REMOVING_ITEM,
-    ConversationState.MODIFYING_ITEM,
-}
-
-ACTIVE_TASK_STATES: set[ConversationState] = {
-    ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
-    ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
-    ConversationState.WAITING_FOR_ORDER_TYPE,
-    ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
-    ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
-    ConversationState.CONFIRMING_ITEM,
-    ConversationState.WAITING_FOR_SIDE,
-    ConversationState.WAITING_FOR_SIDE_SIZE,
-    ConversationState.WAITING_FOR_MODIFIER,
-    ConversationState.WAITING_FOR_SIZE,
-    ConversationState.WAITING_FOR_QUANTITY,
-    ConversationState.REMOVING_ITEM,
-    ConversationState.MODIFYING_ITEM,
-    ConversationState.CONFIRMING_ORDER,
-    ConversationState.WAITING_FOR_PAYMENT,
-    ConversationState.WAITING_FOR_CHECKOUT_COMPLETION,
-}
+from app.nlu.query_normalization.text_preprocessor import normalize_text
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,8 +40,7 @@ ORDERING_INTENTS: set[Intent] = {
 }
 
 # Full set of intents that trigger a soft-switch (cancellation confirmation)
-# when the user is mid-item-flow. Used by confirming_handler, size_handler,
-# side_size_handler, and quantity_handler.
+# when the user is mid-item-flow.
 SOFT_SWITCH_INTENTS: set[Intent] = {
     Intent.ADD_ITEM,
     Intent.REMOVE_ITEM,
@@ -124,7 +65,6 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
 SOFT_SWITCH_INTENTS_REDUCED: set[Intent] = SOFT_SWITCH_INTENTS - GROUP_DONE_INTENTS
 
 # Intents allowed through during generic waiting states (side/modifier/size/qty).
-# Prevents NLU from squashing valid intents to UNKNOWN.
 WAITING_STATE_ALLOWED_CONTROL_INTENTS: set[Intent] = {
     Intent.DENY,
     Intent.CANCEL,
@@ -140,7 +80,6 @@ WAITING_STATE_ALLOWED_CONTROL_INTENTS: set[Intent] = {
     Intent.BROWSE_CATEGORY,
     Intent.RECOMMENDATION_QUERY,
     Intent.SHOW_MENU,
-    # Allow true task-switch requests to reach the waiting handlers
     Intent.ADD_ITEM,
     Intent.REMOVE_ITEM,
     Intent.MODIFY_ITEM,
@@ -153,8 +92,6 @@ DELIVERY_GATING_ALLOWED_CONTROL_INTENTS: set[Intent] = {
     Intent.DENY,
     Intent.CANCEL,
     Intent.CANCEL_ORDER,
-    # Ordering intents pass through so handlers can redirect gracefully
-    # instead of treating food names as delivery area / zip input.
     Intent.ADD_ITEM,
     Intent.REMOVE_ITEM,
     Intent.MODIFY_ITEM,
@@ -170,7 +107,6 @@ DELIVERY_GATING_ALLOWED_CONTROL_INTENTS: set[Intent] = {
 # GROUP SELECTION WORD SETS (side/modifier handlers)
 # ─────────────────────────────────────────────────────────────────────────────
 
-# User phrases meaning "I'm done choosing from this group, move on."
 DONE_WORDS: set[str] = {
     "done",
     "i am done",
@@ -205,7 +141,6 @@ DONE_WORDS: set[str] = {
     "sounds good",
 }
 
-# User phrases meaning "skip this optional group entirely."
 SKIP_WORDS: set[str] = {
     "no",
     "none",
@@ -218,7 +153,6 @@ SKIP_WORDS: set[str] = {
     "i am good",
 }
 
-# User phrases meaning "show me more options / what else is available."
 MORE_OPTIONS_WORDS: set[str] = {
     "other options",
     "more options",
@@ -343,3 +277,19 @@ def looks_like_skip_answer(text: str) -> bool:
 
 def looks_like_more_options_answer(text: str) -> bool:
     return _matches_signal_phrase(text, MORE_OPTIONS_WORDS)
+
+
+__all__ = [
+    "GROUP_DONE_INTENTS",
+    "ORDERING_INTENTS",
+    "SOFT_SWITCH_INTENTS",
+    "SOFT_SWITCH_INTENTS_REDUCED",
+    "WAITING_STATE_ALLOWED_CONTROL_INTENTS",
+    "DELIVERY_GATING_ALLOWED_CONTROL_INTENTS",
+    "DONE_WORDS",
+    "SKIP_WORDS",
+    "MORE_OPTIONS_WORDS",
+    "looks_like_done_answer",
+    "looks_like_skip_answer",
+    "looks_like_more_options_answer",
+]

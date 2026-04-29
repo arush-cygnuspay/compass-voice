@@ -10,7 +10,6 @@ Behavior moved verbatim from ``turn_engine.py``.
 """
 from __future__ import annotations
 
-import os
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -27,10 +26,11 @@ from app.state_machine.flow_sets import (
     DELIVERY_GATING_ALLOWED_CONTROL_INTENTS,
     WAITING_STATE_ALLOWED_CONTROL_INTENTS,
 )
+from app.config.nlu import get_nlu_config
 from app.state_machine.models.conversation_state import ConversationState
 
-
-INTENT_MIN_CONF = float(os.getenv("COMPASS_INTENT_CONF_THRESHOLD", "0.55"))
+# Sourced from config — no direct os.getenv at module level.
+INTENT_MIN_CONF: float = get_nlu_config().intent_conf_threshold
 
 
 @dataclass(frozen=True, slots=True)

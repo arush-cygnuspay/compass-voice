@@ -12,13 +12,13 @@ Composes six focused modules under ``app/core/``:
 """
 from __future__ import annotations
 
-import os
 import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
+from app.config.realtime import get_realtime_config
 from app.contracts.command_result import CommandResult
 from app.core.command_executor import CommandExecutor
 from app.state_machine.policy.flow_decision import FlowAction
@@ -80,7 +80,8 @@ class TurnOutput:
     next_state: "ConversationState | None" = None
 
 
-ROUTE_DEBUG_ENABLED = os.getenv("COMPASS_ROUTE_DEBUG_ENABLED", "0") == "1"
+# Sourced from config — no direct os.getenv at module level.
+ROUTE_DEBUG_ENABLED: bool = get_realtime_config().route_debug_enabled
 
 
 CONFIRMING_ORDER_EXIT_TO_IDLE_INTENTS: set[Intent] = {
@@ -126,7 +127,7 @@ class TurnEngine:
         self.checkout_service = CheckoutService()
 
         backends: list[Any] = [CsvDiagnosticsBackend(self.nlu_logger)]
-        json_log_path = os.getenv("COMPASS_NLU_JSON_LOG_PATH")
+        json_log_path = get_realtime_config().nlu_json_log_path
         if json_log_path:
             from app.diagnostics.backends.json_backend import JsonDiagnosticsBackend
             backends.append(JsonDiagnosticsBackend(json_log_path))
