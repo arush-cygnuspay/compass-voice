@@ -69,6 +69,14 @@ class SessionResponseWriterApplyTests(unittest.TestCase):
         self.assertEqual(session.turn_count, 5)
         self.assertIsNotNone(session.last_response_at_epoch)
 
+    def test_session_round_trip_preserves_last_response_timestamp(self):
+        session = Session(session_id="s3", restaurant_id="demo")
+        session.last_response_at_epoch = 1712345678.9
+
+        restored = Session.from_dict(session.to_dict())
+
+        self.assertEqual(restored.last_response_at_epoch, 1712345678.9)
+
     def test_build_silent_output_returns_empty_text_fields(self):
         out = SessionResponseWriter._build_silent_output(
             response_key="silence",
@@ -108,3 +116,4 @@ class SessionResponseWriterApplyTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

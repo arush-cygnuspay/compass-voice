@@ -25,11 +25,14 @@ from app.core.flow_gate import FlowGate
 from app.core.handler_dispatcher import HandlerDispatcher
 from app.core.item_queue_service import ItemQueueService
 from app.core.nlu_orchestrator import INTENT_MIN_CONF, NluOrchestrator
+from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.nlu_resolver import resolve_nlu
 from app.core.payment_flow_orchestrator import PaymentFlowOrchestrator
 from app.core.response_builder import ResponseBuilder
 from app.core.session_response_writer import SessionResponseWriter
 from app.core.turn_diagnostics import TurnDiagnostics
+from app.diagnostics.backends.csv_backend import CsvDiagnosticsBackend
+from app.diagnostics.turn_event import TurnEvent
 from app.logging.payment_event_logger import PaymentEventLogger
 from app.logging.nlu_csv_logger import NluCsvLogger
 from app.menu.repository import MenuRepository
@@ -41,6 +44,10 @@ from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
 from app.services.checkout_service import CheckoutService
 from app.services.sms_service import SmsService
 from app.session.session import Session
+from app.state_machine.handler_result import HandlerResult
+from app.state_machine.handlers.item.add_item.group_collection_utils import (
+    effective_group_selector_bounds,
+)
 from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
     HUMAN_AGENT_TRANSFER_NUMBER,
     WaitingForCallerDeviceTypeHandler,
@@ -110,11 +117,14 @@ class TurnEngine:
         self.sms_service = sms_service
         self.command_executor = CommandExecutor(sms_service)
         self.checkout_service = CheckoutService()
-        self.diagnostics = TurnDiagnostics(
-            menu_repo=menu_repo,
-            nlu_logger=self.nlu_logger,
-            responder=responder,
-        )
+
+        backends: list[Any] = [CsvDiagnosticsBackend(self.nlu_logger)]
+        json_log_path = os.getenv("COMPASS_NLU_JSON_LOG_PATH")
+        if json_log_path:
+            from app.diagnostics.backends.json_backend import JsonDiagnosticsBackend
+            backends.append(JsonDiagnosticsBackend(json_log_path))
+
+        self.diagnostics = TurnDiagnostics(backends=backends)
         self.response_writer = SessionResponseWriter(
             responder=responder,
             menu_repo=menu_repo,
@@ -149,13 +159,296 @@ class TurnEngine:
             diagnostics=self.diagnostics,
             payment_flow=self.payment_flow,
             resume_prompt_builder=self.resume_prompt_builder,
-            nlu_logger=self.nlu_logger,
         )
         self.nlu = NluOrchestrator(
             intent_bundle=intent_bundle,
             slot_bundle=slot_bundle,
             diagnostics=self.diagnostics,
         )
+
+    # ------------------------------------------------------------------
+    # Private field-building helpers (require self.responder / self.menu_repo)
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _normalize_response_text(text: str | None) -> str:
+        return " ".join((text or "").split()).strip()
+
+    @staticmethod
+    def _format_modifier_selection_name(selection: Any) -> str:
+        name = str(getattr(selection, "name", "") or "").strip()
+        action = str(getattr(selection, "action", "add") or "add").strip()
+        instruction = getattr(selection, "instruction", None)
+        if not name:
+            return ""
+        if action == "remove":
+            return f"no {name}"
+        if instruction == "extra":
+            return f"extra {name}"
+        if instruction == "less":
+            return f"less {name}"
+        if instruction == "on_side":
+            return f"{name} on the side"
+        return name
+
+    def _build_response_text(
+        self,
+        session: Session,
+        response_key: str,
+        response_payload: dict[str, Any] | None,
+    ) -> str:
+        try:
+            return self._normalize_response_text(
+                self.responder.build(
+                    response_key=response_key,
+                    context=session.conversation_context,
+                    payload=response_payload,
+                )
+            )
+        except Exception:
+            return ""
+
+    def _build_normalized_values(
+        self,
+        session: Session,
+        result: HandlerResult | None,
+    ) -> dict[str, Any]:
+        command = (result.command or {}) if result is not None else {}
+        payload = command.get("payload") or {}
+        if command.get("type") == "ADD_ITEM_TO_CART" and payload:
+            item_id = payload.get("item_id")
+            item = self.menu_repo.store.get_item(item_id) if item_id else None
+            side_choice_by_id: dict[str, Any] = {}
+            side_group_by_id: dict[str, Any] = {}
+            modifier_group_by_id: dict[str, Any] = {}
+            if item is not None:
+                for group in getattr(item, "side_groups", ()) or ():
+                    side_group_by_id[group.group_id] = group
+                    for choice in getattr(group, "choices", ()) or ():
+                        side_choice_by_id[choice.item_id] = choice
+                for group in getattr(item, "modifier_groups", ()) or ():
+                    modifier_group_by_id[group.group_id] = group
+
+            mapped_sides: dict[str, list[str]] = {}
+            for group_id, side_ids in (payload.get("sides") or {}).items():
+                group = side_group_by_id.get(group_id)
+                group_name = getattr(group, "name", None) or str(group_id)
+                mapped_sides[group_name] = [
+                    getattr(side_choice_by_id.get(side_id), "name", side_id)
+                    for side_id in side_ids
+                ]
+
+            mapped_side_variants: dict[str, str] = {}
+            for side_id, variant_id in (payload.get("side_variants") or {}).items():
+                choice = side_choice_by_id.get(side_id)
+                side_name = getattr(choice, "name", None) or str(side_id)
+                variant_label = str(variant_id)
+                if choice is not None:
+                    for variant in getattr(getattr(choice, "pricing", None), "variants", ()) or ():
+                        if getattr(variant, "variant_id", None) == variant_id:
+                            variant_label = getattr(variant, "label", variant_label)
+                            break
+                mapped_side_variants[side_name] = variant_label
+
+            mapped_modifiers: dict[str, list[str]] = {}
+            for group_id, selections in (payload.get("modifiers") or {}).items():
+                group = modifier_group_by_id.get(group_id)
+                group_name = getattr(group, "name", None) or str(group_id)
+                names: list[str] = []
+                for selection in selections or ():
+                    if isinstance(selection, dict):
+                        names.append(
+                            self._format_modifier_selection_name(
+                                type("ModifierPayload", (), selection)()
+                            )
+                        )
+                    else:
+                        names.append(self._format_modifier_selection_name(selection))
+                mapped_modifiers[group_name] = [name for name in names if name]
+
+            mapped_variant = None
+            variant_id = payload.get("variant_id")
+            if item is not None and variant_id:
+                for variant in getattr(getattr(item, "pricing", None), "variants", ()) or ():
+                    if getattr(variant, "variant_id", None) == variant_id:
+                        mapped_variant = getattr(variant, "label", None) or variant_id
+                        break
+            elif variant_id:
+                mapped_variant = variant_id
+
+            return {
+                "item_name": getattr(item, "name", None) or str(item_id or ""),
+                "quantity": payload.get("quantity"),
+                "variant": mapped_variant,
+                "sides": mapped_sides,
+                "side_variants": mapped_side_variants,
+                "modifiers": mapped_modifiers,
+            }
+
+        ctx = session.conversation_context
+        pending = ctx.pending_add_item
+        if pending is None:
+            return {
+                "item_name": ctx.current_item_name,
+                "quantity": ctx.quantity,
+            }
+
+        mapped_sides = {}
+        for group in pending.side_groups:
+            selected_ids = ctx.selected_side_groups.get(group.group_id, ())
+            if not selected_ids:
+                continue
+            mapped_sides[group.name] = [
+                group.choices_by_item_id[item_id].name
+                for item_id in selected_ids
+                if item_id in group.choices_by_item_id
+            ]
+
+        mapped_modifiers = {}
+        for group in pending.modifier_groups:
+            selections = ctx.selected_modifier_groups.get(group.group_id, ())
+            if not selections:
+                continue
+            mapped_modifiers[group.name] = [
+                self._format_modifier_selection_name(selection)
+                for selection in selections
+                if self._format_modifier_selection_name(selection)
+            ]
+
+        mapped_variant = None
+        if ctx.selected_variant_id:
+            variant = pending.item_variants_by_id.get(ctx.selected_variant_id)
+            mapped_variant = getattr(variant, "name", None) or ctx.selected_variant_id
+
+        mapped_side_variants = {}
+        for side_item_id, variant_id in ctx.selected_side_variants.items():
+            choice = pending.side_choice_by_item_id.get(side_item_id)
+            side_name = getattr(choice, "name", None) or str(side_item_id)
+            variant_name = variant_id
+            if choice is not None:
+                variant = choice.variants_by_id.get(variant_id)
+                if variant is not None:
+                    variant_name = variant.name
+            mapped_side_variants[side_name] = variant_name
+
+        return {
+            "item_name": pending.item_name,
+            "quantity": ctx.quantity,
+            "variant": mapped_variant,
+            "sides": mapped_sides,
+            "side_variants": mapped_side_variants,
+            "modifiers": mapped_modifiers,
+        }
+
+    def _build_missing_required_fields(self, session: Session) -> list[str]:
+        ctx = session.conversation_context
+        pending = ctx.pending_add_item
+        if pending is None:
+            return []
+
+        missing: list[str] = []
+        if pending.item_variants and not ctx.selected_variant_id:
+            missing.append("size")
+
+        for group in pending.side_groups:
+            selected_ids = ctx.selected_side_groups.get(group.group_id, ())
+            min_selector, _ = effective_group_selector_bounds(group)
+            if bool(getattr(group, "is_required", False)) and len(selected_ids) < min_selector:
+                missing.append(group.name)
+
+        for group in pending.modifier_groups:
+            selections = ctx.selected_modifier_groups.get(group.group_id, ())
+            min_selector, _ = effective_group_selector_bounds(group)
+            if bool(getattr(group, "is_required", False)) and len(selections) < min_selector:
+                missing.append(group.name)
+
+        if not (isinstance(ctx.quantity, int) and ctx.quantity > 0):
+            missing.append("quantity")
+
+        return missing
+
+    def _record_turn_event(
+        self,
+        *,
+        session: Session,
+        state_before: ConversationState,
+        nlu: Any,
+        result: HandlerResult | None,
+        response_key: str,
+        response_payload: dict[str, Any] | None,
+        diag: dict[str, Any],
+        next_state: ConversationState | None = None,
+        preprocess_ms: float | None = None,
+        nlu_ms: float | None = None,
+        flow_ms: float | None = None,
+        route_ms: float | None = None,
+        handler_ms: float | None = None,
+        total_ms: float | None = None,
+    ) -> None:
+        if not self.diagnostics.enabled:
+            return
+        try:
+            context_snapshot = self.diagnostics._snapshot_context_for_logging(session)
+            response_text = self._build_response_text(session, response_key, response_payload)
+            normalized_values = self._build_normalized_values(session, result)
+            missing_fields = self._build_missing_required_fields(session)
+            slots = tuple(getattr(nlu, "slots", ()) or ())
+
+            event = TurnEvent(
+                session_id=self.diagnostics._safe_session_id(session),
+                turn_index=session.turn_count,
+                state_before=state_before.value,
+                state_after=session.conversation_state.value,
+                next_state=(next_state or session.conversation_state).value,
+                pending_action=context_snapshot["pending_action"],
+                current_prompt_field=context_snapshot["current_prompt_field"],
+                current_item_id=context_snapshot["current_item_id"],
+                current_item_name=context_snapshot["current_item_name"],
+                raw_user_text=(
+                    getattr(nlu, "raw_text", "")
+                    or session.conversation_context.last_user_text
+                    or ""
+                ),
+                user_text=session.conversation_context.last_user_text or "",
+                normalized_text=getattr(nlu, "normalized_text", "") or "",
+                pred_main_intent=getattr(nlu, "model_main_intent", "") or "",
+                pred_sub_intent=getattr(nlu, "model_sub_intent", "") or "",
+                pred_intent=getattr(getattr(nlu, "effective_intent", None), "value", "") or "",
+                pred_intent_confidence=getattr(nlu, "intent_confidence", None),
+                slot_model_ran=bool(getattr(nlu, "slot_model_ran", False)),
+                slots=slots,
+                response_key=response_key,
+                response_text=response_text,
+                command=result.command if result else None,
+                normalized_values=normalized_values,
+                missing_required_fields=tuple(missing_fields),
+                reprompt_field=diag["reprompt_field"],
+                reprompt_count=diag["reprompt_count"],
+                reprompt_escalated=diag["reprompt_escalated"],
+                reprompt_escalation_count=session.reprompt_escalation_count,
+                fallback_triggered=diag["fallback_triggered"],
+                fallback_reason=diag["fallback_reason"],
+                fallback_count=session.fallback_count,
+                slot_extraction_failed=diag["slot_extraction_failed"],
+                slot_extraction_failure_count=session.slot_extraction_failure_count,
+                invalid_modifier=diag["invalid_modifier"],
+                invalid_modifier_count=session.invalid_modifier_count,
+                user_repeated=diag["user_repeated"],
+                repeated_user_turn_count=session.repeated_user_turn_count,
+                preprocess_ms=preprocess_ms,
+                nlu_ms=nlu_ms,
+                flow_ms=flow_ms,
+                route_ms=route_ms,
+                handler_ms=handler_ms,
+                total_ms=total_ms,
+            )
+            self.diagnostics.record(event)
+        except Exception as exc:
+            print(f"[TURN_EVENT_BUILD_ERROR] {type(exc).__name__}: {exc}")
+
+    # ------------------------------------------------------------------
+    # Main entry point
+    # ------------------------------------------------------------------
 
     def process_turn(
         self,
@@ -226,15 +519,22 @@ class TurnEngine:
                     response_key=device_result.response_key,
                     response_payload=device_result.response_payload,
                     transfer_call_to_number=transfer_number,
-                    # Once we hand the call off there is nothing for the
-                    # voice agent to do, so end the agent leg cleanly
-                    # after the goodbye plays. The transfer command is
-                    # carried out by the transport layer and supersedes
-                    # a plain hangup if both are set.
                     end_call_after_playback=transfer_number is not None,
                 ),
             )
-            self.diagnostics._log_if_enabled(
+            _diag = self.diagnostics._update_session_diagnostics(
+                session=session,
+                state_before=ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
+                nlu=NLUResult(
+                    effective_intent=Intent.UNKNOWN,
+                    intent_confidence=1.0,
+                    raw_text=user_text,
+                    normalized_text=preprocess_turn_text(user_text).normalized_text,
+                ),
+                response_key=device_result.response_key,
+                response_payload=device_result.response_payload,
+            )
+            self._record_turn_event(
                 session=session,
                 state_before=ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
                 nlu=NLUResult(
@@ -246,6 +546,7 @@ class TurnEngine:
                 result=device_result,
                 response_key=device_result.response_key,
                 response_payload=device_result.response_payload,
+                diag=_diag,
                 next_state=device_result.next_state,
                 total_ms=(time.perf_counter() - t_total_start) * 1000.0,
             )
@@ -307,13 +608,21 @@ class TurnEngine:
                     response_payload=gate_result.response_payload,
                 ),
             )
-            self.diagnostics._log_if_enabled(
+            _diag = self.diagnostics._update_session_diagnostics(
+                session=session,
+                state_before=ConversationState.WAITING_FOR_ORDER_TYPE,
+                nlu=gate_nlu,
+                response_key=gate_result.response_key,
+                response_payload=gate_result.response_payload,
+            )
+            self._record_turn_event(
                 session=session,
                 state_before=ConversationState.WAITING_FOR_ORDER_TYPE,
                 nlu=gate_nlu,
                 result=gate_result,
                 response_key=gate_result.response_key,
                 response_payload=gate_result.response_payload,
+                diag=_diag,
                 next_state=gate_result.next_state,
                 total_ms=total_ms,
             )
@@ -362,13 +671,21 @@ class TurnEngine:
             )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self.diagnostics._log_if_enabled(
+            _diag = self.diagnostics._update_session_diagnostics(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                response_key=phase3_shortcut.response_key,
+                response_payload=phase3_shortcut.response_payload,
+            )
+            self._record_turn_event(
                 session=session,
                 state_before=state_before,
                 nlu=nlu,
                 result=None,
                 response_key=phase3_shortcut.response_key,
                 response_payload=phase3_shortcut.response_payload,
+                diag=_diag,
                 preprocess_ms=t_preprocess * 1000.0,
                 nlu_ms=t_nlu * 1000.0,
                 flow_ms=0.0,
@@ -408,13 +725,21 @@ class TurnEngine:
             )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self.diagnostics._log_if_enabled(
+            _diag = self.diagnostics._update_session_diagnostics(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                response_key=shortcut_output.response_key,
+                response_payload=shortcut_output.response_payload,
+            )
+            self._record_turn_event(
                 session=session,
                 state_before=state_before,
                 nlu=nlu,
                 result=None,
                 response_key=shortcut_output.response_key,
                 response_payload=shortcut_output.response_payload,
+                diag=_diag,
                 preprocess_ms=t_preprocess * 1000.0,
                 nlu_ms=t_nlu * 1000.0,
                 flow_ms=0.0,
@@ -465,13 +790,21 @@ class TurnEngine:
             )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self.diagnostics._log_if_enabled(
+            _diag = self.diagnostics._update_session_diagnostics(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                response_key=response_key,
+                response_payload=payload,
+            )
+            self._record_turn_event(
                 session=session,
                 state_before=state_before,
                 nlu=nlu,
                 result=None,
                 response_key=response_key,
                 response_payload=payload,
+                diag=_diag,
                 preprocess_ms=t_preprocess * 1000.0,
                 nlu_ms=t_nlu * 1000.0,
                 flow_ms=t_flow * 1000.0,
@@ -516,13 +849,21 @@ class TurnEngine:
             )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self.diagnostics._log_if_enabled(
+            _diag = self.diagnostics._update_session_diagnostics(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                response_key=response_key,
+                response_payload=response_payload,
+            )
+            self._record_turn_event(
                 session=session,
                 state_before=state_before,
                 nlu=nlu,
                 result=None,
                 response_key=response_key,
                 response_payload=response_payload,
+                diag=_diag,
                 preprocess_ms=t_preprocess * 1000.0,
                 nlu_ms=t_nlu * 1000.0,
                 flow_ms=t_flow * 1000.0,
@@ -560,6 +901,28 @@ class TurnEngine:
             )
             if readonly_output is not None:
                 total_ms = (time.perf_counter() - t_total_start) * 1000.0
+                _diag = self.diagnostics._update_session_diagnostics(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    response_key=readonly_output.response_key,
+                    response_payload=readonly_output.response_payload,
+                )
+                self._record_turn_event(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    result=None,
+                    response_key=readonly_output.response_key,
+                    response_payload=readonly_output.response_payload,
+                    diag=_diag,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=t_flow * 1000.0,
+                    route_ms=0.0,
+                    handler_ms=0.0,
+                    total_ms=total_ms,
+                )
                 self.diagnostics._finalize_trace_and_timing(
                     trace=trace,
                     session=session,
@@ -609,13 +972,21 @@ class TurnEngine:
             )
 
             total_ms = (time.perf_counter() - t_total_start) * 1000.0
-            self.diagnostics._log_if_enabled(
+            _diag = self.diagnostics._update_session_diagnostics(
+                session=session,
+                state_before=state_before,
+                nlu=nlu,
+                response_key="intent_not_allowed",
+                response_payload=payload,
+            )
+            self._record_turn_event(
                 session=session,
                 state_before=state_before,
                 nlu=nlu,
                 result=None,
                 response_key="intent_not_allowed",
                 response_payload=payload,
+                diag=_diag,
                 preprocess_ms=t_preprocess * 1000.0,
                 nlu_ms=t_nlu * 1000.0,
                 flow_ms=t_flow * 1000.0,
@@ -796,13 +1167,21 @@ class TurnEngine:
             )
 
         total_ms = (time.perf_counter() - t_total_start) * 1000.0
-        self.diagnostics._log_if_enabled(
+        _diag = self.diagnostics._update_session_diagnostics(
+            session=session,
+            state_before=state_before,
+            nlu=nlu,
+            response_key=result.response_key,
+            response_payload=result.response_payload,
+        )
+        self._record_turn_event(
             session=session,
             state_before=state_before,
             nlu=nlu,
             result=result,
             response_key=result.response_key,
             response_payload=result.response_payload,
+            diag=_diag,
             next_state=result.next_state,
             preprocess_ms=t_preprocess * 1000.0,
             nlu_ms=t_nlu * 1000.0,
@@ -848,5 +1227,3 @@ class TurnEngine:
             session=session,
             output=output,
         )
-
-

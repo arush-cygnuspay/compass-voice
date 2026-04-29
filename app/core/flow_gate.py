@@ -12,8 +12,10 @@ from app.core.session_response_writer import SessionResponseWriter
 from app.core.turn_diagnostics import TurnDiagnostics
 from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository
+from app.nlu.control_decision_service import DEFAULT_SERVICE as _control_service
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
+from app.nlu.nlu_result import NLUResult
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.order.prepayment_correction_support import (
@@ -26,7 +28,6 @@ from app.state_machine.handlers.system.waiting_for_caller_device_type_handler im
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.phase3_controls import (
-    is_live_agent_request,
     is_repeat_order_summary_request,
     is_restart_item_request,
     is_restart_order_request,
@@ -67,7 +68,6 @@ class FlowGate:
         diagnostics: TurnDiagnostics,
         payment_flow: PaymentFlowOrchestrator,
         resume_prompt_builder: ResumePromptBuilder,
-        nlu_logger: Any,
     ) -> None:
         self.handlers = handlers
         self.menu_repo = menu_repo
@@ -76,7 +76,6 @@ class FlowGate:
         self.diagnostics = diagnostics
         self.payment_flow = payment_flow
         self.resume_prompt_builder = resume_prompt_builder
-        self.nlu_logger = nlu_logger
 
     def _handle_readonly_interrupt(
         self,
@@ -98,11 +97,6 @@ class FlowGate:
             raise KeyError(f"Handler not registered: {handler_name}")
 
         preserved_state = session.conversation_state
-        context_snapshot = (
-            self.diagnostics._snapshot_context_for_logging(session)
-            if self.nlu_logger.enabled
-            else {}
-        )
 
         result: HandlerResult = handler.handle(
             intent=intent_result.intent,
@@ -132,30 +126,6 @@ class FlowGate:
             session.last_response_payload = result.response_payload
             session.turn_count += 1
 
-            if self.nlu_logger.enabled:
-                self.diagnostics._log_nlu_and_turn(
-                    session=session,
-                    state_before=state_before,
-                    context_snapshot=context_snapshot,
-                    nlu=nlu,
-                    result=result,
-                    response_key=result.response_key,
-                    response_payload=result.response_payload,
-                    response_text=self.diagnostics._build_response_text_for_logging(
-                        session=session,
-                        response_key=result.response_key,
-                        response_payload=result.response_payload,
-                    ),
-                    next_state=session.conversation_state.value,
-                    diagnostics=self.diagnostics._update_session_diagnostics(
-                        session=session,
-                        state_before=state_before,
-                        nlu=nlu,
-                        response_key=result.response_key,
-                        response_payload=result.response_payload,
-                    ),
-                )
-
             self.diagnostics._trace_set_attr(trace, "response_key", result.response_key)
 
             return TurnOutput(
@@ -174,30 +144,6 @@ class FlowGate:
         session.last_response_key = "readonly_interrupt_with_resume"
         session.last_response_payload = combined_payload
         session.turn_count += 1
-
-        if self.nlu_logger.enabled:
-            self.diagnostics._log_nlu_and_turn(
-                session=session,
-                state_before=state_before,
-                context_snapshot=context_snapshot,
-                nlu=nlu,
-                result=result,
-                response_key="readonly_interrupt_with_resume",
-                response_payload=combined_payload,
-                response_text=self.diagnostics._build_response_text_for_logging(
-                    session=session,
-                    response_key="readonly_interrupt_with_resume",
-                    response_payload=combined_payload,
-                ),
-                next_state=session.conversation_state.value,
-                diagnostics=self.diagnostics._update_session_diagnostics(
-                    session=session,
-                    state_before=state_before,
-                    nlu=nlu,
-                    response_key="readonly_interrupt_with_resume",
-                    response_payload=combined_payload,
-                ),
-            )
 
         self.diagnostics._trace_set_attr(trace, "response_key", "readonly_interrupt_with_resume")
 
@@ -240,7 +186,8 @@ class FlowGate:
         text = getattr(nlu, "normalized_text", "") or ""
         ctx = session.conversation_context
 
-        if is_live_agent_request(text):
+        nlu_result: NLUResult | None = nlu if isinstance(nlu, NLUResult) else None
+        if _control_service.resolve_agent_request(text, nlu_result).intent == Intent.REQUEST_AGENT:
             self.payment_flow._log_payment_event(
                 session=session,
                 state=state_before,
@@ -299,6 +246,7 @@ class FlowGate:
                 state_before=state_before,
                 intent_result=intent_result,
                 normalized_text=text,
+                nlu_result=nlu_result,
             )
             if correction_output is not None:
                 return correction_output
@@ -330,13 +278,13 @@ class FlowGate:
         state_before: ConversationState,
         intent_result: IntentResult,
         normalized_text: str,
+        nlu_result: NLUResult | None = None,
     ) -> "TurnOutput | None":
         from app.core.turn_engine import TurnOutput
 
         if (
-            intent_result.intent != Intent.CHANGE_QUANTITY
-            and "instead of" not in normalized_text
-            and not normalized_text.startswith(("make it ", "change it to ", "set it to "))
+            _control_service.resolve_quantity_correction(normalized_text, nlu_result).intent
+            != Intent.CHANGE_QUANTITY
         ):
             return None
 

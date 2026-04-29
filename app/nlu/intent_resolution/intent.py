@@ -65,6 +65,8 @@ class Intent(Enum):
     META_CLARIFY = "meta_clarify"
     AFFIRM = "affirm"
 
+    REQUEST_AGENT = "request_agent"
+
     GREETING = "greeting"
     MORNING = "morning"
     AFTERNOON = "afternoon"
