@@ -4,42 +4,41 @@
 # Rule of thumb:
 #   - Large binary model files  → LFS
 #   - Small JSON / config files → normal Git (diffable)
+#
+# Canonical production model path: app/artifacts/models/
 # =============================================================
 
 # -------------------------------------------------------------
-# Canonical production model artifacts (project root)
-# artifacts/models/intent/distilbert-multihead-intent/
-# artifacts/models/slot/model-best/
+# Production model artifacts — app/artifacts/models/
+# intent: app/artifacts/models/intent/distilbert-multihead-intent/
+# slot:   app/artifacts/models/slot/model-best/
 # -------------------------------------------------------------
 
-# HuggingFace / safetensors weights
-artifacts/models/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
+# HuggingFace safetensors weights
+app/artifacts/models/**/*.safetensors filter=lfs diff=lfs merge=lfs -text
 
-# Binary weight files (.bin, .pt, .pth, .onnx)
-artifacts/models/**/*.bin         filter=lfs diff=lfs merge=lfs -text
-artifacts/models/**/*.pt          filter=lfs diff=lfs merge=lfs -text
-artifacts/models/**/*.pth         filter=lfs diff=lfs merge=lfs -text
-artifacts/models/**/*.onnx        filter=lfs diff=lfs merge=lfs -text
+# Binary weight / vocab files
+app/artifacts/models/**/*.bin         filter=lfs diff=lfs merge=lfs -text
+app/artifacts/models/**/*.pt          filter=lfs diff=lfs merge=lfs -text
+app/artifacts/models/**/*.pth         filter=lfs diff=lfs merge=lfs -text
+app/artifacts/models/**/*.onnx        filter=lfs diff=lfs merge=lfs -text
 
-# SentencePiece / tokenizer models
-artifacts/models/**/*.model       filter=lfs diff=lfs merge=lfs -text
+# SentencePiece tokenizer model
+app/artifacts/models/**/*.model       filter=lfs diff=lfs merge=lfs -text
 
-# spaCy binary blobs (no extension — matched by exact name glob)
-artifacts/models/**/model         filter=lfs diff=lfs merge=lfs -text
-artifacts/models/**/vectors       filter=lfs diff=lfs merge=lfs -text
-artifacts/models/**/key2row       filter=lfs diff=lfs merge=lfs -text
+# spaCy binary blobs (no extension)
+app/artifacts/models/**/model         filter=lfs diff=lfs merge=lfs -text
+app/artifacts/models/**/vectors       filter=lfs diff=lfs merge=lfs -text
+app/artifacts/models/**/key2row       filter=lfs diff=lfs merge=lfs -text
 
 # -------------------------------------------------------------
-# Legacy paths (app/ml/models is now empty; kept for history)
+# Legacy paths (now empty — kept so history is correct)
 # -------------------------------------------------------------
 app/ml/models/distilbert-multihead-intent/** filter=lfs diff=lfs merge=lfs -text
 app/ml/models/spacy_slot_trf_out/**          filter=lfs diff=lfs merge=lfs -text
 
 # -------------------------------------------------------------
-# Global binary patterns (catch-all for any other model files
-# that may be added anywhere in the repo)
+# Restaurant data files (pre-existing LFS tracking)
 # -------------------------------------------------------------
-*.bin          filter=lfs diff=lfs merge=lfs -text
-*.pt           filter=lfs diff=lfs merge=lfs -text
-*.safetensors  filter=lfs diff=lfs merge=lfs -text
-*.model        filter=lfs diff=lfs merge=lfs -text
+app/data/restaurants/demo/entity_index.json filter=lfs diff=lfs merge=lfs -text
+app/data/restaurants/demo/menu.json         filter=lfs diff=lfs merge=lfs -text

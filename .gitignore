@@ -199,10 +199,11 @@ app/data/evals/
 
 # ============================================================
 # Canonical production model artifacts — must NOT be ignored.
+# Models live at app/artifacts/models/ (inside the app package).
 # The global *.safetensors / *.bin / *.pt rules above would
 # swallow these, so we explicitly negate them here.
-# Do NOT move these lines above the binary ignore rules.
+# Do NOT move these negation lines above the binary ignore rules.
 # ============================================================
-!artifacts/
-!artifacts/models/
-!artifacts/models/**
+!app/artifacts/
+!app/artifacts/models/
+!app/artifacts/models/**
