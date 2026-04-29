@@ -123,25 +123,6 @@ SOFT_SWITCH_INTENTS: set[Intent] = {
 # because those are intercepted earlier as "done with this group" signals.
 SOFT_SWITCH_INTENTS_REDUCED: set[Intent] = SOFT_SWITCH_INTENTS - GROUP_DONE_INTENTS
 
-# Intents that attempt to start checkout while mid-item.
-CHECKOUT_ATTEMPT_INTENTS: set[Intent] = {
-    Intent.START_ORDER,
-    Intent.END_ADDING,
-    Intent.CHECKOUT,
-    Intent.CONFIRM_ORDER,
-    Intent.FINISH_ORDER,
-    Intent.PAYMENT_REQUEST,
-    Intent.REVIEW_ORDER,
-}
-
-# Read-only intents that can be handled as interrupts without disrupting flow.
-READ_ONLY_INTERRUPT_INTENTS: set[Intent] = {
-    Intent.ASK_PRICE,
-    Intent.SHOW_CART,
-    Intent.SHOW_TOTAL,
-    Intent.AVAILABILITY_QUERY,
-}
-
 # Intents allowed through during generic waiting states (side/modifier/size/qty).
 # Prevents NLU from squashing valid intents to UNKNOWN.
 WAITING_STATE_ALLOWED_CONTROL_INTENTS: set[Intent] = {

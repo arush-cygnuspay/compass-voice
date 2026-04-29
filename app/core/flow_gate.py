@@ -15,6 +15,7 @@ from app.menu.query_result import MenuQueryType
 from app.menu.repository import MenuRepository
 from app.nlu.control_decision_service import DEFAULT_SERVICE as _control_service
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.intent_resolution.intent_metadata import INTENT_REGISTRY
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.nlu_result import NLUResult
 from app.session.session import Session
@@ -102,7 +103,7 @@ class FlowGate:
     ) -> "TurnOutput | None":
         from app.core.turn_engine import TurnOutput
 
-        handler_name = self._readonly_interrupt_handler_name(intent_result.intent)
+        handler_name = INTENT_REGISTRY.get(intent_result.intent).default_handler
         if handler_name is None:
             return None
 
@@ -168,27 +169,6 @@ class FlowGate:
             response_payload=combined_payload,
             next_state=preserved_state,
         )
-
-    def _readonly_interrupt_handler_name(self, intent: Intent) -> str | None:
-        if intent == Intent.ASK_PRICE:
-            return "ask_price_handler"
-
-        if intent in {
-            Intent.ASK_ITEM_INFO,
-            Intent.ASK_MENU_INFO,
-            Intent.ASK_OPTIONS,
-            Intent.AVAILABILITY_QUERY,
-            Intent.BROWSE_MENU,
-            Intent.BROWSE_CATEGORY,
-            Intent.RECOMMENDATION_QUERY,
-            Intent.SHOW_MENU,
-        }:
-            return "ask_menu_info_handler"
-
-        if intent in {Intent.SHOW_CART, Intent.SHOW_TOTAL}:
-            return "cart_handler"
-
-        return None
 
     def _handle_phase3_control_shortcuts(
         self,
