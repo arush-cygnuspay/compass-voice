@@ -33,7 +33,7 @@ _redis_module.Redis = type("_Redis", (), {"__init__": lambda *a, **k: None})
 sys.modules.setdefault("redis", _redis_module)
 
 
-from app.core.flow_gate import FlowGate
+from app.state_machine.policy.flow_gate import FlowGate
 from app.nlu.intent_resolution.intent import Intent
 from app.nlu.intent_resolution.intent_result import IntentResult
 from app.nlu.nlu_result import NLUResult

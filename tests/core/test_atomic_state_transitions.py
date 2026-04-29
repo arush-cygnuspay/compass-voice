@@ -54,7 +54,7 @@ sys.modules["twilio.rest"].Client = type(
 sys.modules.setdefault("torch", types.ModuleType("torch"))
 # ─────────────────────────────────────────────────────────────────────────────
 
-from app.core.flow_gate import FlowGate, FlowGateDecision
+from app.state_machine.policy.flow_gate import FlowGate, FlowGateDecision
 from app.core.session_turn_lock_manager import SessionTurnLockManager
 from app.core.turn_snapshot import TurnSnapshot
 from app.core.turn_engine import TurnOutput
