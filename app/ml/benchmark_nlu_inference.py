@@ -19,22 +19,25 @@ from app.ml.intent.inference_intent import (
     get_intent_bundle,
 )
 
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_INTENT_DIR = _PROJECT_ROOT / "app" / "artifacts" / "models" / "intent" / "distilbert-multihead-intent"
+
 MODEL_DIR = os.getenv(
     "COMPASS_INTENT_MODEL_DIR",
-    "models/distilbert-multihead-intent",
+    str(_INTENT_DIR),
 )
 LABELS_MAIN = os.getenv(
     "COMPASS_INTENT_LABELS_MAIN",
-    "config/labels_main.json",
+    str(_INTENT_DIR / "labels_main.json"),
 )
 LABELS_SUB = os.getenv(
     "COMPASS_INTENT_LABELS_SUB",
-    "config/labels_sub.json",
+    str(_INTENT_DIR / "labels_sub.json"),
 )
 
 SPACY_MODEL_DIR = os.getenv(
     "COMPASS_SLOT_MODEL_DIR",
-    "models/spacy_slot_trf_out/model-best",
+    str(_PROJECT_ROOT / "app" / "artifacts" / "models" / "slot" / "model-best"),
 )
 
 REPORT_DIR = Path(
@@ -419,4 +422,4 @@ if __name__ == "__main__":
     main()
 
 
-# python -c "import spacy; print(spacy.prefer_gpu()); nlp = spacy.load('app/ml/models/spacy_slot_trf_out/model-best'); print('loaded')"
+# python -c "import spacy; print(spacy.prefer_gpu()); nlp = spacy.load('app/artifacts/models/slot/model-best'); print('loaded')"
