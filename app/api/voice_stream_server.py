@@ -40,6 +40,7 @@ from app.realtime.deepgram_stt_client import (
 )
 from app.realtime.deepgram_tts_client import DeepgramTTSClient
 from app.realtime.conversation_session import ConversationSession
+from app.realtime.tts_exceptions import TTSFailureError
 from app.realtime.turn_commit_controller import TurnCommitController
 from app.session.repository import load_existing_session, load_session, save_session
 from app.session.session import Session
@@ -1058,19 +1059,12 @@ async def twilio_media_ws(websocket: WebSocket):
             _trace_add_note(trace, "tts_empty_audio_attempt", attempt)
 
             if attempt >= max_attempts:
-                if conv_session is not None:
-                    conv_session.set_phase_listening()
                 bot_playback_started_at = None
-
-                handled = False
-                if conv_session is not None:
-                    handled = await conv_session.handle_playback_failure(
-                        end_call_after_playback=end_call_after_playback,
-                    )
-                if not handled and end_call_after_playback:
-                    await _end_live_call()
-
-                return
+                raise TTSFailureError(
+                    f"TTS returned empty audio after {attempt} attempts",
+                    attempts=attempt,
+                    provider="deepgram",
+                )
 
             if conv_session is not None:
                 conv_session.set_phase_listening()
@@ -1079,14 +1073,11 @@ async def twilio_media_ws(websocket: WebSocket):
             reconnected = await _reconnect_tts_client(reason="empty_audio_retry")
             _trace_add_note(trace, "tts_empty_audio_reconnected", reconnected)
             if not reconnected:
-                handled = False
-                if conv_session is not None:
-                    handled = await conv_session.handle_playback_failure(
-                        end_call_after_playback=end_call_after_playback,
-                    )
-                if not handled and end_call_after_playback:
-                    await _end_live_call()
-                return
+                raise TTSFailureError(
+                    f"TTS reconnect failed on attempt {attempt} — no audio delivered",
+                    attempts=attempt,
+                    provider="deepgram",
+                )
 
             if TTS_EMPTY_AUDIO_RETRY_SETTLE_SECONDS > 0:
                 await asyncio.sleep(TTS_EMPTY_AUDIO_RETRY_SETTLE_SECONDS)
