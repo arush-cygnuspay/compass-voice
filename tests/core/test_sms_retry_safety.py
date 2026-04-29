@@ -170,7 +170,7 @@ class TestSuccessfulSmsSend(unittest.TestCase):
         result = exe.execute(_session(), _sms_command())
 
         assert svc.send.call_count == 1
-        assert result["ok"] is True
+        assert result.ok is True
 
     def test_result_includes_sid(self):
         svc = _mock_sms_service(send_return=SmsSendResult(ok=True, sid="SM-XYZ"))
@@ -178,7 +178,7 @@ class TestSuccessfulSmsSend(unittest.TestCase):
 
         result = exe.execute(_session(), _sms_command())
 
-        assert result["sid"] == "SM-XYZ"
+        assert result.sid == "SM-XYZ"
 
     def test_result_includes_idempotency_key(self):
         svc = _mock_sms_service()
@@ -186,8 +186,8 @@ class TestSuccessfulSmsSend(unittest.TestCase):
 
         result = exe.execute(_session("s1"), _sms_command())
 
-        assert "idempotency_key" in result
-        assert len(result["idempotency_key"]) == 64
+        assert result.idempotency_key is not None
+        assert len(result.idempotency_key) == 64
 
     def test_idempotency_key_in_request_passed_to_service(self):
         svc = _mock_sms_service()
@@ -218,7 +218,7 @@ class TestSuccessfulSmsSend(unittest.TestCase):
 
         result = exe.execute(_session(), _sms_command())
 
-        assert result["attempts_made"] == 1
+        assert result.attempts_made == 1
 
     def test_error_code_is_none_on_success(self):
         svc = _mock_sms_service()
@@ -226,8 +226,8 @@ class TestSuccessfulSmsSend(unittest.TestCase):
 
         result = exe.execute(_session(), _sms_command())
 
-        assert result["error_code"] is None
-        assert result["error_message"] is None
+        assert result.error_code is None
+        assert result.error_message is None
 
 
 # ── Transient failure retries ─────────────────────────────────────────────────
@@ -245,8 +245,8 @@ class TestTransientSmsRetry(unittest.TestCase):
         result = exe.execute(_session(), _sms_command())
 
         assert svc.send.call_count == 2
-        assert result["ok"] is True
-        assert result["attempts_made"] == 2
+        assert result.ok is True
+        assert result.attempts_made == 2
 
     def test_exhausts_max_retries_on_repeated_transient_failure(self):
         svc = _mock_sms_service(
@@ -259,8 +259,8 @@ class TestTransientSmsRetry(unittest.TestCase):
         result = exe.execute(_session(), _sms_command())
 
         assert svc.send.call_count == SMS_MAX_RETRIES
-        assert result["ok"] is False
-        assert result["attempts_made"] == SMS_MAX_RETRIES
+        assert result.ok is False
+        assert result.attempts_made == SMS_MAX_RETRIES
 
     def test_same_idempotency_key_on_every_retry(self):
         calls: list[SmsSendRequest] = []
@@ -286,8 +286,8 @@ class TestTransientSmsRetry(unittest.TestCase):
 
         result = exe.execute(_session(), _sms_command())
 
-        assert result["ok"] is False
-        assert result["error_code"] == "sms_network_error"
+        assert result.ok is False
+        assert result.error_code == "sms_network_error"
 
 
 # ── Permanent failure does not retry ─────────────────────────────────────────
@@ -302,7 +302,7 @@ class TestPermanentSmsNoRetry(unittest.TestCase):
         result = exe.execute(_session(), _sms_command())
 
         assert svc.send.call_count == 1
-        assert result["ok"] is False
+        assert result.ok is False
 
     def test_attempts_made_is_one_on_permanent_failure(self):
         svc = _mock_sms_service(
@@ -312,7 +312,7 @@ class TestPermanentSmsNoRetry(unittest.TestCase):
 
         result = exe.execute(_session(), _sms_command())
 
-        assert result["attempts_made"] == 1
+        assert result.attempts_made == 1
 
     def test_permanent_error_code_in_result(self):
         svc = _mock_sms_service(
@@ -322,8 +322,8 @@ class TestPermanentSmsNoRetry(unittest.TestCase):
 
         result = exe.execute(_session(), _sms_command())
 
-        assert result["error_code"] == "21211"
-        assert result["ok"] is False
+        assert result.error_code == "21211"
+        assert result.ok is False
 
 
 # ── Different session/payload → different idempotency key ────────────────────
@@ -366,8 +366,8 @@ class TestMissingSessionId(unittest.TestCase):
 
         result = exe.execute(session, _sms_command())
 
-        assert result["ok"] is True
-        assert len(result["idempotency_key"]) == 64
+        assert result.ok is True
+        assert len(result.idempotency_key) == 64
 
 
 # ── Non-SMS commands unaffected ───────────────────────────────────────────────
@@ -379,7 +379,7 @@ class TestNonSmsCommandsUnaffected(unittest.TestCase):
     def test_clear_cart_returns_ok(self):
         exe, session = self._executor_with_session()
         result = exe.execute(session, {"type": "CLEAR_CART"})
-        assert result == {"ok": True}
+        assert result.ok is True
 
     def test_remove_item_from_cart(self):
         exe, session = self._executor_with_session()
@@ -389,7 +389,7 @@ class TestNonSmsCommandsUnaffected(unittest.TestCase):
             "type": "REMOVE_ITEM_FROM_CART",
             "payload": {"cart_item_id": "item-1"},
         })
-        assert result == {"ok": True}
+        assert result.ok is True
 
     def test_transfer_call_returns_transport_only(self):
         exe, session = self._executor_with_session()
@@ -397,9 +397,9 @@ class TestNonSmsCommandsUnaffected(unittest.TestCase):
             "type": "transfer_call",
             "transfer_number": "+1555999",
         })
-        assert result["ok"] is True
-        assert result["transport_only"] is True
-        assert result["transfer_number"] == "+1555999"
+        assert result.ok is True
+        assert result.transport_only is True
+        assert result.transfer_number == "+1555999"
 
     def test_unknown_command_raises_value_error(self):
         exe, session = self._executor_with_session()

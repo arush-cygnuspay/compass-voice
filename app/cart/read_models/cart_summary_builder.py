@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, Tuple
 
 from app.cart.cart import Cart
+from app.domain.cart_snapshot import CartSnapshot
 from app.menu.repository import MenuRepository
 
 
@@ -20,10 +21,11 @@ class CartSummaryBuilder:
         self.menu_repo = menu_repo
 
     def build(self, cart: Cart) -> Dict[str, Any]:
+        snapshot = CartSnapshot.from_cart(cart)
         grouped_items: Dict[Tuple, Dict[str, Any]] = {}
         total_cents = 0
 
-        for cart_item in cart.get_items():
+        for cart_item in snapshot.get_items():
             menu_item = self.menu_repo.get_item(cart_item.item_id)
 
             base_cents = self._get_item_base_price(cart_item, menu_item)

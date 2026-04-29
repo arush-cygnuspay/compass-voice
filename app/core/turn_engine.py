@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
+from app.contracts.command_result import CommandResult
 from app.core.command_executor import CommandExecutor
 from app.state_machine.policy.flow_decision import FlowAction
 from app.state_machine.policy.flow_control_policy import FlowControlPolicy
@@ -1064,11 +1065,11 @@ class TurnEngine:
             command_type = result.command.get("type")
             if command_type == "transfer_call":
                 transfer_number = result.command.get("transfer_number")
-                command_result = {
-                    "ok": True,
-                    "transport_only": True,
-                    "transfer_number": transfer_number,
-                }
+                command_result = CommandResult(
+                    ok=True,
+                    transport_only=True,
+                    transfer_number=transfer_number,
+                )
             else:
                 command_result = self.dispatcher._apply_command(session, result.command)
 
@@ -1080,7 +1081,7 @@ class TurnEngine:
                 },
             )
 
-            if command_result.get("ok", False):
+            if command_result.ok:
                 self.payment_flow._emit_payment_events_from_command(
                     session=session,
                     state_before=state_before,
@@ -1089,14 +1090,14 @@ class TurnEngine:
                     command_result=command_result,
                 )
 
-            if not command_result.get("ok", False):
+            if not command_result.ok:
                 command_type = result.command.get("type")
                 command_payload = result.command.get("payload") or {}
 
                 if command_type == "SEND_SMS":
                     template = command_payload.get("template")
                     delivery = session.conversation_context.delivery_address
-                    attempts_made = int(command_result.get("attempts_made", 1) or 1)
+                    attempts_made = command_result.attempts_made
 
                     if template == "checkout_link":
                         # _apply_command already retried internally.
@@ -1111,8 +1112,8 @@ class TurnEngine:
                                     "area": delivery.area,
                                     "postal_code": delivery.postal_code,
                                     "order_number": delivery.order_number,
-                                    "error_code": command_result.get("error_code"),
-                                    "error_message": command_result.get("error_message"),
+                                    "error_code": command_result.error_code,
+                                    "error_message": command_result.error_message,
                                 },
                             )
                         else:
@@ -1121,8 +1122,8 @@ class TurnEngine:
                                 response_key="checkout_link_send_failed",
                                 response_payload={
                                     "order_number": delivery.order_number,
-                                    "error_code": command_result.get("error_code"),
-                                    "error_message": command_result.get("error_message"),
+                                    "error_code": command_result.error_code,
+                                    "error_message": command_result.error_message,
                                 },
                             )
 
@@ -1135,8 +1136,8 @@ class TurnEngine:
                                 response_key="payment_link_unavailable_now",
                                 response_payload={
                                     "order_number": delivery.order_number,
-                                    "error_code": command_result.get("error_code"),
-                                    "error_message": command_result.get("error_message"),
+                                    "error_code": command_result.error_code,
+                                    "error_message": command_result.error_message,
                                 },
                             )
                         else:
@@ -1145,8 +1146,8 @@ class TurnEngine:
                                 response_key="payment_link_send_failed",
                                 response_payload={
                                     "order_number": delivery.order_number,
-                                    "error_code": command_result.get("error_code"),
-                                    "error_message": command_result.get("error_message"),
+                                    "error_code": command_result.error_code,
+                                    "error_message": command_result.error_message,
                                 },
                             )
 
