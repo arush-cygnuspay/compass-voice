@@ -1,7 +1,10 @@
 # app/state_machine/handlers/delivery/waiting_for_delivery_eligibility_handler.py
 from __future__ import annotations
 
+import logging
 import re
+import time
+from typing import Any
 
 from app.nlu.intent_resolution.confirmation_resolver import resolve_confirmation_decision
 from app.nlu.intent_resolution.intent import Intent
@@ -19,6 +22,14 @@ from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
 
 from app.state_machine.flow_sets import ORDERING_INTENTS as _ORDERING_INTENTS
+
+logger = logging.getLogger(__name__)
+
+
+def _log_delivery_event(event_name: str, **data: Any) -> None:
+    """Emit a structured delivery timing event. Mirrors log_control_intent_event."""
+    logger.info(event_name, extra={"event_name": event_name, **data})
+
 
 # Maps delivery step → the reprompt response key to use after redirecting
 _STEP_REPROMPT_KEY = {
@@ -114,9 +125,20 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
 
         if step == "delivery_eligibility_confirmation":
             if decision == "affirm":
+                # Eligibility is confirmed locally after user verifies area + ZIP.
+                # This is the only place area_serviceable is set — never during ZIP
+                # capture. Log the check duration (pure in-process flag write).
+                t_eligibility = time.perf_counter()
                 delivery.area_serviceable = True
                 context.onboarding_complete = True
                 context.current_prompt_field = None
+                eligibility_ms = (time.perf_counter() - t_eligibility) * 1000.0
+                _log_delivery_event(
+                    "delivery_eligibility_confirmed",
+                    delivery_eligibility_check_ms=round(eligibility_ms, 3),
+                    area=delivery.area,
+                    postal_code=delivery.postal_code,
+                )
                 return HandlerResult(
                     next_state=ConversationState.IDLE,
                     response_key="delivery_area_confirmed",
@@ -352,19 +374,30 @@ class WaitingForDeliveryEligibilityHandler(BaseHandler):
         context: ConversationContext,
         text: str,
     ) -> HandlerResult | None:
+        t_start = time.perf_counter()
         zip_code = self._extract_zip(text)
         if not zip_code:
             return None
 
         context.delivery_address.postal_code = zip_code
         context.current_prompt_field = "delivery_eligibility_confirmation"
+        payload = {
+            "area": context.delivery_address.area,
+            "postal_code": context.delivery_address.postal_code,
+        }
+        handler_ms = (time.perf_counter() - t_start) * 1000.0
+        _log_delivery_event(
+            "delivery_zip_captured",
+            delivery_zip_handler_ms=round(handler_ms, 3),
+            delivery_confirmation_build_ms=round(handler_ms, 3),
+            delivery_eligibility_check_ms=0,
+            zip=zip_code,
+            area=context.delivery_address.area,
+        )
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY,
             response_key="confirm_delivery_area_zip",
-            response_payload={
-                "area": context.delivery_address.area,
-                "postal_code": context.delivery_address.postal_code,
-            },
+            response_payload=payload,
         )
 
     def _handle_confirmation_zip_correction(

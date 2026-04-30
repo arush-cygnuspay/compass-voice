@@ -239,3 +239,206 @@ class WaitingForDeliveryEligibilityHandlerTests(TestCase):
 
         self.assertNotEqual(followup.response_key, "repeat_delivery_area_zip_confirmation")
         self.assertEqual(session.conversation_state, ConversationState.IDLE)
+
+
+# ---------------------------------------------------------------------------
+# Delivery ZIP latency contract tests
+#
+# These tests lock the "no eligibility check before confirmation" invariant.
+# A future developer who accidentally introduces a service call (setting
+# area_serviceable before the user confirms) will break these immediately.
+# ---------------------------------------------------------------------------
+
+def _make_postal_code_context(area: str = "washington dc") -> ConversationContext:
+    """Return a context in the delivery_postal_code step with an area already set."""
+    ctx = ConversationContext()
+    ctx.current_prompt_field = "delivery_postal_code"
+    ctx.delivery_address.area = area
+    return ctx
+
+
+class DeliveryZipConfirmationLatencyTests(TestCase):
+    """Lock the fast-path invariants for ZIP capture and confirmation.
+
+    The ZIP confirmation prompt must be built entirely from local session
+    context. No eligibility check (no area_serviceable mutation, no external
+    call) may occur before the user explicitly confirms area + ZIP.
+    """
+
+    # ── ZIP capture returns confirmation without eligibility check ────────────
+
+    def test_valid_zip_returns_confirm_response_key(self) -> None:
+        ctx = _make_postal_code_context()
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="21321",
+            session=None,
+        )
+        self.assertEqual(result.response_key, "confirm_delivery_area_zip")
+
+    def test_valid_zip_does_not_set_area_serviceable(self) -> None:
+        """ZIP capture must NOT set area_serviceable — no eligibility check before confirmation."""
+        ctx = _make_postal_code_context()
+        WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="21321",
+            session=None,
+        )
+        self.assertIsNone(
+            ctx.delivery_address.area_serviceable,
+            "area_serviceable must remain None until user confirms — "
+            "eligibility check must be deferred until after confirmation.",
+        )
+
+    def test_valid_zip_does_not_set_onboarding_complete(self) -> None:
+        """ZIP capture must not mark onboarding as complete."""
+        ctx = _make_postal_code_context()
+        WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="21321",
+            session=None,
+        )
+        self.assertFalse(ctx.onboarding_complete)
+
+    def test_valid_zip_advances_to_eligibility_confirmation_step(self) -> None:
+        ctx = _make_postal_code_context()
+        WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="21321",
+            session=None,
+        )
+        self.assertEqual(ctx.current_prompt_field, "delivery_eligibility_confirmation")
+
+    # ── Confirmation payload carries area and ZIP from local context ──────────
+
+    def test_confirmation_payload_includes_area(self) -> None:
+        ctx = _make_postal_code_context(area="arlington va")
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="22201",
+            session=None,
+        )
+        self.assertEqual(result.response_payload.get("area"), "arlington va")
+
+    def test_confirmation_payload_includes_zip(self) -> None:
+        ctx = _make_postal_code_context()
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="21321",
+            session=None,
+        )
+        self.assertEqual(result.response_payload.get("postal_code"), "21321")
+
+    def test_confirmation_state_remains_waiting_for_delivery_eligibility(self) -> None:
+        ctx = _make_postal_code_context()
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="21321",
+            session=None,
+        )
+        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY)
+
+    # ── Eligibility set only after user explicitly affirms ────────────────────
+
+    def test_area_serviceable_set_only_after_affirm(self) -> None:
+        """area_serviceable=True is the eligibility check — it must happen only on affirm."""
+        ctx = ConversationContext()
+        ctx.current_prompt_field = "delivery_eligibility_confirmation"
+        ctx.delivery_address.area = "washington dc"
+        ctx.delivery_address.postal_code = "21321"
+        ctx.last_nlu = _make_nlu("yes correct", effective_intent=Intent.CONFIRM, model_sub_intent="affirm")
+        ctx.last_intent_confidence = ctx.last_nlu.intent_confidence
+
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="yes correct",
+            session=None,
+        )
+
+        self.assertEqual(result.response_key, "delivery_area_confirmed")
+        self.assertTrue(ctx.delivery_address.area_serviceable)
+        self.assertTrue(ctx.onboarding_complete)
+
+    def test_area_serviceable_not_set_on_deny(self) -> None:
+        """Denial must clear area/ZIP and must not set area_serviceable."""
+        ctx = ConversationContext()
+        ctx.current_prompt_field = "delivery_eligibility_confirmation"
+        ctx.delivery_address.area = "washington dc"
+        ctx.delivery_address.postal_code = "21321"
+        ctx.last_nlu = _make_nlu("no wrong", effective_intent=Intent.DENY, model_sub_intent="deny")
+        ctx.last_intent_confidence = ctx.last_nlu.intent_confidence
+
+        WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="no wrong",
+            session=None,
+        )
+
+        self.assertIsNone(ctx.delivery_address.area_serviceable)
+
+    # ── Invalid ZIP follows existing repeat behavior (no regression) ─────────
+
+    def test_invalid_zip_returns_repeat_response_key(self) -> None:
+        ctx = _make_postal_code_context()
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="blah blah blah",
+            session=None,
+        )
+        self.assertEqual(result.response_key, "repeat_delivery_zip")
+
+    def test_invalid_zip_does_not_advance_step(self) -> None:
+        ctx = _make_postal_code_context()
+        WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="blah blah blah",
+            session=None,
+        )
+        self.assertEqual(ctx.current_prompt_field, "delivery_postal_code")
+
+    def test_invalid_zip_does_not_set_area_serviceable(self) -> None:
+        ctx = _make_postal_code_context()
+        WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="blah blah blah",
+            session=None,
+        )
+        self.assertIsNone(ctx.delivery_address.area_serviceable)
+
+    # ── Various ZIP formats are accepted ─────────────────────────────────────
+
+    def test_spoken_zip_digits_accepted(self) -> None:
+        """'two one three two one' → ZIP 21321."""
+        ctx = _make_postal_code_context()
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="two one three two one",
+            session=None,
+        )
+        self.assertEqual(result.response_key, "confirm_delivery_area_zip")
+        self.assertEqual(result.response_payload.get("postal_code"), "21321")
+
+    def test_zip_with_prefix_phrase_accepted(self) -> None:
+        """'it's 21321' → ZIP 21321."""
+        ctx = _make_postal_code_context()
+        result = WaitingForDeliveryEligibilityHandler().handle(
+            intent=Intent.UNKNOWN,
+            context=ctx,
+            user_text="it's 21321",
+            session=None,
+        )
+        self.assertEqual(result.response_key, "confirm_delivery_area_zip")
+        self.assertEqual(result.response_payload.get("postal_code"), "21321")
