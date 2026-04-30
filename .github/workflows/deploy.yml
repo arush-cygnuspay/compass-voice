@@ -15,14 +15,12 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. Checkout — lfs:false because app/artifacts/ is in .dockerignore
-      #    and models (1.2 GB) are never needed in the Docker build context.
-      #    Enabling lfs:true was burning GitHub LFS bandwidth on every push
-      #    for files the build never uses.
+      # ── 1. Checkout with LFS — models (~1.2 GB) must be in the build context
+      #    so the Dockerfile's COPY . . bakes them into the image.
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          lfs: false
+          lfs: true
 
       # ── 3. Docker build ──
       - name: Set up Docker Buildx
