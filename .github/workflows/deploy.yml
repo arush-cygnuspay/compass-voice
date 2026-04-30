@@ -15,21 +15,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # ── 1. CACHE MUST BE FIRST — restored before checkout uses it ──
-      - name: Cache Git LFS objects
-        uses: actions/cache@v4
-        with:
-          path: .git/lfs/objects
-          key: lfs-${{ runner.os }}-${{ hashFiles('.gitattributes') }}-${{ github.ref_name }}
-          restore-keys: |
-            lfs-${{ runner.os }}-${{ hashFiles('.gitattributes') }}-
-            lfs-${{ runner.os }}-
-
-      # ── 2. SINGLE checkout — lfs:true uses the cache above ──
+      # ── 1. Checkout — lfs:false because app/artifacts/ is in .dockerignore
+      #    and models (1.2 GB) are never needed in the Docker build context.
+      #    Enabling lfs:true was burning GitHub LFS bandwidth on every push
+      #    for files the build never uses.
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          lfs: true
+          lfs: false
 
       # ── 3. Docker build ──
       - name: Set up Docker Buildx
@@ -49,6 +42,7 @@ jobs:
           tags: |
             arushahmd/compass-voice:${{ github.ref_name }}
             arushahmd/compass-voice:${{ github.sha }}
+            arushahmd/compass-voice:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
