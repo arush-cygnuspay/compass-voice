@@ -52,6 +52,11 @@ class WaitingForQuantityHandler(BaseHandler):
             )
 
         normalized_user_text = (user_text or "").strip()
+
+        # --- Step 1: CANCEL must always win, regardless of slots. ---
+        # Resolve only enough to detect an explicit cancel before we do
+        # anything else; the remaining control intents are checked below,
+        # after we've had a chance to consume a QUANTITY slot.
         control_intent = resolve_control_intent(
             normalized_user_text,
             intent,
@@ -62,20 +67,51 @@ class WaitingForQuantityHandler(BaseHandler):
             intent_confidence=context.last_intent_confidence,
         )
 
-        if control_intent is not None:
-            if control_intent.kind == ControlIntentKind.CANCEL:
-                log_control_intent_event(
-                    "control_intent_action",
-                    state=ConversationState.WAITING_FOR_QUANTITY.value,
-                    action="cancel_pending_item",
-                    kind=control_intent.kind.value,
-                )
-                context.reset_item_scope()
+        if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
+            log_control_intent_event(
+                "control_intent_action",
+                state=ConversationState.WAITING_FOR_QUANTITY.value,
+                action="cancel_pending_item",
+                kind=control_intent.kind.value,
+            )
+            context.reset_item_scope()
+            return HandlerResult(
+                next_state=ConversationState.IDLE,
+                response_key="item_cancelled_successfully",
+            )
+
+        # --- Step 2: QUANTITY slot / text takes priority over intent labels. ---
+        # NLU intent classification is unreliable for short quantity utterances
+        # ("Two.", "I said two") — these are frequently mis-labelled as
+        # AFFIRM or DENY. A resolved QUANTITY slot is authoritative and must
+        # win before any intent-based re-ask logic fires.
+        extracted_quantity = self._extract_quantity_from_context_or_text(
+            context=context,
+            user_text=normalized_user_text,
+        )
+
+        if extracted_quantity is not None:
+            if extracted_quantity <= 0:
                 return HandlerResult(
-                    next_state=ConversationState.IDLE,
-                    response_key="item_cancelled_successfully",
+                    next_state=ConversationState.WAITING_FOR_QUANTITY,
+                    response_key="invalid_quantity_option",
+                    response_payload={"item_name": pending.item_name},
                 )
 
+            context.quantity = extracted_quantity
+
+            if context.current_prompt_field == "quantity":
+                context.current_prompt_field = None
+
+            if context.available_choices_kind == "quantity":
+                context.available_choices_kind = None
+                context.available_choices_values = ()
+
+            step = determine_next_add_item_step(context)
+            return self._step_to_result(context, step)
+
+        # --- Step 3: No valid quantity found — apply remaining intent routing. ---
+        if control_intent is not None:
             if control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
                 log_control_intent_event(
                     "options_requested",
@@ -116,31 +152,6 @@ class WaitingForQuantityHandler(BaseHandler):
                     response_key="ask_for_quantity",
                     response_payload={"item_name": pending.item_name},
                 )
-
-        extracted_quantity = self._extract_quantity_from_context_or_text(
-            context=context,
-            user_text=normalized_user_text,
-        )
-
-        if extracted_quantity is not None:
-            if extracted_quantity <= 0:
-                return HandlerResult(
-                    next_state=ConversationState.WAITING_FOR_QUANTITY,
-                    response_key="invalid_quantity_option",
-                    response_payload={"item_name": pending.item_name},
-                )
-
-            context.quantity = extracted_quantity
-
-            if context.current_prompt_field == "quantity":
-                context.current_prompt_field = None
-
-            if context.available_choices_kind == "quantity":
-                context.available_choices_kind = None
-                context.available_choices_values = ()
-
-            step = determine_next_add_item_step(context)
-            return self._step_to_result(context, step)
 
         if intent in SOFT_SWITCH_INTENTS:
             context.return_state = ConversationState.WAITING_FOR_QUANTITY

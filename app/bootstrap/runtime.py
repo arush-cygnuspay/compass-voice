@@ -125,7 +125,7 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
 
     slot_model_dir = _get_env_path(
         "COMPASS_SLOT_MODEL_DIR",
-        "app/ml/models/spacy_slot_trf_out/model-best",
+        "app/artifacts/models/slot/model-best",
     )
 
     _validate_model_paths(
