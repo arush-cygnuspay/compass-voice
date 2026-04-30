@@ -37,7 +37,7 @@ LABELS_SUB = os.getenv(
 
 SPACY_MODEL_DIR = os.getenv(
     "COMPASS_SLOT_MODEL_DIR",
-    str(_PROJECT_ROOT / "app" / "artifacts" / "models" / "slot" / "model-best"),
+    str(_PROJECT_ROOT / "app" / "ml" / "models" / "spacy_slot_trf_out" / "model-best"),
 )
 
 REPORT_DIR = Path(
