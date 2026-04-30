@@ -212,7 +212,18 @@ class ConfirmOrderHandler(BaseHandler):
                 response_key="confirm_cancel_order_or_edit",
             )
 
-        if intent in self.CHECKOUT_CONFIRM_INTENTS or (
+        # When the NLU detects a checkout-family intent but confidence falls below
+        # the global routing threshold, TurnEngine downgrades intent to UNKNOWN before
+        # calling the handler. The raw effective intent is preserved in context.last_nlu,
+        # so we consult it here as a state-local fallback. This is safe because this
+        # handler only runs in CONFIRMING_ORDER, where the bot just asked "Would you
+        # like to checkout?" — any checkout-family NLU signal is unambiguously affirmative.
+        _nlu_checkout_signal = (
+            context.last_nlu is not None
+            and context.last_nlu.effective_intent in self.CHECKOUT_CONFIRM_INTENTS
+        )
+
+        if intent in self.CHECKOUT_CONFIRM_INTENTS or _nlu_checkout_signal or (
             control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM
         ):
             delivery = context.delivery_address
