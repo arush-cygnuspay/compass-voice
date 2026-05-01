@@ -442,13 +442,6 @@ def test_no_thats_all_routes_to_order_review() -> None:
         intent=Intent.ADD_ITEM,
         slots=(SlotValue(name="MODIFIER", value="Fresh Mushroom"),),
     )
-    _turn(
-        engine,
-        session,
-        "1",
-        intent=Intent.UNKNOWN,
-        slots=(SlotValue(name="QUANTITY", value="1"),),
-    )
 
     out = _turn(
         engine,

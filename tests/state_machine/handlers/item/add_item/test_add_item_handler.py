@@ -131,12 +131,8 @@ def test_add_item_handler_enters_flow_for_resolved_item():
         session=None,
     )
 
-    assert context.pending_action == PendingAction.ADD_ITEM
-    assert context.current_item_id == item.item_id
-    assert context.current_item_name == item.name
-    assert result.response_key == "ask_for_quantity"
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.command is None
+    assert result.response_key == "item_added_successfully"
+    assert result.next_state == ConversationState.IDLE
 
 
 def test_add_item_handler_returns_ambiguous_confirmation():

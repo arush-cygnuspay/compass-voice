@@ -163,9 +163,8 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Fresh Mushroom",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Fresh Mushroom"),),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
         (
@@ -195,10 +194,8 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Plain Gravy",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Plain Gravy"),),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("no", Intent.DENY, (), "ask_for_quantity"),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
         (
@@ -216,10 +213,8 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Cream",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Cream"),),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("no", Intent.DENY, (), "ask_for_quantity"),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
         (
@@ -239,9 +234,8 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                         SlotValue(name="ITEM", value="Rice"),
                         SlotValue(name="ITEM", value="Cole Slaw"),
                     ),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
         (
@@ -264,9 +258,8 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Fried",
                     Intent.ADD_ITEM,
                     (SlotValue(name="ITEM", value="Fried"),),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
         (
@@ -290,10 +283,8 @@ def _assert_cart_contains_item(session: Session, expected_item_name: str):
                     "Mustard",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Mustard"),),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("no", Intent.DENY, (), "ask_for_quantity"),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
     ],
@@ -329,19 +320,12 @@ def test_no_thats_all_after_item_added_transitions_to_order_review():
         intent=Intent.ADD_ITEM,
         slots=(SlotValue(name="ITEM", value="Bourbon Chicken"),),
     )
-    _turn(
+    added = _turn(
         engine,
         session,
         "Fresh Mushroom",
         intent=Intent.ADD_ITEM,
         slots=(SlotValue(name="MODIFIER", value="Fresh Mushroom"),),
-    )
-    added = _turn(
-        engine,
-        session,
-        "1",
-        intent=Intent.UNKNOWN,
-        slots=(SlotValue(name="QUANTITY", value="1"),),
     )
     assert added.response_key == "item_added_successfully"
 
@@ -387,10 +371,8 @@ def test_no_thats_all_after_item_added_transitions_to_order_review():
                     "Plain Gravy",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Plain Gravy"),),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("no", Intent.DENY, (), "ask_for_quantity"),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
         (
@@ -408,10 +390,8 @@ def test_no_thats_all_after_item_added_transitions_to_order_review():
                     "Sugar",
                     Intent.ADD_ITEM,
                     (SlotValue(name="MODIFIER", value="Sugar"),),
-                    "ask_for_quantity",
+                    "item_added_successfully",
                 ),
-                ("no", Intent.DENY, (), "ask_for_quantity"),
-                ("1", Intent.UNKNOWN, (SlotValue(name="QUANTITY", value="1"),), "item_added_successfully"),
             ],
         ),
     ],
@@ -462,17 +442,6 @@ def test_real_menu_pickup_add_item_prefills_sparse_side_and_modifiers() -> None:
         slots=(SlotValue(name="ITEM", value="Chicken Taco"),),
     )
 
-    assert out.response_key == "ask_for_quantity"
+    assert out.response_key == "item_added_successfully"
     assert out.response_payload["prefilled_summary"] == "with Coke (12 oz.), Sausage, and Jelly"
-    assert session.conversation_state == ConversationState.WAITING_FOR_QUANTITY
-
-    complete = _turn(
-        engine,
-        session,
-        "1",
-        intent=Intent.UNKNOWN,
-        slots=(SlotValue(name="QUANTITY", value="1"),),
-    )
-
-    assert complete.response_key == "item_added_successfully"
     _assert_cart_contains_item(session, "Chicken Taco")

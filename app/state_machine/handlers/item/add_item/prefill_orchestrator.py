@@ -22,6 +22,7 @@ from typing import Sequence
 
 from app.menu.models import MenuItem
 from app.nlu.nlu_result import SlotValue
+from app.nlu.quantity_resolver import QuantityResolver
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.nlu.slot_consumption import consume_slot_or_fallback
 from app.state_machine.handler_result import HandlerResult
@@ -64,6 +65,8 @@ from app.utils.token_matcher import (
 )
 
 logger = logging.getLogger(__name__)
+
+_QUANTITY_RESOLVER = QuantityResolver()
 
 # ---------------------------------------------------------------------------
 # Module-level constants (shared with add_item_handler.py)
@@ -641,6 +644,17 @@ class PrefillOrchestrator:
             context=context,
             user_text=prefill_user_text,
         )
+
+        # If prefill_quantity did not find an explicit quantity, resolve now:
+        # vague expressions ("some burgers") ask for clarification;
+        # everything else defaults to 1 so we never ask unnecessarily.
+        if not (isinstance(context.quantity, int) and context.quantity > 0):
+            resolution = _QUANTITY_RESOLVER.resolve(
+                extracted=None,
+                user_text=prefill_user_text,
+            )
+            if not resolution.needs_clarification:
+                context.quantity = resolution.quantity
 
         # 1) Unified, segment-scoped prefill across variants + sides + modifiers.
         prefill_result: PrefillResult = self.prefill_engine.prefill(

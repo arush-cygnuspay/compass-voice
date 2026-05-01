@@ -154,17 +154,7 @@ class TurnEngineAddItemQuantityRegressionTests(unittest.TestCase):
                 SlotValue(name="ITEM", value="coke"),
             ),
         )
-        self.assertEqual(second.response_key, "ask_for_quantity")
-        self.assertEqual(session.conversation_state, ConversationState.WAITING_FOR_QUANTITY)
-
-        third = _turn(
-            engine,
-            session,
-            "1",
-            intent=Intent.UNKNOWN,
-            slots=(SlotValue(name="QUANTITY", value="1"),),
-        )
-        self.assertEqual(third.response_key, "item_added_successfully")
+        self.assertEqual(second.response_key, "item_added_successfully")
         self.assertEqual(session.conversation_state, ConversationState.IDLE)
         self.assertEqual(len(session.cart.get_items()), 1)
 

@@ -63,8 +63,8 @@ def test_partial_input_only_prompts_for_missing_fields() -> None:
         ),
     )
 
-    assert result.response_key == "ask_for_quantity"
-    assert session.conversation_state == ConversationState.WAITING_FOR_QUANTITY
+    assert result.response_key == "item_added_successfully"
+    assert session.conversation_state == ConversationState.IDLE
 
 
 def test_remove_item_correction_updates_cart_state() -> None:
