@@ -1421,16 +1421,9 @@ async def twilio_media_ws(websocket: WebSocket):
                 )
 
                 if not welcome_sent:
-                    # Always ask the device-type question first via TTS.
-                    # The cached welcome audio still says "pickup or
-                    # delivery" and is no longer the right opener — the
-                    # very first thing we need to know is whether the
-                    # caller is on a landline (so we can hand off to a
-                    # human) or a mobile (so we can text payment links).
                     try:
                         await speak_response_text(
-                            "Welcome to Compass. Before we get started, "
-                            "are you calling from a landline or a mobile phone?"
+                            "Welcome to Compass. Is this for pickup or delivery?"
                         )
                     finally:
                         welcome_sent = True

@@ -54,7 +54,6 @@ from app.state_machine.handlers.item.add_item.group_collection_utils import (
 )
 from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
     HUMAN_AGENT_TRANSFER_NUMBER,
-    WaitingForCallerDeviceTypeHandler,
 )
 from app.state_machine.handlers.order.waiting_for_order_type_handler import (
     WaitingForOrderTypeHandler,
@@ -495,72 +494,6 @@ class TurnEngine:
                     end_call_after_playback=True,
                 ),
             )
-
-        # Caller-device-type gate. Must run BEFORE the order-type gate
-        # because landline callers are routed to a live human and never
-        # reach the pickup / delivery question.
-        if session.conversation_state == ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE:
-            device_handler: WaitingForCallerDeviceTypeHandler = self.dispatcher.get_handler(
-                "waiting_for_caller_device_type_handler"
-            )
-            device_result = device_handler.handle(
-                intent=Intent.UNKNOWN,
-                context=ctx,
-                user_text=user_text,
-                session=session,
-            )
-
-            session.conversation_state = device_result.next_state
-            self.response_writer._apply_session_response(
-                session=session,
-                intent=Intent.UNKNOWN,
-                response_key=device_result.response_key,
-                response_payload=device_result.response_payload,
-            )
-
-            transfer_number: str | None = None
-            command = device_result.command or {}
-            if command.get("type") == "transfer_call":
-                transfer_number = command.get("transfer_number")
-
-            output = self.response_writer._hydrate_output(
-                session=session,
-                output=TurnOutput(
-                    response_key=device_result.response_key,
-                    response_payload=device_result.response_payload,
-                    transfer_call_to_number=transfer_number,
-                    end_call_after_playback=transfer_number is not None,
-                ),
-            )
-            _diag = self.diagnostics._update_session_diagnostics(
-                session=session,
-                state_before=ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
-                nlu=NLUResult(
-                    effective_intent=Intent.UNKNOWN,
-                    intent_confidence=1.0,
-                    raw_text=user_text,
-                    normalized_text=preprocess_turn_text(user_text).normalized_text,
-                ),
-                response_key=device_result.response_key,
-                response_payload=device_result.response_payload,
-            )
-            self._record_turn_event(
-                session=session,
-                state_before=ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
-                nlu=NLUResult(
-                    effective_intent=Intent.UNKNOWN,
-                    intent_confidence=1.0,
-                    raw_text=user_text,
-                    normalized_text=preprocess_turn_text(user_text).normalized_text,
-                ),
-                result=device_result,
-                response_key=device_result.response_key,
-                response_payload=device_result.response_payload,
-                diag=_diag,
-                next_state=device_result.next_state,
-                total_ms=(time.perf_counter() - t_total_start) * 1000.0,
-            )
-            return output
 
         # Auto payment-check probe injected by the transport layer after
         # PAYMENT_AUTO_CHECK_DELAY_SECONDS of silence.  Bypass NLU entirely

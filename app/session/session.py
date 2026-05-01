@@ -22,7 +22,7 @@ class Session:
     restaurant_id: str
     current_turn_id: Optional[str] = None
 
-    conversation_state: ConversationState = ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE
+    conversation_state: ConversationState = ConversationState.WAITING_FOR_ORDER_TYPE
     conversation_context: ConversationContext = field(default_factory=ConversationContext)
 
     cart: Cart = field(default_factory=Cart)

@@ -65,9 +65,6 @@ class ChatResponse(BaseModel):
 def _prepare_chat_session(session: Session) -> None:
     context = session.conversation_context
 
-    if session.conversation_state == ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE:
-        session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
-
     context.caller_device_type = "chat"
 
     if not context.delivery_address.customer_phone_number:

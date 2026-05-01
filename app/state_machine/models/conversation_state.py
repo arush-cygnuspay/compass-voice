@@ -44,10 +44,8 @@ class ConversationState(str, Enum):
     WAITING_FOR_DELIVERY_ELIGIBILITY = "waiting_for_delivery_eligibility"
     WAITING_FOR_DELIVERY_ADDRESS_COLLECTION = "waiting_for_delivery_address_collection"
 
-    # Caller device gating (asked at the very beginning of the call).
-    # If the caller is on a landline we cannot text them links, so the
-    # call is transferred out to a human agent. If they are on a mobile
-    # phone the normal pickup/delivery flow continues.
+    # Caller device gating — reserved for explicit landline detection flows.
+    # Not part of the initial call path; all new calls start at WAITING_FOR_ORDER_TYPE.
     WAITING_FOR_CALLER_DEVICE_TYPE = "waiting_for_caller_device_type"
     WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION = "waiting_for_landline_pickup_confirmation"
     TRANSFERRING_TO_HUMAN_AGENT = "transferring_to_human_agent"
