@@ -13,6 +13,9 @@ Delegates all item matching/scoring to ``MenuMatcher``.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
 from app.menu.indexer import MenuIndexer
 from app.menu.matcher import MenuMatcher
 from app.menu.models import ItemResolution, MenuItem
@@ -22,6 +25,24 @@ from app.menu.slot_helpers import slot_values
 from app.menu.store import MenuStore
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
+
+
+@dataclass(frozen=True, slots=True)
+class NearMissResult:
+    """Carries the near-miss item, its raw score, and the derived confidence tier.
+
+    Tier semantics (voice context — confirmation always asked regardless of tier):
+      HIGH   — score >= HIGH_MATCH_THRESHOLD (6.5): very strong near-match
+      MEDIUM — score >= NEAR_MISS_THRESHOLD (5.2): moderate near-match
+    """
+
+    item: MenuItem
+    score: float
+
+    @property
+    def tier(self) -> Literal["HIGH", "MEDIUM"]:
+        from app.menu.scorer import HIGH_MATCH_THRESHOLD
+        return "HIGH" if self.score >= HIGH_MATCH_THRESHOLD else "MEDIUM"
 
 
 class MenuQueryService:
@@ -70,6 +91,39 @@ class MenuQueryService:
     # ------------------------------------------------------------------
     # NOT-FOUND RECOVERY
     # ------------------------------------------------------------------
+
+    def find_near_miss_item_normalized(
+        self,
+        normalized_text: str,
+        *,
+        threshold: float | None = None,
+    ) -> NearMissResult | None:
+        """Return the top-scored available item wrapped in a NearMissResult.
+
+        Returns None when no candidate clears the near-miss threshold.
+        The caller can inspect result.tier ("HIGH" | "MEDIUM") to decide
+        presentation; both tiers currently prompt "Did you mean X?".
+        """
+        if not normalized_text:
+            return None
+
+        effective_threshold = threshold if threshold is not None else self._scorer.near_miss
+        candidates = self._indexer.candidate_items(normalized_text)
+
+        best_score = 0.0
+        best_item: MenuItem | None = None
+
+        for item in candidates:
+            if not item.available:
+                continue
+            score = self._scorer.score_item_labels(normalized_text, item)
+            if score > best_score:
+                best_score = score
+                best_item = item
+
+        if best_score >= effective_threshold and best_item is not None:
+            return NearMissResult(item=best_item, score=best_score)
+        return None
 
     def build_not_found_recovery(
         self,

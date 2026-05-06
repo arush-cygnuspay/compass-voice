@@ -199,6 +199,7 @@ def build_engine(
     if checkout_service is not None:
         engine.checkout_service = checkout_service
         engine.dispatcher.handlers["confirming_order_handler"].checkout_service = checkout_service
+        engine.dispatcher.handlers["waiting_for_pickup_sms_permission_handler"].checkout_service = checkout_service
         engine.dispatcher.handlers["waiting_for_payment_handler"].checkout_service = checkout_service
         engine.dispatcher.handlers["waiting_for_checkout_completion_handler"].checkout_service = checkout_service
         if "waiting_for_delivery_address_collection_handler" in engine.dispatcher.handlers:

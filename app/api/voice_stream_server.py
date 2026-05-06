@@ -26,7 +26,15 @@ from twilio.twiml.voice_response import Connect, VoiceResponse
 from app.api.chat_demo import router as test_chat_router
 from app.api.ui.ui import router as ui_router
 from app.api.checkout_routes import router as checkout_api_router, page_router as checkout_page_router
+from app.api.health_routes import router as health_router
 from app.api.payment_links_webhook import router as payment_links_webhook_router
+from app.config.required_env import assert_required_env_or_die
+
+# Fail fast at import time if any required secret/config is missing.
+# With gunicorn --preload, this runs in the master process before workers
+# fork, so a misconfigured deploy crashes `docker compose up` instead of
+# the first WebSocket request. See app/config/required_env.py.
+assert_required_env_or_die()
 from app.bootstrap.runtime import build_runtime
 from app.logging.realtime_latency_logger import (
     RealtimeLatencyLogger,
@@ -356,6 +364,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="app/static", check_dir=False), name="static")
 
+app.include_router(health_router)
 app.include_router(test_chat_router)
 app.include_router(ui_router)
 app.include_router(checkout_api_router)

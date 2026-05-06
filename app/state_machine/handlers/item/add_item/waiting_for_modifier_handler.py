@@ -11,11 +11,8 @@ from app.state_machine.control_intent_resolver import (
     log_control_intent_event,
     resolve_control_intent,
 )
-from app.state_machine.models.conversation_context import (
-    ConversationContext,
-    InterruptProposal,
-    PendingModifierGroup,
-)
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.pending_item_models import InterruptProposal, PendingModifierGroup
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.models.pending_item_models import ModifierSelection
 from app.state_machine.handler_result import HandlerResult
@@ -45,6 +42,9 @@ from app.state_machine.flow_sets import (
     looks_like_more_options_answer,
     looks_like_skip_answer,
 )
+from app.nlu.control_phrase_classifier import DEFAULT_CLASSIFIER
+from app.nlu.utterance_filter import DEFAULT_FILTER
+from app.nlu.query_normalization.text_preprocessor import normalize_text as _normalize_text
 
 
 def _looks_like_done_answer(normalized_user_text: str) -> bool:
@@ -133,6 +133,94 @@ class WaitingForModifierHandler(GroupResolutionHandler):
         )
 
         min_selector, max_selector = effective_group_selector_bounds(group)
+
+        # ── Control-phrase pre-classification ────────────────────────────
+        # Intercept skip/done/repeat BEFORE the resolver so phrases like
+        # "no skip that", "can you repeat", "add done" never reach
+        # unmatched_names and get echoed back.
+        # For negated_option: if the target is NOT in the modifier group
+        # we give a neutral clarification instead of "not available".
+        # If the target IS in the group we pass through to the resolver
+        # which handles "no onions", "without mayo", etc. correctly.
+        _cp = DEFAULT_CLASSIFIER.classify(
+            normalized_user_text, ConversationState.WAITING_FOR_MODIFIER.value
+        )
+        if _cp.action == "repeat":
+            log_control_intent_event(
+                "control_phrase_classifier_repeat",
+                state=ConversationState.WAITING_FOR_MODIFIER.value,
+                group_id=group.group_id,
+            )
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_MODIFIER,
+                response_key="repeat_modifier_options",
+                response_payload={
+                    **self._choice_payload(group, existing_selections),
+                    "repeat_reason": "meta_clarify",
+                },
+            )
+
+        if _cp.action in {"skip", "done"}:
+            log_control_intent_event(
+                "control_phrase_classifier_skip_done",
+                state=ConversationState.WAITING_FOR_MODIFIER.value,
+                action=_cp.action,
+                group_id=group.group_id,
+            )
+            _skip = evaluate_group_skip(min_selector, len(existing_selections))
+            if _skip.decision == GroupSkipDecision.BLOCK_UNDER_MIN:
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="required_modifier_cannot_skip",
+                    response_payload={
+                        **self._choice_payload(group, existing_selections),
+                        "remaining_to_min": _skip.remaining_to_min,
+                        "selected_count": _skip.selected_count,
+                        "min_required": _skip.min_required,
+                        "intent_kind": _cp.action,
+                    },
+                )
+            if _skip.decision == GroupSkipDecision.SKIP_OPTIONAL and not existing_selections:
+                context.skipped_modifier_groups.add(group.group_id)
+                context.selected_modifier_groups.pop(group.group_id, None)
+            elif _skip.decision == GroupSkipDecision.ADVANCE_MIN_MET:
+                log_control_intent_event(
+                    "advance_min_met",
+                    state=ConversationState.WAITING_FOR_MODIFIER.value,
+                    field_name="modifier",
+                    group_id=group.group_id,
+                    selected_count=_skip.selected_count,
+                    min_required=_skip.min_required,
+                    kind=_cp.action,
+                )
+            step = determine_next_add_item_step(context)
+            return self._step_to_result(context, step)
+
+        if _cp.action == "negated_option":
+            target = _cp.normalized_target or ""
+            # If the target matches a choice in this group, pass through to
+            # the resolver which handles "no onions", "without mayo" etc.
+            if target and self._target_in_modifier_group(target, group):
+                pass  # fall through to resolve_control_intent + resolver
+            else:
+                # Target not in this group — give neutral clarification;
+                # do NOT say "unavailable" for what is a control phrase.
+                log_control_intent_event(
+                    "control_phrase_classifier_negated_not_in_group",
+                    state=ConversationState.WAITING_FOR_MODIFIER.value,
+                    target=target,
+                    group_id=group.group_id,
+                )
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="repeat_modifier_options",
+                    response_payload={
+                        **self._choice_payload(group, existing_selections),
+                        "repeat_reason": "need_choice",
+                    },
+                )
+        # ── END control-phrase pre-classification ─────────────────────────
+
         control_intent = resolve_control_intent(
             normalized_user_text,
             intent,
@@ -334,13 +422,16 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             )
 
         if resolution.unmatched_values:
+            _sanitized_unmatched = DEFAULT_FILTER.strip_unmatched(
+                v for v in resolution.unmatched_values if v
+            )
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
                 response_key="repeat_modifier_options",
                 response_payload={
                     **self._choice_payload(group, existing_selections),
                     "repeat_reason": "invalid",
-                    "unmatched_names": [value for value in resolution.unmatched_values if value],
+                    **({"unmatched_names": _sanitized_unmatched} if _sanitized_unmatched else {}),
                     **self._match_debug_payload(resolution.match_debug),
                 },
             )
@@ -527,6 +618,22 @@ class WaitingForModifierHandler(GroupResolutionHandler):
                         seen.add(value)
                         phrases.append(value)
         return phrases
+
+    @staticmethod
+    def _target_in_modifier_group(target: str, group: PendingModifierGroup) -> bool:
+        """Return True if *target* token-overlaps any choice in *group*."""
+        if not target:
+            return False
+        target_norm = _normalize_text(target)
+        for choice in group.choices:
+            choice_norm = getattr(choice, "normalized_name", None) or _normalize_text(choice.name)
+            if target_norm == choice_norm or target_norm in choice_norm or choice_norm in target_norm:
+                return True
+            for match_text in getattr(choice, "match_texts", ()) or ():
+                mt = _normalize_text(str(match_text))
+                if mt and (target_norm == mt or target_norm in mt):
+                    return True
+        return False
 
     def _prefill_following_modifier_groups(
         self,

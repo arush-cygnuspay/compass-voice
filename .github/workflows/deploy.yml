@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - dev
 
 concurrency:
   group: compass-voice-${{ github.ref_name }}  # separate lock per branch
@@ -22,7 +21,7 @@ jobs:
         with:
           lfs: true
 
-      # ── 3. Docker build ──
+      # ── 2. Docker build ──
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -44,6 +43,20 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # ── 3. Ship docker-compose.yaml to the host ──
+      # The compose file is the source of truth in git. We copy it to the
+      # EC2 host every deploy so it can never drift from the repo. The
+      # `.env` file holding secrets stays on the host and is NOT touched.
+      - name: Copy docker-compose.yaml to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: "docker-compose.yaml"
+          target: "/home/${{ secrets.EC2_USER }}/apps/compass-voice/"
+          overwrite: true
+
       # ── 4. Deploy to EC2 ──
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1.0.3
@@ -53,9 +66,50 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY }}
           script_stop: true
           script: |
-            set -e
+            set -euo pipefail
             cd ~/apps/compass-voice
+
+            # Persistent state dirs — idempotent. Container runs as root,
+            # so we chown to root:root to match what the app writes.
+            sudo mkdir -p /home/ubuntu/compass-voice-state/checkout_sessions \
+                          /home/ubuntu/compass-voice-state/payment_link_sessions \
+                          /home/ubuntu/compass-voice-state/redis \
+                          /home/ubuntu/compass-voice-logs
+            sudo chown -R 0:0 /home/ubuntu/compass-voice-state
+
+            # Refuse to deploy if .env is missing — secrets must be present
+            # on the host BEFORE the first deploy. See .env.example in the repo.
+            if [ ! -f .env ]; then
+              echo "FATAL: /home/ubuntu/apps/compass-voice/.env is missing."
+              echo "Copy .env.example from the repo, fill in real secrets, then re-run."
+              exit 1
+            fi
+            chmod 600 .env
+
+            # Sanity-check the resolved manifest before bouncing anything.
+            # If a required interpolation is empty, fail here, not on the
+            # first customer call.
+            docker compose config >/dev/null
+
             docker compose pull
             docker compose up -d --remove-orphans
             docker image prune -f
-            docker ps
+
+            # ── Health gate ──
+            # Poll /healthz until 200 or timeout. The app refuses to start
+            # if any required env var is missing (see required_env.py), so
+            # this catches misconfigured .env files before traffic arrives.
+            echo "Waiting for /healthz..."
+            for i in $(seq 1 60); do
+              if curl -fsS http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
+                echo "Healthy after ${i}s"
+                docker ps
+                exit 0
+              fi
+              sleep 2
+            done
+
+            echo "FATAL: /healthz did not return 200 within 120s."
+            echo "---- last 200 log lines ----"
+            docker logs --tail 200 compass-voice-stream || true
+            exit 1

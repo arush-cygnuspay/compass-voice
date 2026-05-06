@@ -37,6 +37,12 @@ GROUP_MATCH_BAND_RATIO: float = 0.90       # items within 90 % of best win
 # Similarity / recovery suggestions
 SIMILARITY_MINIMUM_THRESHOLD: float = 4.8
 
+# Near-miss thresholds: items scoring in [NEAR_MISS_THRESHOLD, HIGH_MATCH_THRESHOLD)
+# are MEDIUM confidence ("Did you mean X?"); items scoring >= HIGH_MATCH_THRESHOLD
+# are HIGH confidence (very strong near-match, still asks confirmation in voice context).
+NEAR_MISS_THRESHOLD: float = 5.2
+HIGH_MATCH_THRESHOLD: float = 6.5
+
 # Legacy resolve_item() path
 LEGACY_RESOLVE_THRESHOLD: float = 6.5
 
@@ -66,6 +72,8 @@ class MenuScorer:
     group_match_band: float = GROUP_MATCH_BAND_RATIO
 
     similarity_minimum: float = SIMILARITY_MINIMUM_THRESHOLD
+    near_miss: float = NEAR_MISS_THRESHOLD
+    high_match: float = HIGH_MATCH_THRESHOLD
     legacy_resolve: float = LEGACY_RESOLVE_THRESHOLD
 
     # ------------------------------------------------------------------

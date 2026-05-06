@@ -20,7 +20,9 @@ from typing import Any
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
 from app.config.realtime import get_realtime_config
 from app.contracts.command_result import CommandResult
+from app.core.add_item_value_mapper import build_missing_required_fields, build_normalized_values
 from app.core.command_executor import CommandExecutor
+from app.core.sms_command_fallback import resolve_sms_failure
 from app.state_machine.policy.flow_decision import FlowAction
 from app.state_machine.policy.flow_control_policy import FlowControlPolicy
 from app.state_machine.policy.flow_gate import FlowGate, FlowGateDecision
@@ -49,9 +51,6 @@ from app.services.checkout_service import CheckoutService
 from app.services.sms_service import SmsService
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
-from app.state_machine.handlers.item.add_item.group_collection_utils import (
-    effective_group_selector_bounds,
-)
 from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
     HUMAN_AGENT_TRANSFER_NUMBER,
 )
@@ -174,29 +173,12 @@ class TurnEngine:
         )
 
     # ------------------------------------------------------------------
-    # Private field-building helpers (require self.responder / self.menu_repo)
+    # Private helpers
     # ------------------------------------------------------------------
 
     @staticmethod
     def _normalize_response_text(text: str | None) -> str:
         return " ".join((text or "").split()).strip()
-
-    @staticmethod
-    def _format_modifier_selection_name(selection: Any) -> str:
-        name = str(getattr(selection, "name", "") or "").strip()
-        action = str(getattr(selection, "action", "add") or "add").strip()
-        instruction = getattr(selection, "instruction", None)
-        if not name:
-            return ""
-        if action == "remove":
-            return f"no {name}"
-        if instruction == "extra":
-            return f"extra {name}"
-        if instruction == "less":
-            return f"less {name}"
-        if instruction == "on_side":
-            return f"{name} on the side"
-        return name
 
     def _build_response_text(
         self,
@@ -214,165 +196,6 @@ class TurnEngine:
             )
         except Exception:
             return ""
-
-    def _build_normalized_values(
-        self,
-        session: Session,
-        result: HandlerResult | None,
-    ) -> dict[str, Any]:
-        command = (result.command or {}) if result is not None else {}
-        payload = command.get("payload") or {}
-        if command.get("type") == "ADD_ITEM_TO_CART" and payload:
-            item_id = payload.get("item_id")
-            item = self.menu_repo.store.get_item(item_id) if item_id else None
-            side_choice_by_id: dict[str, Any] = {}
-            side_group_by_id: dict[str, Any] = {}
-            modifier_group_by_id: dict[str, Any] = {}
-            if item is not None:
-                for group in getattr(item, "side_groups", ()) or ():
-                    side_group_by_id[group.group_id] = group
-                    for choice in getattr(group, "choices", ()) or ():
-                        side_choice_by_id[choice.item_id] = choice
-                for group in getattr(item, "modifier_groups", ()) or ():
-                    modifier_group_by_id[group.group_id] = group
-
-            mapped_sides: dict[str, list[str]] = {}
-            for group_id, side_ids in (payload.get("sides") or {}).items():
-                group = side_group_by_id.get(group_id)
-                group_name = getattr(group, "name", None) or str(group_id)
-                mapped_sides[group_name] = [
-                    getattr(side_choice_by_id.get(side_id), "name", side_id)
-                    for side_id in side_ids
-                ]
-
-            mapped_side_variants: dict[str, str] = {}
-            for side_id, variant_id in (payload.get("side_variants") or {}).items():
-                choice = side_choice_by_id.get(side_id)
-                side_name = getattr(choice, "name", None) or str(side_id)
-                variant_label = str(variant_id)
-                if choice is not None:
-                    for variant in getattr(getattr(choice, "pricing", None), "variants", ()) or ():
-                        if getattr(variant, "variant_id", None) == variant_id:
-                            variant_label = getattr(variant, "label", variant_label)
-                            break
-                mapped_side_variants[side_name] = variant_label
-
-            mapped_modifiers: dict[str, list[str]] = {}
-            for group_id, selections in (payload.get("modifiers") or {}).items():
-                group = modifier_group_by_id.get(group_id)
-                group_name = getattr(group, "name", None) or str(group_id)
-                names: list[str] = []
-                for selection in selections or ():
-                    if isinstance(selection, dict):
-                        names.append(
-                            self._format_modifier_selection_name(
-                                type("ModifierPayload", (), selection)()
-                            )
-                        )
-                    else:
-                        names.append(self._format_modifier_selection_name(selection))
-                mapped_modifiers[group_name] = [name for name in names if name]
-
-            mapped_variant = None
-            variant_id = payload.get("variant_id")
-            if item is not None and variant_id:
-                for variant in getattr(getattr(item, "pricing", None), "variants", ()) or ():
-                    if getattr(variant, "variant_id", None) == variant_id:
-                        mapped_variant = getattr(variant, "label", None) or variant_id
-                        break
-            elif variant_id:
-                mapped_variant = variant_id
-
-            return {
-                "item_name": getattr(item, "name", None) or str(item_id or ""),
-                "quantity": payload.get("quantity"),
-                "variant": mapped_variant,
-                "sides": mapped_sides,
-                "side_variants": mapped_side_variants,
-                "modifiers": mapped_modifiers,
-            }
-
-        ctx = session.conversation_context
-        pending = ctx.pending_add_item
-        if pending is None:
-            return {
-                "item_name": ctx.current_item_name,
-                "quantity": ctx.quantity,
-            }
-
-        mapped_sides = {}
-        for group in pending.side_groups:
-            selected_ids = ctx.selected_side_groups.get(group.group_id, ())
-            if not selected_ids:
-                continue
-            mapped_sides[group.name] = [
-                group.choices_by_item_id[item_id].name
-                for item_id in selected_ids
-                if item_id in group.choices_by_item_id
-            ]
-
-        mapped_modifiers = {}
-        for group in pending.modifier_groups:
-            selections = ctx.selected_modifier_groups.get(group.group_id, ())
-            if not selections:
-                continue
-            mapped_modifiers[group.name] = [
-                self._format_modifier_selection_name(selection)
-                for selection in selections
-                if self._format_modifier_selection_name(selection)
-            ]
-
-        mapped_variant = None
-        if ctx.selected_variant_id:
-            variant = pending.item_variants_by_id.get(ctx.selected_variant_id)
-            mapped_variant = getattr(variant, "name", None) or ctx.selected_variant_id
-
-        mapped_side_variants = {}
-        for side_item_id, variant_id in ctx.selected_side_variants.items():
-            choice = pending.side_choice_by_item_id.get(side_item_id)
-            side_name = getattr(choice, "name", None) or str(side_item_id)
-            variant_name = variant_id
-            if choice is not None:
-                variant = choice.variants_by_id.get(variant_id)
-                if variant is not None:
-                    variant_name = variant.name
-            mapped_side_variants[side_name] = variant_name
-
-        return {
-            "item_name": pending.item_name,
-            "quantity": ctx.quantity,
-            "variant": mapped_variant,
-            "sides": mapped_sides,
-            "side_variants": mapped_side_variants,
-            "modifiers": mapped_modifiers,
-        }
-
-    def _build_missing_required_fields(self, session: Session) -> list[str]:
-        ctx = session.conversation_context
-        pending = ctx.pending_add_item
-        if pending is None:
-            return []
-
-        missing: list[str] = []
-        if pending.item_variants and not ctx.selected_variant_id:
-            missing.append("size")
-
-        for group in pending.side_groups:
-            selected_ids = ctx.selected_side_groups.get(group.group_id, ())
-            min_selector, _ = effective_group_selector_bounds(group)
-            if bool(getattr(group, "is_required", False)) and len(selected_ids) < min_selector:
-                missing.append(group.name)
-
-        for group in pending.modifier_groups:
-            selections = ctx.selected_modifier_groups.get(group.group_id, ())
-            min_selector, _ = effective_group_selector_bounds(group)
-            if bool(getattr(group, "is_required", False)) and len(selections) < min_selector:
-                missing.append(group.name)
-
-        if not (isinstance(ctx.quantity, int) and ctx.quantity > 0):
-            missing.append("quantity")
-
-        return missing
 
     def _record_turn_event(
         self,
@@ -397,8 +220,8 @@ class TurnEngine:
         try:
             context_snapshot = self.diagnostics._snapshot_context_for_logging(session)
             response_text = self._build_response_text(session, response_key, response_payload)
-            normalized_values = self._build_normalized_values(session, result)
-            missing_fields = self._build_missing_required_fields(session)
+            normalized_values = build_normalized_values(session, self.menu_repo, result)
+            missing_fields = build_missing_required_fields(session)
             slots = tuple(getattr(nlu, "slots", ()) or ())
 
             event = TurnEvent(
@@ -1025,65 +848,14 @@ class TurnEngine:
                 )
 
             if not command_result.ok:
-                command_type = result.command.get("type")
-                command_payload = result.command.get("payload") or {}
-
-                if command_type == "SEND_SMS":
-                    template = command_payload.get("template")
-                    delivery = session.conversation_context.delivery_address
-                    attempts_made = command_result.attempts_made
-
-                    if template == "checkout_link":
-                        # _apply_command already retried internally.
-                        # If it still failed after those attempts, fall back to voice immediately.
-                        if attempts_made >= 2:
-                            delivery.source = "voice"
-                            session.conversation_context.current_prompt_field = "delivery_seed_confirmation"
-                            result = HandlerResult(
-                                next_state=ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION,
-                                response_key="checkout_link_failed_fallback_voice",
-                                response_payload={
-                                    "area": delivery.area,
-                                    "postal_code": delivery.postal_code,
-                                    "order_number": delivery.order_number,
-                                    "error_code": command_result.error_code,
-                                    "error_message": command_result.error_message,
-                                },
-                            )
-                        else:
-                            result = HandlerResult(
-                                next_state=ConversationState.CONFIRMING_ORDER,
-                                response_key="checkout_link_send_failed",
-                                response_payload={
-                                    "order_number": delivery.order_number,
-                                    "error_code": command_result.error_code,
-                                    "error_message": command_result.error_message,
-                                },
-                            )
-
-                    elif template == "payment_link":
-                        # Payment-link flow also retried internally.
-                        # If still failed, apologize and stop progression.
-                        if attempts_made >= 2:
-                            result = HandlerResult(
-                                next_state=session.conversation_state,
-                                response_key="payment_link_unavailable_now",
-                                response_payload={
-                                    "order_number": delivery.order_number,
-                                    "error_code": command_result.error_code,
-                                    "error_message": command_result.error_message,
-                                },
-                            )
-                        else:
-                            result = HandlerResult(
-                                next_state=session.conversation_state,
-                                response_key="payment_link_send_failed",
-                                response_payload={
-                                    "order_number": delivery.order_number,
-                                    "error_code": command_result.error_code,
-                                    "error_message": command_result.error_message,
-                                },
-                            )
+                fallback = resolve_sms_failure(
+                    session=session,
+                    result=result,
+                    command=result.command,
+                    command_result=command_result,
+                )
+                if fallback is not None:
+                    result = fallback
 
         if result.reset_context:
             ctx.reset_item_scope()

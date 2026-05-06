@@ -43,8 +43,9 @@ def test_full_happy_path_reaches_checkout_without_unnecessary_reprompts() -> Non
 
     results = simulate_conversation(engine, session, turns)
 
-    assert [turn.response_key for turn in results][-2:] == ["confirm_order_summary", "payment_link_sent"]
-    assert session.conversation_state == ConversationState.WAITING_FOR_PAYMENT
+    # Pickup flow: after order confirmation, asks SMS permission (not live payment wait).
+    assert [turn.response_key for turn in results][-2:] == ["confirm_order_summary", "pickup_ask_sms_permission"]
+    assert session.conversation_state == ConversationState.WAITING_FOR_PICKUP_SMS_PERMISSION
     assert session.reprompt_count_by_field.get("quantity", 0) == 0
 
 

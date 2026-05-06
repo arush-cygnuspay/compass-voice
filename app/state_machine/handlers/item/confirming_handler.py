@@ -18,7 +18,8 @@ from app.state_machine.control_intent_resolver import (
     log_control_intent_event,
     resolve_control_intent,
 )
-from app.state_machine.models.conversation_context import ConversationContext, InterruptProposal
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.pending_item_models import InterruptProposal
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
@@ -134,7 +135,7 @@ class ConfirmingHandler(BaseHandler):
                 return HandlerResult(
                     next_state=ConversationState.CONFIRMING_ITEM,
                     response_key=self._repeat_response_key(confirmation),
-                    response_payload=dict(confirmation),
+                    response_payload=self._filtered_repeat_payload(confirmation),
                 )
 
             if control_intent is not None and control_intent.kind == ControlIntentKind.OPTIONS_REQUEST:
@@ -146,17 +147,24 @@ class ConfirmingHandler(BaseHandler):
                 return HandlerResult(
                     next_state=ConversationState.CONFIRMING_ITEM,
                     response_key=self._repeat_response_key(confirmation),
-                    response_payload=dict(confirmation),
+                    response_payload=self._filtered_repeat_payload(confirmation),
                 )
 
             if control_intent is not None and control_intent.kind in {
                 ControlIntentKind.AFFIRM,
                 ControlIntentKind.DENY,
             }:
+                attempt = context.bump_reprompt("item_disambiguation")
+                if attempt >= 2:
+                    context.reset_item_scope()
+                    return HandlerResult(
+                        next_state=ConversationState.IDLE,
+                        response_key="item_clarification_limit_reached",
+                    )
                 return HandlerResult(
                     next_state=ConversationState.CONFIRMING_ITEM,
                     response_key=self._repeat_response_key(confirmation),
-                    response_payload=dict(confirmation),
+                    response_payload=self._filtered_repeat_payload(confirmation),
                 )
 
             matched = self._resolve_candidate_item_from_confirmation(
@@ -177,10 +185,18 @@ class ConfirmingHandler(BaseHandler):
             if fresh_resolution is not None:
                 return fresh_resolution
 
+            attempt = context.bump_reprompt("item_disambiguation")
+            if attempt >= 2:
+                context.reset_item_scope()
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_clarification_limit_reached",
+                )
+
             return HandlerResult(
                 next_state=ConversationState.CONFIRMING_ITEM,
                 response_key=self._repeat_response_key(confirmation),
-                response_payload=dict(confirmation),
+                response_payload=self._filtered_repeat_payload(confirmation),
             )
 
         if reason == "candidate_selected":
@@ -216,14 +232,22 @@ class ConfirmingHandler(BaseHandler):
                         response_key="item_cancelled_successfully",
                     )
 
+                rejected_id = confirmation.get("value_id")
+                restored = dict(previous_confirmation)
+                if rejected_id:
+                    rejected_ids = list(restored.get("rejected_candidate_ids") or [])
+                    if rejected_id not in rejected_ids:
+                        rejected_ids.append(rejected_id)
+                    restored["rejected_candidate_ids"] = rejected_ids
+
                 context.candidate_item_id = None
                 context.current_item_name = None
-                context.awaiting_confirmation_for = dict(previous_confirmation)
+                context.awaiting_confirmation_for = restored
 
                 return HandlerResult(
                     next_state=ConversationState.CONFIRMING_ITEM,
-                    response_key=self._repeat_response_key(previous_confirmation),
-                    response_payload=dict(previous_confirmation),
+                    response_key=self._repeat_response_key(restored),
+                    response_payload=restored,
                 )
 
             if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
@@ -304,6 +328,60 @@ class ConfirmingHandler(BaseHandler):
                 response_payload={"item_name": confirmation.get("value_name")},
             )
 
+        if reason == "near_miss_suggestion":
+            if control_intent is not None and control_intent.kind == ControlIntentKind.CANCEL:
+                context.reset_item_scope()
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_cancelled_successfully",
+                )
+
+            if control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM:
+                candidate_item_id = confirmation.get("value_id")
+                if not candidate_item_id:
+                    return HandlerResult(
+                        next_state=ConversationState.ERROR_RECOVERY,
+                        response_key="confirmation_state_error",
+                    )
+                try:
+                    item = self.menu_repo.get_item(candidate_item_id)
+                except KeyError:
+                    return HandlerResult(
+                        next_state=ConversationState.ERROR_RECOVERY,
+                        response_key="item_context_missing",
+                    )
+                # User confirmed — clear the not-found counter for this query.
+                normalized_query = normalize_text(confirmation.get("query") or "")
+                if normalized_query:
+                    context.reset_not_found(normalized_query)
+                return self._enter_add_flow_for_item(context=context, item=item)
+
+            if control_intent is not None and control_intent.kind == ControlIntentKind.DENY:
+                normalized_query = normalize_text(confirmation.get("query") or "")
+                # DENY counts as one more failed attempt.
+                attempt = context.bump_not_found(normalized_query) if normalized_query else 3
+                context.reset_item_scope()
+                if attempt >= 3:
+                    return HandlerResult(
+                        next_state=ConversationState.IDLE,
+                        response_key="item_not_found_escalation",
+                    )
+                return HandlerResult(
+                    next_state=ConversationState.IDLE,
+                    response_key="item_not_found",
+                    response_payload={
+                        "query": confirmation.get("query") or "",
+                        "suggestions": (confirmation.get("suggestions") or [])[:4],
+                    },
+                )
+
+            # Unrecognised intent while waiting for yes/no — re-ask.
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ITEM,
+                response_key="item_not_found_near_miss",
+                response_payload={"item_name": confirmation.get("value_name")},
+            )
+
         return HandlerResult(
             next_state=ConversationState.ERROR_RECOVERY,
             response_key="confirmation_state_error",
@@ -317,6 +395,8 @@ class ConfirmingHandler(BaseHandler):
     ) -> _CandidateMatch | None:
         confirmation = context.awaiting_confirmation_for or {}
         candidate_item_ids = confirmation.get("candidate_item_ids") or []
+        rejected_ids = set(confirmation.get("rejected_candidate_ids") or [])
+        candidate_item_ids = [cid for cid in candidate_item_ids if cid not in rejected_ids]
 
         if not candidate_item_ids:
             return None
@@ -513,6 +593,19 @@ class ConfirmingHandler(BaseHandler):
         if reason == "category_detected":
             return "confirm_item_from_category"
         return "confirm_item_ambiguous"
+
+    def _filtered_repeat_payload(self, confirmation: dict) -> dict:
+        """Strip rejected candidates from the response payload so they are not re-offered."""
+        payload = dict(confirmation)
+        rejected = set(payload.get("rejected_candidate_ids") or [])
+        if not rejected:
+            return payload
+        ids = payload.get("candidate_item_ids") or []
+        names = payload.get("candidate_item_names") or []
+        pairs = [(cid, name) for cid, name in zip(ids, names) if cid not in rejected]
+        payload["candidate_item_ids"] = [p[0] for p in pairs]
+        payload["candidate_item_names"] = [p[1] for p in pairs]
+        return payload
 
     def _move_to_selected_candidate_state(
         self,

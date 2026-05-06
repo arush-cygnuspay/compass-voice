@@ -5,6 +5,8 @@ from dataclasses import dataclass, field
 from typing import Any
 import uuid
 
+from app.core.quantity_formatter import parse_item_quantity
+
 
 @dataclass(frozen=True)
 class CartItem:
@@ -64,7 +66,7 @@ class CartItem:
         return CartItem(
             cart_item_id=data["cart_item_id"],
             item_id=data["item_id"],
-            quantity=data["quantity"],
+            quantity=parse_item_quantity(data["quantity"]),
             variant_id=data.get("variant_id"),
             sides=data.get("sides", {}),
             side_variants=data.get("side_variants", {}),

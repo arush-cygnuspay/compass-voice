@@ -12,11 +12,8 @@ from app.state_machine.control_intent_resolver import (
     log_control_intent_event,
     resolve_control_intent,
 )
-from app.state_machine.models.conversation_context import (
-    ConversationContext,
-    InterruptProposal,
-    PendingVariantChoice,
-)
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.pending_item_models import InterruptProposal, PendingVariantChoice
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler

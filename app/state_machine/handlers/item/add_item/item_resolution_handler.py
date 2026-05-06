@@ -6,11 +6,30 @@ and the modifier-only-request guard (_looks_like_modifier_only_request).
 
 On a successful single-item match it delegates to PrefillOrchestrator to
 initialise the pending item, apply prefill, and determine the next FSM step.
+
+Architecture note
+-----------------
+``resolve_item_and_enter_flow`` is now a thin two-step adapter:
+  1. Calls ``OrderingDecisionEngine.decide_from_menu_result`` — pure, no
+     side effects, returns an ``OrderingDecision``.
+  2. Calls ``_execute_decision`` — effectful: mutates ``ConversationContext``,
+     constructs ``HandlerResult``, calls ``PrefillOrchestrator`` for ADD_ITEM.
+
+The original ``MenuQueryResult`` is forwarded to ``_execute_decision`` so that
+``MenuItem`` objects (which carry side/modifier groups) can be used directly
+without an extra repo round-trip.  ``OrderingDecision`` intentionally keeps
+only primitive fields (item_id, item_name) per the DTO contract.
+
+External behaviour is unchanged — callers see the same ``HandlerResult``
+shapes as before.
 """
 from __future__ import annotations
 
 from typing import Sequence
 
+from app.contracts.ordering_decision import OrderingAction, OrderingDecision
+from app.core.ordering_decision_engine import OrderingDecisionEngine
+from app.menu.models import MenuItem
 from app.menu.query_result import MenuQueryResult, MenuQueryType
 from app.menu.repository import MenuRepository
 from app.nlu.nlu_result import SlotValue
@@ -33,9 +52,12 @@ class ItemResolutionHandler:
         self,
         menu_repo: MenuRepository,
         prefill_orchestrator: PrefillOrchestrator,
+        *,
+        engine: OrderingDecisionEngine | None = None,
     ) -> None:
         self.menu_repo = menu_repo
         self.prefill_orchestrator = prefill_orchestrator
+        self._engine = engine or OrderingDecisionEngine(menu_repo)
 
     # ------------------------------------------------------------------
     # Public API
@@ -52,51 +74,79 @@ class ItemResolutionHandler:
     ) -> HandlerResult:
         """Route a menu query result to the correct HandlerResult.
 
-        Unambiguous single-item matches proceed immediately to
-        PrefillOrchestrator.enter_add_flow_for_item().  Everything else
-        (category, ambiguous, not-found) returns an appropriate prompt or
-        error HandlerResult.
+        Delegates the pure routing decision to ``OrderingDecisionEngine``,
+        then executes it (context mutations + HandlerResult construction).
         """
-        rtype = result.type
+        decision = self._engine.decide_from_menu_result(
+            result=result,
+            requested_item_text=requested_item_text,
+            context=context,
+            slots=slots,
+        )
+        return self._execute_decision(
+            decision,
+            result=result,
+            context=context,
+            original_user_text=original_user_text,
+            slots=slots,
+        )
 
-        if rtype == MenuQueryType.ITEM and result.item is not None:
+    # ------------------------------------------------------------------
+    # Decision executor (effectful — mutates context)
+    # ------------------------------------------------------------------
+
+    def _execute_decision(
+        self,
+        decision: OrderingDecision,
+        *,
+        result: MenuQueryResult,
+        context: ConversationContext,
+        original_user_text: str,
+        slots: Sequence[SlotValue],
+    ) -> HandlerResult:
+        """Translate an ``OrderingDecision`` into a ``HandlerResult``.
+
+        The original ``MenuQueryResult`` is available here so the executor
+        can resolve ``MenuItem`` objects for the ADD_ITEM path without an
+        extra repo lookup.  All ``ConversationContext`` mutations live here.
+        """
+        action = decision.action
+
+        # ── Exact match / single-item category ───────────────────────────
+        if action == OrderingAction.ADD_ITEM:
+            item = self._item_from_result(result)
+            if item is None:
+                return HandlerResult(
+                    next_state=ConversationState.ERROR_RECOVERY,
+                    response_key="item_context_missing",
+                )
             return self.prefill_orchestrator.enter_add_flow_for_item(
                 context=context,
-                item=result.item,
+                item=item,
                 user_text=original_user_text,
                 slots=slots,
             )
 
-        if (
-            rtype == MenuQueryType.CATEGORY_SINGLE_ITEM
-            and result.items
-            and len(result.items) == 1
-        ):
-            return self.prefill_orchestrator.enter_add_flow_for_item(
-                context=context,
-                item=result.items[0],
-                user_text=original_user_text,
-                slots=slots,
-            )
-
-        if rtype == MenuQueryType.CATEGORY:
-            candidate_items = result.items or []
+        # ── Category disambiguation ───────────────────────────────────────
+        if action == OrderingAction.ASK_ITEM_CONFIRMATION and decision.reason == "category_detected":
+            candidate_ids = [c.item_id for c in decision.candidates]
+            candidate_names = [c.item_name for c in decision.candidates]
             payload = {
                 "reason": "category_detected",
-                "query": requested_item_text,
-                "category_id": result.category_id,
-                "category_name": result.category_name,
-                "candidate_item_ids": [item.item_id for item in candidate_items],
-                "candidate_item_names": [item.name for item in candidate_items],
+                "query": decision.query,
+                "category_id": decision.category_id,
+                "category_name": decision.category_name,
+                "candidate_item_ids": candidate_ids,
+                "candidate_item_names": candidate_names,
             }
             context.awaiting_confirmation_for = {
                 "type": "item",
                 "reason": "category_detected",
-                "query": requested_item_text,
-                "category_id": result.category_id,
-                "category_name": result.category_name,
-                "candidate_item_ids": payload["candidate_item_ids"],
-                "candidate_item_names": payload["candidate_item_names"],
+                "query": decision.query,
+                "category_id": decision.category_id,
+                "category_name": decision.category_name,
+                "candidate_item_ids": candidate_ids,
+                "candidate_item_names": candidate_names,
             }
             return HandlerResult(
                 next_state=ConversationState.CONFIRMING_ITEM,
@@ -104,27 +154,26 @@ class ItemResolutionHandler:
                 response_payload=payload,
             )
 
-        if rtype in {MenuQueryType.ITEM_AMBIGUOUS, MenuQueryType.CATEGORY_AMBIGUOUS}:
-            payload = {
+        # ── Ambiguous (multiple items / categories) ───────────────────────
+        if action == OrderingAction.ASK_ITEM_CONFIRMATION and decision.reason == "multiple_matches":
+            candidate_ids = [c.item_id for c in decision.candidates]
+            candidate_names = [c.item_name for c in decision.candidates]
+            payload: dict = {
                 "reason": "multiple_matches",
-                "query": requested_item_text,
+                "query": decision.query,
             }
-            if result.matched_items:
-                payload["candidate_item_ids"] = [item.item_id for item in result.matched_items]
-                payload["candidate_item_names"] = [item.name for item in result.matched_items]
-            if result.matched_categories:
-                payload["candidate_category_names"] = [
-                    category.get("name")
-                    for category in result.matched_categories
-                    if category.get("name")
-                ]
+            if candidate_ids:
+                payload["candidate_item_ids"] = candidate_ids
+                payload["candidate_item_names"] = candidate_names
+            if decision.matched_category_names:
+                payload["candidate_category_names"] = list(decision.matched_category_names)
             context.awaiting_confirmation_for = {
                 "type": "item",
                 "reason": "multiple_matches",
-                "query": requested_item_text,
-                "candidate_item_ids": payload.get("candidate_item_ids", []),
-                "candidate_item_names": payload.get("candidate_item_names", []),
-                "candidate_category_names": payload.get("candidate_category_names", []),
+                "query": decision.query,
+                "candidate_item_ids": candidate_ids,
+                "candidate_item_names": candidate_names,
+                "candidate_category_names": list(decision.matched_category_names),
             }
             return HandlerResult(
                 next_state=ConversationState.CONFIRMING_ITEM,
@@ -132,22 +181,62 @@ class ItemResolutionHandler:
                 response_payload=payload,
             )
 
+        # ── NOT_FOUND paths: bump counter (engine was pure — no side effects) ──
+        normalized_query = normalize_text(decision.query or "")
+        if normalized_query:
+            context.bump_not_found(normalized_query)
+
+        # ── Escalation ────────────────────────────────────────────────────
+        if action == OrderingAction.ESCALATE_TO_AGENT:
+            context.reset_item_scope()
+            return HandlerResult(
+                next_state=ConversationState.IDLE,
+                response_key="item_not_found_escalation",
+            )
+
+        # ── Near-miss confirmation prompt ─────────────────────────────────
+        if action == OrderingAction.ASK_ITEM_CONFIRMATION and decision.reason == "near_miss_suggestion":
+            context.awaiting_confirmation_for = {
+                "type": "item",
+                "reason": "near_miss_suggestion",
+                "value_id": decision.item_id,
+                "value_name": decision.item_name,
+                "query": decision.query,
+                "suggestions": list(decision.suggestions),
+                "tier": decision.tier,
+            }
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ITEM,
+                response_key="item_not_found_near_miss",
+                response_payload={
+                    "item_name": decision.item_name,
+                    "tier": decision.tier,
+                },
+            )
+
+        # ── Low-confidence / no match: suggest alternatives ───────────────
         context.reset_item_scope()
         return HandlerResult(
             next_state=ConversationState.IDLE,
             response_key="item_not_found",
             response_payload={
-                "query": requested_item_text,
-                "suggested_item_names": [
-                    item.name for item in (result.suggested_items or [])
-                ],
-                "suggested_category_names": [
-                    category.get("name")
-                    for category in (result.suggested_categories or [])
-                    if category.get("name")
-                ],
+                "query": decision.query,
+                "suggestions": list(decision.suggestions),
             },
         )
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _item_from_result(result: MenuQueryResult) -> MenuItem | None:
+        """Extract the resolved MenuItem from an ADD_ITEM-path result."""
+        if result.item is not None:
+            return result.item
+        if result.items and len(result.items) >= 1:
+            return result.items[0]
+        return None
 
     # ------------------------------------------------------------------
     # Static guard (used by AddItemHandler before the menu query)

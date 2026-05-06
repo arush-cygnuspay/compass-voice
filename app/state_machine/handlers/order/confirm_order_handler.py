@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 
+from app.nlu.control_phrase_classifier import DEFAULT_CLASSIFIER
 from app.nlu.intent_resolution.intent import Intent
 from app.state_machine.control_intent_resolver import (
     ControlIntentKind,
@@ -47,6 +48,72 @@ class ConfirmOrderHandler(BaseHandler):
         self.cart_summary_builder = cart_summary_builder
         self.sms_service = sms_service
         self.checkout_service = checkout_service
+
+    def _build_pickup_checkout_result(self, session, context) -> HandlerResult:
+        """Pickup-specific checkout path.
+
+        Places the order (creates payment link) then asks the customer for
+        permission to send an SMS confirmation.  The call ends after that
+        single yes/no — no live payment waiting loop is started.
+        """
+        delivery = context.delivery_address
+        order_summary = self.cart_summary_builder.build(session.cart)
+        try:
+            payment_info = ensure_payment_link_for_voice_session(
+                checkout_service=self.checkout_service,
+                session=session,
+                order_summary=order_summary,
+                address_source=delivery.source or "voice",
+            )
+        except Exception:
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ORDER,
+                response_key="payment_link_send_failed",
+            )
+
+        delivery.order_number = payment_info.get("order_number") or delivery.order_number
+        delivery.payment_link = payment_info.get("redirect_url") or delivery.payment_link
+        delivery.confirmation_link = (
+            payment_info.get("confirmation_link") or delivery.confirmation_link
+        )
+        delivery.payment_status = "payment_pending"
+        delivery.payment_wait_mode = None
+        delivery.payment_session_state = None
+        delivery.checkout_status = None
+
+        if payment_info.get("payment_completed"):
+            return HandlerResult(
+                next_state=ConversationState.COMPLETED,
+                response_key="order_completed",
+                response_payload={"order_number": delivery.order_number},
+                reset_context=True,
+                command={"type": "CLEAR_CART"},
+            )
+
+        if not delivery.payment_link:
+            return HandlerResult(
+                next_state=ConversationState.CONFIRMING_ORDER,
+                response_key="payment_link_send_failed",
+            )
+
+        if not delivery.has_phone_number:
+            log_phone_number_unavailable(
+                session=session,
+                consumer="confirm_order_handler.pickup_no_phone",
+            )
+            return HandlerResult(
+                next_state=ConversationState.COMPLETED,
+                response_key="pickup_end_call",
+                response_payload={"order_number": delivery.order_number},
+                reset_context=True,
+                command={"type": "CLEAR_CART"},
+            )
+
+        return HandlerResult(
+            next_state=ConversationState.WAITING_FOR_PICKUP_SMS_PERMISSION,
+            response_key="pickup_ask_sms_permission",
+            response_payload={"order_number": delivery.order_number},
+        )
 
     def _build_payment_link_result(self, session, context) -> HandlerResult:
         delivery = context.delivery_address
@@ -223,8 +290,22 @@ class ConfirmOrderHandler(BaseHandler):
             and context.last_nlu.effective_intent in self.CHECKOUT_CONFIRM_INTENTS
         )
 
-        if intent in self.CHECKOUT_CONFIRM_INTENTS or _nlu_checkout_signal or (
-            control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM
+        # Phrase-based checkout detection for utterances like "i said checkout",
+        # "oh yeah checkout", "place the order" that NLU may miss or score below
+        # the global confidence threshold.  ControlPhraseClassifier handles them
+        # deterministically using an exact-phrase + prefix-stripped match.
+        # "just a cup" and other non-checkout phrases return action="none".
+        _phrase_checkout_signal = (
+            DEFAULT_CLASSIFIER.classify(
+                user_text, ConversationState.CONFIRMING_ORDER.value
+            ).action == "checkout"
+        )
+
+        if (
+            intent in self.CHECKOUT_CONFIRM_INTENTS
+            or _nlu_checkout_signal
+            or _phrase_checkout_signal
+            or (control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM)
         ):
             delivery = context.delivery_address
 
@@ -301,7 +382,7 @@ class ConfirmOrderHandler(BaseHandler):
                 )
 
             delivery.source = delivery.source or "voice"
-            return self._build_payment_link_result(session, context)
+            return self._build_pickup_checkout_result(session, context)
 
         if intent == Intent.PAYMENT_STATUS:
             return HandlerResult(

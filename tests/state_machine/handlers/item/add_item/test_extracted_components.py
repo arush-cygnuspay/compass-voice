@@ -122,6 +122,9 @@ class _FakeRepo:
     def resolve_menu_query_from_slots_normalized(self, **kwargs):
         return self._result
 
+    def find_near_miss_item_normalized(self, normalized_text, *, threshold=None):
+        return None
+
     store = None
 
 

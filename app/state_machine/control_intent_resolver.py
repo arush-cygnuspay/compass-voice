@@ -668,6 +668,13 @@ def _looks_like_specific_negative_slot_instruction(
             "not that",
             "thats not",
             "that is not",
+            # Control-phrase targets: "no skip that", "no done", "no repeat",
+            # "no nothing else" must not be treated as slot instructions —
+            # they are control phrases intercepted by ControlPhraseClassifier.
+            "skip",
+            "done",
+            "repeat",
+            "nothing",
         )
     ):
         return False

@@ -4,6 +4,7 @@ import logging
 import os
 from typing import Any
 
+from app.core.quantity_formatter import parse_item_quantity
 from app.services.checkout_service import CheckoutService, PAYMENT_FAILURE_STATUSES
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
@@ -75,7 +76,7 @@ def format_order_summary_sms(order_summary: dict[str, Any] | None) -> str:
         if index >= 3:
             lines.append("View full order details in the checkout link.")
             break
-        quantity = int(item.get("quantity", 1) or 1)
+        quantity = parse_item_quantity(item.get("quantity", 1) or 1)
         name = str(item.get("name") or "Item").strip()
         detail_parts: list[str] = []
         variant = str(item.get("variant") or "").strip()

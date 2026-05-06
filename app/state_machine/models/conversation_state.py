@@ -34,6 +34,7 @@ class ConversationState(str, Enum):
 
     # Order / payment flow
     CONFIRMING_ORDER = "confirming_order"
+    WAITING_FOR_PICKUP_SMS_PERMISSION = "waiting_for_pickup_sms_permission"
     WAITING_FOR_PAYMENT = "waiting_for_payment"
     WAITING_FOR_CHECKOUT_COMPLETION = "waiting_for_checkout_completion"
 

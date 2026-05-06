@@ -63,6 +63,9 @@ from app.state_machine.handlers.payment.waiting_for_checkout_completion_handler 
 from app.state_machine.handlers.payment.waiting_for_payment_handler import (
     WaitingForPaymentHandler,
 )
+from app.state_machine.handlers.payment.waiting_for_pickup_sms_permission_handler import (
+    WaitingForPickupSmsPermissionHandler,
+)
 from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
     WaitingForCallerDeviceTypeHandler,
 )
@@ -105,6 +108,11 @@ class HandlerDispatcher:
             "removing_item_handler": RemovingItemHandler(),
             "start_order_handler": StartOrderHandler(cart_summary_builder),
             "confirming_order_handler": ConfirmOrderHandler(
+                cart_summary_builder,
+                sms_service,
+                checkout_service,
+            ),
+            "waiting_for_pickup_sms_permission_handler": WaitingForPickupSmsPermissionHandler(
                 cart_summary_builder,
                 sms_service,
                 checkout_service,

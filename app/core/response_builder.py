@@ -8,7 +8,8 @@ from app.responses.cart_responses import (
     cart_cleared_response,
     clear_cart_cancelled_response,
     confirm_clear_cart_response,
-    render_cart_summary, render_checkout_review_summary,
+    render_cart_summary,
+    render_checkout_review_summary,
 )
 from app.responses.flow_control_responses import (
     flow_guard_cancelled,
@@ -16,7 +17,10 @@ from app.responses.flow_control_responses import (
     flow_guard_finish_current_step,
 )
 from app.responses.intent_not_allowed import handle_intent_not_allowed
-from app.responses.item_responses import (
+from app.responses.item import (
+    _added_text,
+    _build_entity_feedback,
+    _format_item_summary_list,
     ask_for_modifier,
     ask_for_side,
     ask_for_size,
@@ -32,8 +36,11 @@ from app.responses.item_responses import (
     invalid_size_option,
     item_added_successfully,
     item_cancelled_successfully,
+    item_clarification_limit_reached,
     item_context_missing,
     item_not_found,
+    item_not_found_escalation,
+    item_not_found_near_miss,
     list_modifier_options,
     list_side_options,
     repeat_item_request,
@@ -46,9 +53,6 @@ from app.responses.item_responses import (
     size_not_applicable,
     too_many_modifier_choices,
     too_many_side_choices,
-    _build_entity_feedback,
-    _added_text,
-    _format_item_summary_list,
 )
 from app.responses.menu_responses import (
     menu_ambiguity_response,
@@ -59,6 +63,7 @@ from app.responses.menu_responses import (
     show_item_price_response,
     show_menu_categories_response,
 )
+from app.responses.side_size_responses import ask_for_side_size, repeat_side_size_options
 from app.state_machine.models.conversation_context import ConversationContext
 
 ResponseFn = Callable[[ConversationContext, MenuRepository, dict], str]
@@ -138,11 +143,14 @@ class ResponseBuilder:
             "ask_for_side": ask_for_side,
             "ask_for_modifier": ask_for_modifier,
             "ask_for_size": ask_for_size,
-            "ask_for_side_size": self._ask_for_side_size,
+            "ask_for_side_size": lambda c, m, p: ask_for_side_size(p),
             "ask_for_quantity": lambda c, m, p: ask_item_quantity(p),
             "confirm_item_ambiguous": confirm_item_ambiguous,
             "confirm_item_from_category": confirm_item_from_category,
             "item_not_found": item_not_found,
+            "item_not_found_near_miss": item_not_found_near_miss,
+            "item_not_found_escalation": item_not_found_escalation,
+            "item_clarification_limit_reached": item_clarification_limit_reached,
             "repeat_item_request": repeat_item_request,
             "required_side_cannot_skip": required_side_cannot_skip,
             "required_modifier_cannot_skip": required_modifier_cannot_skip,
@@ -157,9 +165,9 @@ class ResponseBuilder:
             "too_many_modifier_choices": too_many_modifier_choices,
             "repeat_size_options": repeat_size_options,
             "invalid_size_option": invalid_size_option,
-            "invalid_side_size_option": self._invalid_side_size_option,
-            "repeat_side_size_options": self._repeat_side_size_options,
-            "required_side_size_cannot_skip": self._required_side_size_cannot_skip,
+            "invalid_side_size_option": lambda c, m, p: repeat_side_size_options(p),
+            "repeat_side_size_options": lambda c, m, p: repeat_side_size_options(p),
+            "required_side_size_cannot_skip": lambda c, m, p: repeat_side_size_options(p),
             "invalid_quantity_option": invalid_quantity_option,
             "item_context_missing": item_context_missing,
             "size_not_applicable": size_not_applicable,
@@ -319,6 +327,23 @@ class ResponseBuilder:
             "delivery_address_captured_resume_checkout": lambda *_: (
                 "Got your address. Sending payment link now."
             ),
+            "pickup_ask_sms_permission": lambda *_: (
+                "Your order is in! Would you like me to text you a payment link, "
+                "or would you prefer to pay when you arrive?"
+            ),
+            "pickup_repeat_sms_permission": lambda *_: (
+                "Would you like a payment link sent to your phone, or will you pay when you pick up?"
+            ),
+            "pickup_sms_sent_end_call": lambda *_: (
+                "Done! The payment link is on its way to your phone. See you soon!"
+            ),
+            "pickup_no_sms_end_call": lambda *_: (
+                "No problem! We'll see you when you get here. You can pay at the counter."
+            ),
+            "pickup_end_call": lambda *_: (
+                "All set! We'll see you soon. You can pay when you arrive."
+            ),
+
             "payment_link_sent": lambda *_: (
                 "Payment link sent. I’ll confirm once payment goes through."
             ),
@@ -454,44 +479,6 @@ class ResponseBuilder:
         if order_number.isdigit():
             return " ".join(order_number)
         return order_number
-
-    def _ask_for_side_size(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
-        side_item_name = payload.get("side_item_name") or "that side"
-        available_sizes = [str(x).strip() for x in (payload.get("available_sizes") or []) if str(x).strip()]
-        feedback = _build_entity_feedback(payload)
-
-        if not available_sizes:
-            prompt = f"What size for {side_item_name}?"
-        elif len(available_sizes) == 1:
-            prompt = f"Size for {side_item_name}? {available_sizes[0]}."
-        elif len(available_sizes) == 2:
-            prompt = f"Size for {side_item_name}? {available_sizes[0]} or {available_sizes[1]}."
-        else:
-            prompt = f"Size for {side_item_name}? {available_sizes[0]}, {available_sizes[1]}, or {available_sizes[2]}."
-
-        return f"{feedback}{prompt}" if feedback else prompt
-
-    def _repeat_side_size_options(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
-        side_item_name = payload.get("side_item_name") or "that side"
-        available_sizes = [str(x).strip() for x in (payload.get("available_sizes") or []) if str(x).strip()]
-        feedback = _build_entity_feedback(payload)
-
-        if not available_sizes:
-            prompt = f"What size for {side_item_name}?"
-        elif len(available_sizes) == 1:
-            prompt = f"Choose {available_sizes[0]}."
-        elif len(available_sizes) == 2:
-            prompt = f"Choose {available_sizes[0]} or {available_sizes[1]}."
-        else:
-            prompt = f"Choose {available_sizes[0]}, {available_sizes[1]}, or {available_sizes[2]}."
-
-        return f"{feedback}{prompt}" if feedback else prompt
-
-    def _required_side_size_cannot_skip(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
-        return self._repeat_side_size_options(_, __, payload)
-
-    def _invalid_side_size_option(self, _: ConversationContext, __: MenuRepository, payload: dict) -> str:
-        return self._repeat_side_size_options(_, __, payload)
 
     def _readonly_interrupt_with_resume(
         self,

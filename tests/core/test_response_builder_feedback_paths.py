@@ -59,10 +59,10 @@ def test_response_builder_side_size_prompt_includes_entity_feedback():
             "side_item_name": "Coke",
             "available_sizes": ["Small", "Medium"],
             "matched_names": ["Coke"],
-            "unmatched_names": ["rice"],
+            "unmatched_names": ["fried rice"],
         },
     )
 
     assert "Got Coke." in text
-    assert "I couldn't find rice." in text
+    assert "I couldn't find fried rice." in text
     assert "Small or Medium" in text

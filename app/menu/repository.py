@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from app.menu.models import ItemResolution, MenuItem
 from app.menu.query_result import MenuQueryResult
-from app.menu.query_service import MenuQueryService
+from app.menu.query_service import MenuQueryService, NearMissResult
 from app.menu.store import MenuStore
+
+__all__ = ["MenuRepository", "NearMissResult"]
 from app.nlu.nlu_result import SlotValue
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 
@@ -50,6 +52,16 @@ class MenuRepository:
     ) -> tuple[list[MenuItem], list[dict]]:
         return self._service.build_not_found_recovery_normalized(
             normalized_text, item_limit=item_limit, category_limit=category_limit
+        )
+
+    def find_near_miss_item_normalized(
+        self,
+        normalized_text: str,
+        *,
+        threshold: float | None = None,
+    ) -> NearMissResult | None:
+        return self._service.find_near_miss_item_normalized(
+            normalized_text, threshold=threshold
         )
 
     # ------------------------------------------------------------------

@@ -910,6 +910,12 @@ class PrefillOrchestrator:
                 "extra", "more", "double", "less", "light",
                 "on", "the", "side",
                 "a", "an",
+                # Ordering filler / command residue — strip so that leftover
+                # phrases like "okay then give me a" after item resolution are
+                # never surfaced as "I couldn't find okay then give me a".
+                "okay", "ok", "then", "give", "me", "can", "i",
+                "want", "would", "like", "to", "order", "get",
+                "please", "just",
             }
         )
         canonical_ignored = ignored_tokens | {"no", "without", "hold", "remove"}

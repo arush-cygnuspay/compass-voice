@@ -25,6 +25,9 @@ class FakeMenuRepo:
     def resolve_menu_query_normalized(self, text: str, limit: int = 5):
         return self._result
 
+    def find_near_miss_item_normalized(self, normalized_text, *, threshold=None):
+        return None
+
 
 def make_item() -> MenuItem:
     return MenuItem(
@@ -187,8 +190,7 @@ def test_add_item_handler_returns_item_not_found():
     assert result.response_key == "item_not_found"
     assert result.response_payload == {
         "query": "dragon burger",
-        "suggested_item_names": [],
-        "suggested_category_names": [],
+        "suggestions": [],
     }
 
 

@@ -1,6 +1,8 @@
 # app/responses/cart_responses.py
 from __future__ import annotations
 
+from app.core.quantity_formatter import format_item_quantity, parse_item_quantity
+
 
 def render_cart_summary(payload: dict) -> str:
     items = payload.get("items", [])
@@ -9,11 +11,11 @@ def render_cart_summary(payload: dict) -> str:
     if not items:
         return "Your cart is empty."
 
-    item_count = int(payload.get("item_count") or sum(int(item.get("quantity", 1)) for item in items))
+    item_count = int(payload.get("item_count") or sum(parse_item_quantity(item.get("quantity", 1)) for item in items))
 
     if item_count == 1 and len(items) == 1:
         item = items[0]
-        quantity = item.get("quantity", 1)
+        quantity = format_item_quantity(item.get("quantity", 1))
         name = item.get("name", "item")
 
         if total:
@@ -41,7 +43,7 @@ def render_checkout_review_summary(payload: dict, order_type: str | None = None)
 
     item_parts = []
     for item in items:
-        quantity = int(item.get("quantity", 1))
+        quantity = parse_item_quantity(item.get("quantity", 1))
         name = item.get("name", "item")
         sides = [str(x).strip() for x in item.get("sides", []) if str(x).strip()]
         modifiers = [str(x).strip() for x in item.get("modifiers", []) if str(x).strip()]
@@ -62,11 +64,11 @@ def render_checkout_review_summary(payload: dict, order_type: str | None = None)
     total_text = f" Your total is {total}." if total else ""
 
     return (
-        f"{intro}Please review your order. "
+        f"{intro}Please review your order: "
         f"{items_text}."
         f"{total_text} "
-        f"Should I place the order and continue to checkout? "
-        f"If you want to change something, just tell me what to update."
+        f"Should I place the order" # and continue to checkout? "
+        #f"If you want to change something, just tell me what to update."
     )
 
 

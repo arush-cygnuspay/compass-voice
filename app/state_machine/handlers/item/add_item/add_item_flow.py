@@ -4,7 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from app.state_machine.models.conversation_context import ConversationContext, PendingAddItem
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.pending_item_models import PendingAddItem
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handlers.item.add_item.group_collection_utils import (
     effective_group_selector_bounds,

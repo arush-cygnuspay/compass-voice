@@ -57,6 +57,16 @@ DONE_WORDS: set[str] = {
     "okay thats good thanks",
     "sounds good",
     "good",
+    # Checkout-specific signals: low-confidence ASR often transcribes the word
+    # "checkout" literally even when NLU confidence falls below the gate threshold.
+    "checkout",
+    "check out",
+    "lets checkout",
+    "lets check out",
+    "go ahead and checkout",
+    "go ahead and check out",
+    "ready to checkout",
+    "ready to check out",
 }
 
 OPTIONS_WORDS: set[str] = {

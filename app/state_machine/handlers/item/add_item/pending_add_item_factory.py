@@ -5,7 +5,7 @@ import re
 
 from app.menu.models import MenuItem
 from app.nlu.query_normalization.text_preprocessor import normalize_text
-from app.state_machine.models.conversation_context import (
+from app.state_machine.models.pending_item_models import (
     PendingAddItem,
     PendingModifierChoice,
     PendingModifierGroup,

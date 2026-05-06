@@ -1,0 +1,379 @@
+# app/responses/item/format_utils.py
+"""Shared formatting helpers for item-centric voice responses.
+
+All symbols here are private to the responses.item package.  External code
+should import from the public modules (sides, modifiers, sizes, etc.) or from
+the package __init__, never directly from this file.
+"""
+from __future__ import annotations
+
+import re
+
+from app.menu.repository import MenuRepository
+from app.nlu.utterance_filter import DEFAULT_FILTER as _FILLER_FILTER
+from app.state_machine.models.conversation_context import ConversationContext
+from app.utils.top_k_choices import get_top_k_choices
+
+# ---------------------------------------------------------------------------
+# Module-level constants
+# ---------------------------------------------------------------------------
+
+_GENERIC_SIDE_NOUN = "side"
+_GENERIC_MODIFIER_NOUN = "add-on"
+
+# Tokens that carry no menu-item signal and should not be echoed in entity
+# feedback.  A phrase whose non-stop tokens number fewer than 2 is treated as
+# pure filler/conversational residue.
+_FEEDBACK_STOP_TOKENS: frozenset[str] = frozenset({
+    "i", "me", "my", "am", "is", "are", "was", "were",
+    "do", "did", "does", "be", "been", "have", "has",
+    "okay", "ok", "then", "give", "want", "would", "like",
+    "can", "get", "please", "just", "to", "order",
+    "a", "an", "the", "and", "or", "for", "in", "at", "on", "it",
+    "this", "that",
+})
+
+# Patterns that indicate a menu item is user-customizable (e.g. "Build Your Own Pizza").
+_CUSTOMIZABLE_PATTERN = re.compile(
+    r"\b(build\s+your\s+own|create\s+your\s+own|make\s+your\s+own|byo)\b",
+    re.IGNORECASE,
+)
+
+
+# ---------------------------------------------------------------------------
+# Pattern-detection helpers
+# ---------------------------------------------------------------------------
+
+def _looks_customizable(name: str) -> bool:
+    return bool(_CUSTOMIZABLE_PATTERN.search(name or ""))
+
+
+def _has_echable_content(text: str) -> bool:
+    """Return True when text contains genuine menu-item content.
+
+    Delegates to FillerFilter.is_filler_only so that control phrases
+    ("no skip that", "can you repeat", "add done") and structural filler
+    ("to order a", "okay then give me a") are never echoed as unavailable
+    items, while real candidates ("dragon burger", "bacon cheeseburger")
+    are preserved.
+    """
+    return not _FILLER_FILTER.is_filler_only(text)
+
+
+def _clean_group_label(name: str | None, fallback: str) -> str:
+    if not name:
+        return fallback
+    label = name.strip()
+    label = re.sub(r"^choose\s+(your\s+|a\s+|an\s+)?", "", label, flags=re.IGNORECASE)
+    label = re.sub(r"\s+", " ", label).strip()
+    label = re.sub(r"(ss)\b", "s", label, flags=re.IGNORECASE)
+    return label or fallback
+
+
+# ---------------------------------------------------------------------------
+# List-formatting helpers
+# ---------------------------------------------------------------------------
+
+def _format_suggestions(items: list[str], max_items: int = 4) -> str:
+    clean = [str(s).strip() for s in items if str(s).strip()][:max_items]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    if len(clean) == 2:
+        return f"{clean[0]} or {clean[1]}"
+    return ", ".join(clean[:-1]) + f", or {clean[-1]}"
+
+
+def _format_examples(choices: list[str], max_items: int = 3) -> str:
+    clean = [str(c).strip() for c in choices if c and str(c).strip()]
+    if not clean:
+        return ""
+    sample = clean[:max_items]
+    if len(sample) == 1:
+        return sample[0]
+    return ", ".join(sample[:-1]) + f", or {sample[-1]}"
+
+
+def _format_options(options: list[str], max_items: int = 3) -> str:
+    """Format a list of options for voice output, appending 'and N more' for overflow."""
+    clean = [str(option).strip() for option in options if str(option).strip()]
+    total = len(clean)
+    limited = clean[:max_items]
+    extras = total - len(limited)
+
+    if not limited:
+        return ""
+
+    if len(limited) == 1:
+        base = limited[0]
+    elif len(limited) == 2:
+        base = f"{limited[0]} or {limited[1]}"
+    else:
+        lead = ", ".join(limited[:-1])
+        base = f"{lead}, or {limited[-1]}"
+
+    if extras > 0:
+        return f"{base}, and {extras} more"
+    return base
+
+
+def _pluralize(word: str, count: int) -> str:
+    return word if count == 1 else f"{word}s"
+
+
+def _format_selected_names(selected_names: list[str]) -> str:
+    clean = [str(name).strip() for name in selected_names if str(name).strip()]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    if len(clean) == 2:
+        return f"{clean[0]} and {clean[1]}"
+    return f"{', '.join(clean[:-1])}, and {clean[-1]}"
+
+
+def _format_item_summary_list(items: list[str]) -> str:
+    """Format a list of item summaries for spoken output."""
+    clean = [str(item).strip() for item in items if str(item).strip()]
+    if not clean:
+        return ""
+    if len(clean) == 1:
+        return clean[0]
+    if len(clean) == 2:
+        return f"{clean[0]} and {clean[1]}"
+    return f"{', '.join(clean[:-1])}, and {clean[-1]}"
+
+
+def _added_text(item_name: str, quantity: int) -> str:
+    """Build 'Added X' or 'Added 2 X' text."""
+    if quantity > 1 and item_name:
+        return f"Added {quantity} {item_name}"
+    if item_name:
+        return f"{item_name} added"
+    return "Added"
+
+
+def _payload_value(payload: dict, key: str, default):
+    if key in payload:
+        return payload[key]
+    return default
+
+
+# ---------------------------------------------------------------------------
+# Entity-feedback helper (also imported by response_builder)
+# ---------------------------------------------------------------------------
+
+def _build_entity_feedback(payload: dict) -> str:
+    """Build spoken feedback for matched and unmatched entity names.
+
+    Returns a prefix like:
+        "Got Bacon and Mushrooms. I couldn't find tenderloin. "
+        "Got Bacon. "
+        ""
+    """
+    parts: list[str] = []
+
+    matched = payload.get("matched_names") or []
+    if matched:
+        parts.append(f"Got {_format_selected_names(matched)}.")
+
+    unmatched = [u for u in (payload.get("unmatched_names") or []) if _has_echable_content(u)]
+    if unmatched:
+        parts.append(f"I couldn't find {_format_selected_names(unmatched)}.")
+
+    if not parts:
+        return ""
+    return " ".join(parts) + " "
+
+
+# ---------------------------------------------------------------------------
+# Group payload builder
+# ---------------------------------------------------------------------------
+
+def _group_payload(
+    *,
+    payload: dict,
+    group_name: str,
+    option_names: list[str],
+    selected_names: list[str],
+    min_selector: int,
+    max_selector: int,
+) -> dict:
+    selected_count = len(selected_names)
+    effective_max = max_selector if max_selector > 0 else len(option_names)
+    if option_names and effective_max > len(option_names):
+        effective_max = len(option_names)
+
+    remaining_to_min = max(min_selector - selected_count, 0)
+    remaining_to_max = max(effective_max - selected_count, 0) if effective_max > 0 else 0
+
+    return {
+        "group_name": _payload_value(payload, "group_name", group_name),
+        "top_choices": _payload_value(payload, "top_choices", option_names[:4]),
+        "all_choices": _payload_value(payload, "all_choices", option_names),
+        "selected_names": _payload_value(payload, "selected_names", selected_names),
+        "selected_count": int(_payload_value(payload, "selected_count", selected_count) or 0),
+        "min_selector": int(_payload_value(payload, "min_selector", min_selector) or 0),
+        "max_selector": int(_payload_value(payload, "max_selector", effective_max) or 0),
+        "remaining_to_min": int(_payload_value(payload, "remaining_to_min", remaining_to_min) or 0),
+        "remaining_to_max": int(_payload_value(payload, "remaining_to_max", remaining_to_max) or 0),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Live-context payload extractors (used by sides and modifiers modules)
+# ---------------------------------------------------------------------------
+
+def _current_side_payload(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+    payload: dict | None = None,
+) -> dict:
+    payload = payload or {}
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.side_groups[context.current_side_group_index]
+    selected_ids = list(context.selected_side_groups.get(group.group_id, []))
+
+    choices_by_id = getattr(group, "choices_by_item_id", None)
+    if choices_by_id is None:
+        choices_by_id = {choice.item_id: choice for choice in group.choices}
+    selected_names = [
+        choices_by_id[item_id].name
+        for item_id in selected_ids
+        if item_id in choices_by_id
+    ]
+
+    return _group_payload(
+        payload=payload,
+        group_name=group.name,
+        option_names=[choice.name for choice in group.choices],
+        selected_names=selected_names,
+        min_selector=int(group.min_selector or 0),
+        max_selector=int(group.max_selector or 0),
+    )
+
+
+def _current_modifier_payload(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+    payload: dict | None = None,
+) -> dict:
+    payload = payload or {}
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.modifier_groups[context.current_modifier_group_index]
+    selected_names = []
+    for selection in context.selected_modifier_groups.get(group.group_id, []):
+        if selection.action == "remove":
+            selected_names.append(f"no {selection.name}")
+        elif selection.instruction == "extra":
+            selected_names.append(f"extra {selection.name}")
+        elif selection.instruction == "less":
+            selected_names.append(f"less {selection.name}")
+        elif selection.instruction == "on_side":
+            selected_names.append(f"{selection.name} on the side")
+        else:
+            selected_names.append(selection.name)
+
+    return _group_payload(
+        payload=payload,
+        group_name=group.name,
+        option_names=[choice.name for choice in group.choices],
+        selected_names=selected_names,
+        min_selector=int(group.min_selector or 0),
+        max_selector=int(group.max_selector or 0),
+    )
+
+
+def _top_side_choices(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+    k: int = 4,
+) -> list[str]:
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.side_groups[context.current_side_group_index]
+    return [choice.name for choice in get_top_k_choices(group.choices, k=k)]
+
+
+def _top_modifier_choices(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+    k: int = 4,
+) -> list[str]:
+    item = menu_repo.store.get_item(context.current_item_id)
+    group = item.modifier_groups[context.current_modifier_group_index]
+    return [choice.name for choice in get_top_k_choices(group.choices, k=k)]
+
+
+# ---------------------------------------------------------------------------
+# Multi-select prompt builders
+# ---------------------------------------------------------------------------
+
+def _initial_multi_select_prompt(
+    *,
+    item_name: str,
+    group_label: str,
+    options: str,
+    min_selector: int,
+    max_selector: int,
+    optional: bool,
+    total_choices: int = 0,
+) -> str:
+    ask_hint = " Ask for options to hear more." if total_choices > 6 else ""
+
+    if optional:
+        if max_selector == 1:
+            return f"Any {group_label} with your {item_name}? {options}, or no.{ask_hint}"
+        return (
+            f"Any {group_label} for your {item_name}? Up to {max_selector}. "
+            f"{options}, or no.{ask_hint}"
+        )
+
+    if min_selector == max_selector:
+        if min_selector == 1:
+            return f"Which {group_label} for your {item_name}? {options}.{ask_hint}"
+        return f"Pick {min_selector} {group_label} for your {item_name}. {options}.{ask_hint}"
+
+    if max_selector > 0:
+        return f"Pick up to {max_selector} {group_label} for your {item_name}. {options}.{ask_hint}"
+
+    return f"Pick at least {min_selector} {group_label} for your {item_name}. {options}.{ask_hint}"
+
+
+def _progress_prompt(payload: dict, *, item_word: str, invalid_lead: str) -> str:
+    top_choices = _payload_value(payload, "top_choices", [])
+    all_choices = _payload_value(payload, "all_choices", [])
+    option_values = top_choices if top_choices else all_choices
+    options = _format_options(option_values)
+
+    reason = payload.get("repeat_reason")
+    if reason == "need_more":
+        remaining = max(int(payload.get("remaining_to_min", 0) or 0), 0)
+        prompt = "Pick 1 more." if remaining == 1 else f"Pick {remaining} more."
+        return f"{prompt} {options}." if options else prompt
+
+    if reason == "optional_more":
+        remaining = max(int(payload.get("remaining_to_max", 0) or 0), 0)
+        if remaining > 0:
+            if remaining == 1:
+                return f"Add 1 more, or say done. {options}." if options else "Add 1 more, or say done."
+            return f"Up to {remaining} more, or say done. {options}." if options else f"Up to {remaining} more, or say done."
+        return "Say done when ready."
+
+    remaining = max(int(payload.get("remaining_to_min", 0) or 0), 0)
+    if remaining == 0:
+        remaining_to_max = max(int(payload.get("remaining_to_max", 0) or 0), 0)
+        if remaining_to_max > 0 and options:
+            if remaining_to_max == 1:
+                return f"Add 1 more, or say done. {options}."
+            return f"Up to {remaining_to_max} more, or say done. {options}."
+        return "Say done when ready."
+
+    selected_count = max(int(payload.get("selected_count", 0) or 0), 0)
+    if selected_count == 0:
+        prompt = "Please choose one option." if remaining == 1 else f"Please choose {remaining} options."
+    elif remaining == 1:
+        prompt = f"{invalid_lead} Pick 1 more."
+    else:
+        prompt = f"{invalid_lead} Pick {remaining} more."
+    return f"{prompt} {options}." if options else prompt

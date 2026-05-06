@@ -25,6 +25,7 @@ DIRECT_STATE_HANDLERS: dict[ConversationState, str] = {
     ConversationState.MODIFYING_ITEM: "modifying_item_handler",
     ConversationState.REMOVING_ITEM: "removing_item_handler",
     ConversationState.CONFIRMING_ORDER: "confirming_order_handler",
+    ConversationState.WAITING_FOR_PICKUP_SMS_PERMISSION: "waiting_for_pickup_sms_permission_handler",
     ConversationState.WAITING_FOR_PAYMENT: "waiting_for_payment_handler",
     ConversationState.WAITING_FOR_CHECKOUT_COMPLETION: "waiting_for_checkout_completion_handler",
     ConversationState.CANCELLATION_CONFIRMATION: "cancellation_confirmation_handler",

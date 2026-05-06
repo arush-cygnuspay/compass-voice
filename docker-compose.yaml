@@ -5,29 +5,42 @@ services:
     command:
       [
         "gunicorn",
-        "-k",
-        "uvicorn.workers.UvicornWorker",
+        "-k", "uvicorn.workers.UvicornWorker",
         "app.api.voice_stream_server:app",
-        "--bind",
-        "0.0.0.0:8000",
-        "--workers",
-        "2"
+        "--bind", "0.0.0.0:8000",
+        "--workers", "2",
+        "--preload"
       ]
     ports:
       - "8000:8000"
     depends_on:
       - redis
+    # All secrets and host-specific config live in /home/ubuntu/apps/compass-voice/.env
+    # on the EC2 host. That file is NOT in git. See .env.example for the schema.
+    env_file:
+      - .env
     environment:
+      # Non-secret, deploy-invariant config stays inline so it's reviewable in git.
       REDIS_HOST: redis
       REDIS_PORT: 6379
       PUBLIC_WSS_BASE_URL: https://voice.cygnuscompass.com
-      DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
+      COMPASS_PUBLIC_CHECKOUT_BASE_URL: https://voice.cygnuscompass.com/checkout
       DEEPGRAM_TTS_MODEL: aura-2-thalia-en
+      COMPASS_CHECKOUT_DATA_DIR: /var/compass/checkout_sessions
+      COMPASS_PAYMENT_LINK_SESSION_DATA_DIR: /var/compass/payment_link_sessions
       COMPASS_REALTIME_LATENCY_LOG_PATH: /runtime-logs/realtime_turn_latency.jsonl
       COMPASS_REALTIME_LATENCY_CSV_PATH: /runtime-logs/realtime_turn_latency.csv
       COMPASS_NLU_CSV_LOG_DIR: /runtime-logs/nlu
     volumes:
       - /home/ubuntu/compass-voice-logs:/runtime-logs
+      - /home/ubuntu/compass-voice-state/checkout_sessions:/var/compass/checkout_sessions
+      - /home/ubuntu/compass-voice-state/payment_link_sessions:/var/compass/payment_link_sessions
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 45s
     restart: unless-stopped
 
   redis:
@@ -36,3 +49,6 @@ services:
     restart: unless-stopped
     ports:
       - "6379:6379"
+    volumes:
+      - /home/ubuntu/compass-voice-state/redis:/data
+    command: ["redis-server", "--appendonly", "yes"]
