@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.matching.quantity_parser import normalize_quantity
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.session.session import Session
 from app.state_machine.control_intent_resolver import (
@@ -356,6 +357,34 @@ class WaitingForSideHandler(GroupResolutionHandler):
                 and getattr(slot, "value", None)
             ]
             slot_value_counts = dict(Counter(raw_slot_values)) if raw_slot_values else None
+
+            # If a QUANTITY slot is present (e.g. "Coke twice" → SIDE=Coke, QUANTITY=2),
+            # scale each SIDE count by the quantity multiplier.  Only applied when the
+            # multiplier is ≥ 2 to avoid overriding explicit slot repetition counts.
+            quantity_slot_value = next(
+                (
+                    getattr(slot, "value", None)
+                    for slot in (context.last_slots or ())
+                    if str(getattr(slot, "name", "") or "").upper() == "QUANTITY"
+                ),
+                None,
+            )
+            if quantity_slot_value is not None:
+                parsed_qty = normalize_quantity(str(quantity_slot_value))
+                if isinstance(parsed_qty, int) and parsed_qty >= 2:
+                    if slot_value_counts:
+                        slot_value_counts = {
+                            key: count * parsed_qty
+                            for key, count in slot_value_counts.items()
+                        }
+                    else:
+                        # No repeated slots — will let the resolver handle a single match,
+                        # then the multiplier seeds slot_value_counts for the first SIDE.
+                        # Build from raw_slot_values using the quantity as the count.
+                        if raw_slot_values:
+                            slot_value_counts = {
+                                val: parsed_qty for val in dict.fromkeys(raw_slot_values)
+                            }
 
         resolution = self.side_resolver.resolve(
             group=group,

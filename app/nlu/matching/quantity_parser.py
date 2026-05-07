@@ -62,6 +62,13 @@ SPECIAL_QUANTITIES = {
     "an": 1,
     "single": 1,
     "couple": 2,
+    # Multiplier words that are unambiguous standalone quantity phrases.
+    # "double"/"triple" as modifiers ("double cheese") are handled by
+    # modifier_instructions.py and never reach normalize_quantity as bare tokens.
+    "twice": 2,
+    "double": 2,
+    "thrice": 3,
+    "triple": 3,
 }
 
 UNIT_WORDS = (
@@ -104,6 +111,13 @@ VAGUE_PATTERNS = (
 UNIT_PATTERN = "|".join(sorted(UNIT_WORDS, key=len, reverse=True))
 _LEADING_QUANTITY_PATTERN = re.compile(
     r"^(?P<token>\d+|a|an|single|couple|one|two|three|four|five|six|seven|eight|nine|ten)\b(?P<rest>.*)$"
+)
+
+# Matches x-notation multipliers: "x2", "2x", "×2", "x 2", "2 x" (case-insensitive).
+# Group 1 captures the digit(s) in prefix form (x2); group 2 in suffix form (2x).
+_X_QUANTITY_PATTERN = re.compile(
+    r"^[x×]\s*(\d+)$|^(\d+)\s*[x×]$",
+    re.IGNORECASE,
 )
 
 _HALF_POUND_PATTERN = re.compile(r"\bhalf\s+(?:a\s+)?(?:lb|pound)s?\b")
@@ -244,6 +258,19 @@ def normalize_quantity(text: str) -> int | None:
     unit_quantity = _extract_unit_quantity(text)
     if unit_quantity is not None:
         return unit_quantity
+
+    # Reject decimal literals — quantities must be positive integers.
+    # "0.1", "1.5", "2.0", ".5" must return None rather than being silently
+    # truncated by _first_numeric_token (which would return 0, 1, 2, 5 resp.).
+    if re.fullmatch(r"\d+\.\d*|\d*\.\d+", text):
+        return None
+
+    # x-notation: "x2", "2x", "×3", "x 2", "2 x" → integer
+    x_match = _X_QUANTITY_PATTERN.match(text)
+    if x_match:
+        raw = x_match.group(1) or x_match.group(2)
+        value = int(raw)
+        return value if value > 0 else None
 
     if text.isdigit():
         return int(text)
