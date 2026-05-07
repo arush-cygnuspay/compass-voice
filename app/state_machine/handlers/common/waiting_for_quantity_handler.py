@@ -19,6 +19,7 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
 from app.utils.quantity_detection import detect_quantity, normalize_quantity
 
 
+from app.core.quantity_formatter import normalize_food_quantity
 from app.state_machine.flow_sets import SOFT_SWITCH_INTENTS
 
 
@@ -197,14 +198,12 @@ class WaitingForQuantityHandler(BaseHandler):
                 continue
 
             value = getattr(slot, "value", None)
-
-            if isinstance(value, int):
-                return value
-
-            if isinstance(value, str):
-                stripped = value.strip()
-                if stripped.isdigit():
-                    return int(stripped)
+            # normalize_food_quantity handles int, float, Decimal and numeric
+            # strings (including ASR decimal encoding "0.2" → 2).  It returns
+            # None for word strings ("two") and ambiguous decimals (1.5).
+            decoded = normalize_food_quantity(value)
+            if decoded is not None:
+                return decoded
 
         normalized_quantity = normalize_quantity(user_text)
         if isinstance(normalized_quantity, int):

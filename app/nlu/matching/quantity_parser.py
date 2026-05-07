@@ -62,6 +62,8 @@ SPECIAL_QUANTITIES = {
     "an": 1,
     "single": 1,
     "couple": 2,
+    "pair": 2,
+    "both": 2,
     # Multiplier words that are unambiguous standalone quantity phrases.
     # "double"/"triple" as modifiers ("double cheese") are handled by
     # modifier_instructions.py and never reach normalize_quantity as bare tokens.
@@ -119,6 +121,11 @@ _X_QUANTITY_PATTERN = re.compile(
     r"^[x×]\s*(\d+)$|^(\d+)\s*[x×]$",
     re.IGNORECASE,
 )
+
+# Matches "0.2 cokes", "0.3 burgers" — ASR decimal-encoding of quantity where
+# the integer part is 0 and the single fractional digit is the item count.
+# Capturing group 1 is the digit (1-9 only; 0 is invalid and will be rejected).
+_LEADING_ZERO_N_PATTERN = re.compile(r"^0\.(\d)(?:\s|$)")
 
 _HALF_POUND_PATTERN = re.compile(r"\bhalf\s+(?:a\s+)?(?:lb|pound)s?\b")
 _QUARTER_POUND_PATTERN = re.compile(r"\bquarter\s+(?:lb|pound)s?\b")
@@ -259,10 +266,25 @@ def normalize_quantity(text: str) -> int | None:
     if unit_quantity is not None:
         return unit_quantity
 
-    # Reject decimal literals — quantities must be positive integers.
+    # Reject bare decimal literals — quantities must be positive integers.
     # "0.1", "1.5", "2.0", ".5" must return None rather than being silently
     # truncated by _first_numeric_token (which would return 0, 1, 2, 5 resp.).
     if re.fullmatch(r"\d+\.\d*|\d*\.\d+", text):
+        return None
+
+    # Handle "0.N <item>" — ASR decimal encoding where 0.N in context means N
+    # items.  "0.2 cokes" → 2.  Must come after the fullmatch guard (which
+    # rejects bare "0.2") and before _first_numeric_token (which would extract
+    # the misleading "0" from "0.2 cokes").
+    leading_zero_n = _LEADING_ZERO_N_PATTERN.match(text)
+    if leading_zero_n:
+        digit = int(leading_zero_n.group(1))
+        return digit if digit > 0 else None
+
+    # Reject any other "0.NX…" prefix that did NOT match the single-digit
+    # pattern above (e.g. "0.09 burgers", "0.0 items").  Without this guard
+    # _first_numeric_token would extract "0" from the decimal prefix.
+    if re.match(r"^0\.\d", text):
         return None
 
     # x-notation: "x2", "2x", "×3", "x 2", "2 x" → integer

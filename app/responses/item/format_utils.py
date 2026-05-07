@@ -199,6 +199,48 @@ def _format_item_summary_list(items: list[str]) -> str:
     return f"{', '.join(clean[:-1])}, and {clean[-1]}"
 
 
+def spoken_quantity_label(quantity: int, name: str, plural: str | None = None) -> str:
+    """Voice-safe quantity + name label.  Never emits ``x`` notation.
+
+    When *quantity* is 1, returns *name* alone (no leading "1").
+    For *quantity* > 1:
+    - If an explicit *plural* form is given, uses that.
+    - Otherwise returns ``"{quantity} {name}"`` with **no automatic pluralisation**
+      to avoid naïve ``"French Friess"``-style errors on menu item names.
+
+    Examples::
+
+        spoken_quantity_label(1, "Coke")                   → "Coke"
+        spoken_quantity_label(2, "Coke")                   → "2 Coke"
+        spoken_quantity_label(2, "Coke", plural="Cokes")   → "2 Cokes"
+        spoken_quantity_label(3, "French Fries")           → "3 French Fries"
+    """
+    q = max(1, int(quantity))
+    if q == 1:
+        return name or ""
+    if plural is not None:
+        return f"{q} {plural}"
+    return f"{q} {name}"
+
+
+def compact_quantity_label(quantity: int, name: str) -> str:
+    """Compact voice-safe label for cart summaries.  Never emits ``x`` notation.
+
+    Like :func:`spoken_quantity_label` without an explicit plural parameter.
+    TTS engines read "2 Coke" as "two Coke" which is acceptable in a cart list
+    context and avoids naïve pluralisation bugs on complex menu-item names.
+
+    Examples::
+
+        compact_quantity_label(1, "Coke")  → "Coke"
+        compact_quantity_label(2, "Coke")  → "2 Coke"
+    """
+    q = max(1, int(quantity))
+    if q == 1:
+        return name or ""
+    return f"{q} {name}"
+
+
 def _added_text(item_name: str, quantity: int) -> str:
     """Build 'Added X' or 'Added 2 X' text."""
     if quantity > 1 and item_name:

@@ -20,6 +20,7 @@ import logging
 import re
 from typing import Sequence
 
+from app.core.quantity_formatter import normalize_food_quantity
 from app.menu.models import MenuItem
 from app.nlu.modifier_instructions import speak as _speak_modifier
 from app.nlu.nlu_result import SlotValue
@@ -105,13 +106,25 @@ def normalize_item_request_text(text: str) -> str:
 
 
 def _parse_quantity_value(raw: str) -> int | None:
-    """Coerce a raw QUANTITY slot string to a positive int (or None)."""
+    """Coerce a raw QUANTITY slot string to a positive int (or None).
+
+    Handles:
+    - plain digit strings: "2" → 2
+    - ASR decimal encoding: "0.2" → 2 (via normalize_food_quantity)
+    - word strings: "two", "a dozen" → 2, 12 (via normalize_quantity)
+    - invalid/ambiguous: "1.5", garbage → None
+    """
     text = (raw or "").strip()
     if not text:
         return None
     if text.isdigit():
         value = int(text)
         return value if value > 0 else None
+    # Try decimal-encoding path first ("0.2" → 2, "1.0" → 1)
+    nfq = normalize_food_quantity(text)
+    if nfq is not None and nfq > 0:
+        return nfq
+    # Word / compound-number path ("two", "half dozen", "a pair")
     coerced = normalize_quantity(text)
     if isinstance(coerced, int) and coerced > 0:
         return coerced
@@ -150,14 +163,13 @@ class PendingItemCaptureHelper:
             if str(getattr(slot, "name", "")).upper() != "QUANTITY":
                 continue
             value = getattr(slot, "value", None)
-            if isinstance(value, int) and value > 0:
-                context.quantity = value
+            # Use normalize_food_quantity for all numeric types (int, float,
+            # Decimal, numeric str).  This correctly decodes 0.N → N without
+            # using round(), and rejects ambiguous values (1.5, negative).
+            decoded = normalize_food_quantity(value)
+            if decoded is not None and decoded > 0:
+                context.quantity = decoded
                 return True
-            if isinstance(value, str):
-                stripped = value.strip()
-                if stripped.isdigit() and int(stripped) > 0:
-                    context.quantity = int(stripped)
-                    return True
 
         normalized_quantity = self._infer_quantity_from_text(
             context=context,

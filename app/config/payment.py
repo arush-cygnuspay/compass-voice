@@ -72,7 +72,7 @@ def get_payment_config() -> PaymentConfig:
         ),
         public_checkout_base_url=os.getenv(
             "COMPASS_PUBLIC_CHECKOUT_BASE_URL",
-            "https://65dd-2407-aa80-116-319-88f6-6b6d-ed8b-deaa.ngrok-free.app/checkout",
+            "https://6184-2407-aa80-116-3caa-20d1-a207-5dbd-6875.ngrok-free.app/checkout",
         ).rstrip("/"),
         reverse_geocode_url=os.getenv(
             "COMPASS_REVERSE_GEOCODE_URL",
