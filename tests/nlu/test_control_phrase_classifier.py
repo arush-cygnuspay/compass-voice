@@ -255,17 +255,27 @@ class TestConfirmDenyInConfirmState:
 
 class TestNoneInOtherStates:
     @pytest.mark.parametrize("phrase,state", [
+        # IDLE non-checkout phrases still return "none"
         ("skip", _IDLE),
-        ("done", _IDLE),
         ("can you repeat", _IDLE),
         ("no bun", _IDLE),
-        ("checkout", _IDLE),
+        # Note: "done" and "checkout" in IDLE now return "checkout" (targeted state).
+        # Those cases are covered in tests/nlu/test_idle_checkout_classifier.py.
         ("skip", "waiting_for_size"),
         ("skip", None),
     ])
     def test_no_op_in_non_targeted_states(self, phrase, state):
         result = classify(phrase, state)
         assert result.action == "none", f"{phrase!r} in {state!r} should be none"
+
+    def test_done_in_idle_is_now_checkout(self):
+        # IDLE is now a targeted state; "done" + non-empty cart → checkout coercion.
+        result = classify("done", _IDLE)
+        assert result.action == "checkout"
+
+    def test_checkout_in_idle_is_checkout(self):
+        result = classify("checkout", _IDLE)
+        assert result.action == "checkout"
 
 
 # ===========================================================================

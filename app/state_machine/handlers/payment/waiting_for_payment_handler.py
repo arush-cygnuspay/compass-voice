@@ -145,6 +145,29 @@ class WaitingForPaymentHandler(BaseHandler):
                     ),
                 )
 
+        # Defensive guard: checkout / finalize / done phrases while payment is
+        # already in progress.  These cannot re-trigger the checkout flow;
+        # acknowledge the current state instead.  This prevents accidental
+        # re-routing if a coercion upstream fires before the payment handler
+        # can assert its own state.
+        _CHECKOUT_LIKE_INTENTS = {
+            Intent.CHECKOUT,
+            Intent.FINISH_ORDER,
+            Intent.CONFIRM_ORDER,
+            Intent.END_ADDING,
+            Intent.START_ORDER,
+        }
+        if intent in _CHECKOUT_LIKE_INTENTS:
+            if getattr(delivery, "payment_wait_mode", None) == "after_call":
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_PAYMENT,
+                    response_key="payment_after_call_selected",
+                )
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_PAYMENT,
+                response_key="waiting_for_payment",
+            )
+
         if intent in self.COMPLETE_PAYMENT_INTENTS or (
             control_intent is not None and control_intent.kind == ControlIntentKind.AFFIRM
         ):

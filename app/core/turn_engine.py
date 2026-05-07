@@ -57,6 +57,7 @@ from app.state_machine.handlers.order.waiting_for_order_type_handler import (
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.resume_prompt_builder import ResumePromptBuilder
+from app.state_machine.policy.idle_checkout_coercion import coerce_idle_to_checkout
 from app.state_machine.policy.intent_coercion import IntentCoercionPolicy
 from app.state_machine.state_router import StateRouter
 
@@ -569,6 +570,21 @@ class TurnEngine:
             normalized_text=nlu.normalized_text,
         )
 
+        # Idle-checkout coercion: UNKNOWN + checkout/done/payment phrase in
+        # IDLE with a non-empty cart → Intent.CHECKOUT.  This fires BEFORE the
+        # add-item coercion so that checkout-family phrases (e.g. "payment")
+        # are not accidentally coerced to ADD_ITEM.  The resulting CHECKOUT
+        # intent routes to StartOrderHandler → confirm_order_summary first;
+        # payment never starts without explicit order confirmation.
+        _idle_checkout = coerce_idle_to_checkout(
+            state=session.conversation_state,
+            intent_result=intent_result,
+            nlu=nlu,
+            cart=session.cart,
+        )
+        intent_result = _idle_checkout.intent_result
+        _idle_checkout_reason: str | None = _idle_checkout.coercion_reason
+
         # FSM-aware intent coercion (idle add-item rules).
         # Runs after all FlowGate rewrites so that coercion decisions see the
         # final effective intent, not the raw model output.
@@ -579,7 +595,7 @@ class TurnEngine:
             cart=session.cart,
         )
         intent_result = _coercion.intent_result
-        _coercion_reason: str | None = _coercion.coercion_reason
+        _coercion_reason: str | None = _coercion.coercion_reason or _idle_checkout_reason
 
         t0 = time.perf_counter()
         flow = self.flow_policy.evaluate(

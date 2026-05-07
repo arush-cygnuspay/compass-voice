@@ -51,6 +51,10 @@ _NONE_RESULT = ControlPhraseResult(action="none", confidence=0.0)
 # State groupings (compare against .value to stay string-based)
 # ---------------------------------------------------------------------------
 
+_IDLE_STATES: frozenset[str] = frozenset({
+    "idle",
+})
+
 _SIDE_MODIFIER_STATES: frozenset[str] = frozenset({
     "waiting_for_side",
     "waiting_for_modifier",
@@ -229,6 +233,67 @@ _DENY_EXACT: frozenset[str] = frozenset({
     "dont do it",
 })
 
+# ---------------------------------------------------------------------------
+# IDLE-state checkout phrase sets
+# Phrases that unambiguously mean "I'm done adding items, proceed to checkout"
+# when spoken in IDLE with a non-empty cart.
+# All entries must be in normalize_text() form (lowercase, no punctuation).
+# Bare "yes"/"no" are deliberately excluded — they are confirm/deny responses.
+# ---------------------------------------------------------------------------
+
+_IDLE_CHECKOUT_EXACT: frozenset[str] = frozenset({
+    # Direct checkout / wrap-up
+    "checkout",
+    "check out",
+    "thats it",
+    "that is it",
+    "thats all",
+    "that is all",
+    "nothing else",
+    "no more",
+    "im done",
+    "i am done",
+    "done",
+    "finished",
+    "im finished",
+    "i am finished",
+    "all good",
+    "were good",
+    "we are good",
+    "im good",
+    "i am good",
+    # Order finalization
+    "complete my order",
+    "complete the order",
+    "finish my order",
+    "finish the order",
+    "finalize",
+    "finalize my order",
+    "finalize the order",
+    "place the order",
+    "place my order",
+    "lets checkout",
+    "lets check out",
+    "go ahead and checkout",
+    "go ahead and check out",
+    "ready to checkout",
+    "ready to check out",
+    # Payment-specific — these must route to confirm_order_summary first,
+    # never directly to WaitingForPayment.
+    "continue to payment",
+    "proceed to payment",
+    "payment",
+    "pay",
+    "pay now",
+    "send payment link",
+    "send the payment link",
+    "send me the payment link",
+    "text me payment link",
+    "text me the payment link",
+    "text me the link",
+    "text me a payment link",
+})
+
 
 # ---------------------------------------------------------------------------
 # Classifier
@@ -264,11 +329,47 @@ class ControlPhraseClassifier:
 
         state_val = (state or "").lower().strip()
 
+        if state_val in _IDLE_STATES:
+            return self._classify_idle(text)
+
         if state_val in _CONFIRM_ORDER_STATES:
             return self._classify_confirm_order(text)
 
         if state_val in _SIDE_MODIFIER_STATES:
             return self._classify_side_modifier(text)
+
+        return _NONE_RESULT
+
+    # ------------------------------------------------------------------
+    # Private — IDLE state
+    # ------------------------------------------------------------------
+
+    def _classify_idle(self, text: str) -> ControlPhraseResult:
+        """Classify for IDLE state.
+
+        Detects checkout / done / payment phrases that signal the caller
+        wants to finalize their order.  Bare affirmations ("yes", "yeah")
+        and bare denials ("no", "nope") are intentionally excluded — those
+        are not checkout commands.
+        """
+        # Direct match
+        if text in _IDLE_CHECKOUT_EXACT:
+            return ControlPhraseResult(
+                action="checkout",
+                confidence=1.0,
+                reason="exact_idle_checkout_phrase",
+            )
+
+        # Prefixed match: "please checkout", "okay payment", etc.
+        for prefix in _CHECKOUT_LEADING:
+            if text.startswith(prefix):
+                remainder = text[len(prefix):].strip()
+                if remainder in _IDLE_CHECKOUT_EXACT:
+                    return ControlPhraseResult(
+                        action="checkout",
+                        confidence=0.95,
+                        reason="prefixed_idle_checkout_phrase",
+                    )
 
         return _NONE_RESULT
 

@@ -122,7 +122,7 @@ class CartSummaryBuilder:
                 continue
 
             # Count occurrences per item_id to support duplicate selections
-            # (e.g. ["coke","coke"] → "Coke x2").
+            # (e.g. ["coke","coke"] → "2 Coke").
             id_counts = Counter(chosen_ids)
 
             for choice in getattr(group, "choices", []) or []:
@@ -138,7 +138,7 @@ class CartSummaryBuilder:
                         label = f"{label} {variant_label}"
 
                 if count > 1:
-                    label = f"{label} x{count}"
+                    label = f"{count} {label}"
                 labels.append(label)
 
         return tuple(labels)

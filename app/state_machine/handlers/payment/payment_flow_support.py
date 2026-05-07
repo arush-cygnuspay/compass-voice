@@ -88,7 +88,7 @@ def format_order_summary_sms(order_summary: dict[str, Any] | None) -> str:
             detail_parts.extend(modifiers[:3])
         if sides:
             detail_parts.extend(sides[:2])
-        line = f"{quantity}x {name}"
+        line = f"{quantity} {name}"
         if detail_parts:
             line = f"{line} - {', '.join(detail_parts[:4])}"
         lines.append(line)
