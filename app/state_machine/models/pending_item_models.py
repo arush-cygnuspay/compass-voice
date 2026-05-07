@@ -70,6 +70,8 @@ class PendingSideGroup:
     choice_names: tuple[str, ...] = ()
     normalized_choice_names: tuple[str, ...] = ()
     top_choice_names: tuple[str, ...] = ()
+    # Mirrors SideGroup.allow_duplicate_selections.
+    allow_duplicate_selections: bool = True
 
 
 @dataclass(slots=True)

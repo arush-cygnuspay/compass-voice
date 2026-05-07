@@ -13,7 +13,61 @@ from app.responses.item.format_utils import (
     _progress_prompt,
     _top_side_choices,
 )
+from app.state_machine.handlers.item.add_item.group_classification import ordinal_word
 from app.state_machine.models.conversation_context import ConversationContext
+
+_SIDE_OVERFLOW_HINT = "or say 'options' to hear them all"
+
+
+def build_side_prompt_lead(
+    *,
+    position: int,
+    total: int,
+    is_drink_group: bool,
+    is_last_side_prompt: bool,
+    speech_noun: str,
+) -> str:
+    """Return the opening sentence for a side-selection prompt.
+
+    Implements progressive/ordinal wording per the UX spec:
+
+    One group total:
+        drink  → "Which drink would you like?"
+        side   → "Which side would you like?"
+
+    Two groups, first is food then drink:
+        pos 0  → "Choose your side."
+        pos 1  → "Lastly, choose your drink."
+
+    Three or more groups, last is drink:
+        pos 0  → "Choose your first side."
+        pos 1  → "Now choose your second side."
+        pos N  → "Lastly, choose your drink."  (drink, last)
+        pos N  → "Now choose your Nth side."   (non-drink, last)
+
+    Middle positions always use "Now choose your Nth <noun>."
+    """
+    noun = speech_noun or _GENERIC_SIDE_NOUN
+
+    # ── Single group: no ordinal, no "Lastly" ────────────────────────────────
+    if total <= 1:
+        return f"Which {noun} would you like?"
+
+    # ── Last group ────────────────────────────────────────────────────────────
+    if is_last_side_prompt:
+        if is_drink_group:
+            return f"Lastly, choose your {noun}."
+        # Non-drink final group — use "Now" + ordinal
+        return f"Now choose your {ordinal_word(position + 1)} {noun}."
+
+    # ── First group ───────────────────────────────────────────────────────────
+    if position == 0:
+        if total == 2:
+            return f"Choose your {noun}."
+        return f"Choose your first {noun}."
+
+    # ── Middle groups ─────────────────────────────────────────────────────────
+    return f"Now choose your {ordinal_word(position + 1)} {noun}."
 
 
 def ask_for_side(
@@ -23,36 +77,52 @@ def ask_for_side(
 ) -> str:
     payload = payload or {}
 
-    item_name: str | None = None
-    noun = _GENERIC_SIDE_NOUN
-    verb = "would you like"
     min_selector = 0
     top_choices: list[str] = list(payload.get("top_choices") or [])
 
     try:
-        item = menu_repo.store.get_item(context.current_item_id)
-        group = item.side_groups[context.current_side_group_index]
-        item_name = item.name
-        noun = (getattr(group, "prompt_noun", None) or _GENERIC_SIDE_NOUN).strip() or _GENERIC_SIDE_NOUN
-        verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
         group_payload = _current_side_payload(context, menu_repo, payload)
         min_selector = int(group_payload.get("min_selector", 0) or 0)
         top_choices = group_payload.get("top_choices") or top_choices
     except Exception:
         pass
 
-    item_name = (
-        item_name
-        or payload.get("current_item_name")
-        or getattr(context, "current_item_name", None)
-        or "your item"
+    # ── Progressive lead ──────────────────────────────────────────────────────
+    position = int(payload.get("side_group_position") or 0)
+    total = int(payload.get("total_side_groups") or 1)
+    is_drink = bool(payload.get("is_drink_group", False))
+    is_last = bool(payload.get("is_last_side_prompt", total <= 1))
+    speech_noun = str(payload.get("speech_noun") or _GENERIC_SIDE_NOUN)
+
+    lead = build_side_prompt_lead(
+        position=position,
+        total=total,
+        is_drink_group=is_drink,
+        is_last_side_prompt=is_last,
+        speech_noun=speech_noun,
     )
 
-    examples = _format_examples(top_choices)
-    if examples:
-        prompt = f"Any {noun} {verb}, like {examples}?"
+    total_choices = int(payload.get("total_choices") or len(top_choices))
+    options_str = _format_options(
+        top_choices,
+        max_items=6,
+        overflow_hint=_SIDE_OVERFLOW_HINT if total_choices > 6 else None,
+        has_more=total_choices > 6 if total_choices else None,
+    )
+
+    if options_str:
+        prompt = f"{lead} {options_str}."
     else:
-        prompt = f"Any {noun} {verb} with your {item_name}?"
+        # No options to list — degrade gracefully with item name if available.
+        item_name = (
+            payload.get("item_name")
+            or payload.get("current_item_name")
+            or getattr(context, "current_item_name", None)
+        )
+        if item_name:
+            prompt = f"Any {speech_noun} with your {item_name}?"
+        else:
+            prompt = lead
 
     if min_selector == 0:
         return f"{prompt} You can say none."
@@ -135,11 +205,14 @@ def required_side_cannot_skip(
     side_payload = _current_side_payload(context, menu_repo, payload)
     options = _format_options(side_payload.get("top_choices") or _top_side_choices(context, menu_repo))
     remaining = max(int(side_payload.get("remaining_to_min", 0) or 0), 0)
+    noun = str((payload or {}).get("speech_noun") or _GENERIC_SIDE_NOUN)
     if options:
         if remaining > 1:
-            return f"Need {remaining} more sides. {options}."
-        return f"A side is required. {options}."
-    return "A side is required."
+            return f"Need {remaining} more {noun}s. {options}."
+        return f"A {noun} is required. {options}."
+    if remaining > 1:
+        return f"Need {remaining} more {noun}s."
+    return f"A {noun} is required."
 
 
 def list_side_options(

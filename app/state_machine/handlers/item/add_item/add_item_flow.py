@@ -10,6 +10,11 @@ from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.handlers.item.add_item.group_collection_utils import (
     effective_group_selector_bounds,
 )
+from app.state_machine.handlers.item.add_item.group_classification import (
+    is_drink_like_group,
+    speech_noun_for_side_group,
+    speech_noun_for_modifier_group,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,7 +88,21 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
     if next_side_index is not None:
         return _build_side_step(context, pending, next_side_index)
 
-    # 4. Item size/variant — only asked once required groups are satisfied.
+    # 4. Optional modifier groups.
+    next_modifier_index = _find_next_unresolved_modifier_group_index(
+        context, pending, required_only=False
+    )
+    if next_modifier_index is not None:
+        return _build_modifier_step(context, pending, next_modifier_index)
+
+    # 5. Optional side groups.
+    next_side_index = _find_next_unresolved_side_group_index(
+        context, pending, required_only=False
+    )
+    if next_side_index is not None:
+        return _build_side_step(context, pending, next_side_index)
+
+    # 6. Item size/variant — asked after all optional groups are satisfied.
     if pending.item_variants and not _has_valid_variant_selected(context, pending):
         context.size_target = {"type": "item"}
         context.current_prompt_field = "size"
@@ -98,20 +117,6 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
                 "available_sizes": list(pending.item_variant_names),
             },
         )
-
-    # 5. Optional modifier groups.
-    next_modifier_index = _find_next_unresolved_modifier_group_index(
-        context, pending, required_only=False
-    )
-    if next_modifier_index is not None:
-        return _build_modifier_step(context, pending, next_modifier_index)
-
-    # 6. Optional side groups.
-    next_side_index = _find_next_unresolved_side_group_index(
-        context, pending, required_only=False
-    )
-    if next_side_index is not None:
-        return _build_side_step(context, pending, next_side_index)
 
     if not _has_valid_quantity(context):
         context.current_prompt_field = "quantity"
@@ -206,6 +211,8 @@ def _build_side_step(
     context.current_side_group_index = next_side_index
     group = pending.side_groups[next_side_index]
     selected_ids = list(context.selected_side_groups.get(group.group_id, []))
+    total_side_groups = len(pending.side_groups)
+    _is_drink = is_drink_like_group(group.name)
 
     context.current_prompt_field = "side"
     context.available_choices_kind = "side"
@@ -218,9 +225,16 @@ def _build_side_step(
             "item_name": pending.item_name,
             "group_name": group.name,
             "top_choices": list(group.top_choice_names),
+            "total_choices": len(group.choice_names),
             "min_selector": effective_group_selector_bounds(group)[0],
             "max_selector": effective_group_selector_bounds(group)[1],
             "selected_count": len(selected_ids),
+            # Progressive prompt metadata
+            "side_group_position": next_side_index,
+            "total_side_groups": total_side_groups,
+            "is_drink_group": _is_drink,
+            "is_last_side_prompt": next_side_index == total_side_groups - 1,
+            "speech_noun": speech_noun_for_side_group(group.name),
         },
     )
 
@@ -233,6 +247,7 @@ def _build_modifier_step(
     context.current_modifier_group_index = next_modifier_index
     group = pending.modifier_groups[next_modifier_index]
     selected_ids = list(context.selected_modifier_groups.get(group.group_id, []))
+    total_modifier_groups = len(pending.modifier_groups)
 
     context.current_prompt_field = "modifier"
     context.available_choices_kind = "modifier"
@@ -245,9 +260,17 @@ def _build_modifier_step(
             "item_name": pending.item_name,
             "group_name": group.name,
             "top_choices": list(group.top_choice_names),
+            "total_choices": len(group.choice_names),
             "min_selector": effective_group_selector_bounds(group)[0],
             "max_selector": effective_group_selector_bounds(group)[1],
             "selected_count": len(selected_ids),
+            # Progressive prompt metadata
+            "modifier_group_position": next_modifier_index,
+            "total_modifier_groups": total_modifier_groups,
+            "is_last_modifier_prompt": next_modifier_index == total_modifier_groups - 1,
+            "speech_noun": speech_noun_for_modifier_group(
+                group.name, getattr(group, "prompt_noun", None)
+            ),
         },
     )
 

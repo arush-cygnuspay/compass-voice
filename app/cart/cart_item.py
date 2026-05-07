@@ -22,7 +22,9 @@ class CartItem:
     # Optional configuration
     variant_id: str | None = None
 
-    # group_id -> list[item_id]
+    # group_id -> list[item_id]; repeated IDs represent multiple selections of the same
+    # choice (e.g. ["coke","coke"] = two Cokes). Pricing and display use Counter to
+    # tally per-ID counts rather than treating the list as a set.
     sides: dict[str, list[str]] = field(default_factory=dict)
 
     # side item_id -> variant_id

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import re
 
 from app.nlu.modifier_instructions import (
@@ -78,6 +78,7 @@ class ModifierGroupMatch:
     selections: list[ModifierSelection]
     unmatched_values: list[str]
     match_debug: dict[str, object] | None = None
+    duplicate_names: list[str] = field(default_factory=list)
 
 
 def dedupe_keep_order(values: list[str]) -> list[str]:
@@ -154,6 +155,7 @@ class ModifierGroupResolver:
         selections_by_id: dict[str, ModifierSelection] = {}
         unmatched: list[str] = []
         matched_candidate_texts: list[str] = []
+        duplicate_names: list[str] = []
         slot_candidates_present = any(
             candidate.source in {"slot_value", "slot_raw"}
             for candidate in candidates
@@ -193,6 +195,8 @@ class ModifierGroupResolver:
                 continue
 
             if mod_id in already_selected_ids:
+                if name and name not in duplicate_names:
+                    duplicate_names.append(name)
                 continue
 
             new_selection = ModifierSelection(
@@ -285,6 +289,7 @@ class ModifierGroupResolver:
                 match_source=debug_match_source,
                 match_score=debug_match_score,
             ),
+            duplicate_names=duplicate_names,
         )
 
     def _augment_candidates_with_group_phrases(

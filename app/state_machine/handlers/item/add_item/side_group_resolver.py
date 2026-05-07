@@ -131,7 +131,9 @@ class SideGroupResolver:
         normalized_slot_values: list[str] | None = None,
         option_candidates: list[OptionCandidate] | None = None,
         already_selected_ids: list[str] | None = None,
+        slot_value_counts: dict[str, int] | None = None,
     ) -> SideGroupMatch:
+        allow_dupes = getattr(group, "allow_duplicate_selections", True)
         already_selected_ids = already_selected_ids or []
         candidates = option_candidates or self._build_candidate_values(
             normalized_user_text=normalized_user_text,
@@ -193,11 +195,23 @@ class SideGroupResolver:
                     unmatched_values.append(candidate.text)
                 continue
 
-            if item_id in already_selected_ids or item_id in matched_item_ids:
-                continue
+            if allow_dupes:
+                # When duplicates are allowed:
+                # - allow re-matching items already selected in context
+                # - still prevent counting the same candidate twice in one pass
+                if item_id in matched_item_ids:
+                    continue
+                # Expand by slot repetition count (handles "Coke, Coke" → 2 slots)
+                repeat = (slot_value_counts or {}).get(candidate.text, 1)
+                for _ in range(max(1, repeat)):
+                    matched_item_ids.append(item_id)
+                    matched_names.append(choice_name)
+            else:
+                if item_id in already_selected_ids or item_id in matched_item_ids:
+                    continue
+                matched_item_ids.append(item_id)
+                matched_names.append(choice_name)
 
-            matched_item_ids.append(item_id)
-            matched_names.append(choice_name)
             if debug_match_score is None or confidence >= debug_match_score:
                 debug_candidate_text = candidate.text
                 debug_match_source = candidate.source
@@ -209,6 +223,7 @@ class SideGroupResolver:
                 group=group,
                 text=normalized_user_text,
                 already_selected_ids=already_selected_ids,
+                allow_duplicate_selections=allow_dupes,
             )
             for item_id, choice_name in zip(greedy_ids, greedy_names):
                 if item_id in matched_item_ids:
@@ -279,12 +294,17 @@ class SideGroupResolver:
         group,
         text: str,
         already_selected_ids: list[str],
+        allow_duplicate_selections: bool = True,
     ) -> tuple[list[str], list[str]]:
         matched_item_ids: list[str] = []
         matched_names: list[str] = []
 
         for choice in group.choices:
-            if choice.item_id in already_selected_ids or choice.item_id in matched_item_ids:
+            # Always skip if this candidate was already matched in this pass.
+            if choice.item_id in matched_item_ids:
+                continue
+            # When duplicates are NOT allowed, also skip already-selected.
+            if not allow_duplicate_selections and choice.item_id in already_selected_ids:
                 continue
 
             labels = sorted(

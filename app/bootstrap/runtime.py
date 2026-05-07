@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -15,6 +17,23 @@ from app.ml.intent.inference_intent import IntentBundle, load_intent_bundle
 from app.ml.slot.inference_slot import SlotBundle, load_slot_bundle
 from app.services.sms_service import SmsService
 from app.state_machine.state_router import StateRouter
+
+
+@contextmanager
+def _stage(name: str):
+    """Context manager that logs entry / exit / duration of a boot stage.
+
+    Used to make startup hangs observable: if one of the model-loading
+    stages stalls, the last "[runtime] BEGIN <stage>" line points at
+    exactly which subsystem is stuck.
+    """
+    print(f"[runtime] BEGIN {name}", flush=True)
+    started = time.perf_counter()
+    try:
+        yield
+    finally:
+        elapsed_ms = (time.perf_counter() - started) * 1000.0
+        print(f"[runtime] END   {name} ({elapsed_ms:.1f} ms)", flush=True)
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,33 +154,39 @@ def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
         slot_model_dir=slot_model_dir,
     )
 
-    try:
-        menu_store = MenuStore(menu_path, entity_index_path)
-    except MenuLoadError as exc:
-        raise RuntimeError(f"Failed to load menu: {exc}") from exc
+    with _stage("menu_store"):
+        try:
+            menu_store = MenuStore(menu_path, entity_index_path)
+        except MenuLoadError as exc:
+            raise RuntimeError(f"Failed to load menu: {exc}") from exc
 
-    menu_repo = MenuRepository(menu_store)
-    router = StateRouter()
-    responder = ResponseBuilder(menu_repo)
-    sms_service = SmsService()
+    with _stage("menu_repo + router + responder + sms_service"):
+        menu_repo = MenuRepository(menu_store)
+        router = StateRouter()
+        responder = ResponseBuilder(menu_repo)
+        sms_service = SmsService()
 
-    intent_bundle = load_intent_bundle(
-        model_dir=str(intent_model_dir),
-        labels_main_path=str(intent_labels_main_path),
-        labels_sub_path=str(intent_labels_sub_path),
-        device=intent_device,
-    )
-    slot_bundle = load_slot_bundle(str(slot_model_dir))
+    with _stage(f"load_intent_bundle (device={intent_device})"):
+        intent_bundle = load_intent_bundle(
+            model_dir=str(intent_model_dir),
+            labels_main_path=str(intent_labels_main_path),
+            labels_sub_path=str(intent_labels_sub_path),
+            device=intent_device,
+        )
 
-    engine = TurnEngine(
-        router=router,
-        menu_repo=menu_repo,
-        intent_bundle=intent_bundle,
-        slot_bundle=slot_bundle,
-        responder=responder,
-        sms_service=sms_service,
-        nlu_logger=NluCsvLogger(),
-    )
+    with _stage("load_slot_bundle"):
+        slot_bundle = load_slot_bundle(str(slot_model_dir))
+
+    with _stage("turn_engine"):
+        engine = TurnEngine(
+            router=router,
+            menu_repo=menu_repo,
+            intent_bundle=intent_bundle,
+            slot_bundle=slot_bundle,
+            responder=responder,
+            sms_service=sms_service,
+            nlu_logger=NluCsvLogger(),
+        )
 
     return AppRuntime(
         menu_store=menu_store,

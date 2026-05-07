@@ -86,13 +86,48 @@ def load_intent_bundle(
     _ensure_exists(labels_main_path, "labels_main.json")
     _ensure_exists(labels_sub_path, "labels_sub.json")
 
+    # Force HuggingFace into offline mode by default — the model bundle is
+    # shipped with the repo, so a hung download (no DNS, blocked egress, or
+    # missing tokenizer file falling back to the Hub) would otherwise look
+    # like a startup hang.  Override with COMPASS_HF_ALLOW_DOWNLOAD=1 if you
+    # really need network access during boot.
+    if not _env_flag("COMPASS_HF_ALLOW_DOWNLOAD", default=False):
+        os.environ.setdefault("TRANSFORMERS_OFFLINE", "1")
+        os.environ.setdefault("HF_HUB_OFFLINE", "1")
+
+    print("[intent] resolving device...", flush=True)
+    t = time.perf_counter()
     resolved_device = _resolve_device(device)
+    print(
+        f"[intent] device resolved -> {resolved_device} "
+        f"({(time.perf_counter()-t)*1000:.1f} ms)",
+        flush=True,
+    )
+
     use_amp = _env_flag("COMPASS_INTENT_USE_AMP", default=True) and resolved_device.type == "cuda"
 
+    print(f"[intent] loading tokenizer from {model_dir}", flush=True)
+    t = time.perf_counter()
     tokenizer = AutoTokenizer.from_pretrained(model_dir, use_fast=True)
+    print(f"[intent] tokenizer loaded ({(time.perf_counter()-t)*1000:.1f} ms)", flush=True)
+
+    print(f"[intent] loading model weights from {model_dir}", flush=True)
+    t = time.perf_counter()
     model = MultiHeadIntentModel.from_pretrained(model_dir)
+    print(f"[intent] model weights loaded ({(time.perf_counter()-t)*1000:.1f} ms)", flush=True)
+
+    print(f"[intent] moving model to {resolved_device}", flush=True)
+    t = time.perf_counter()
     model.to(resolved_device)
+    if resolved_device.type == "cuda":
+        # Force CUDA to actually allocate context here so any driver/version
+        # mismatch surfaces as a clear error instead of an opaque later hang.
+        torch.cuda.synchronize(resolved_device)
     model.eval()
+    print(
+        f"[intent] model on {resolved_device} ({(time.perf_counter()-t)*1000:.1f} ms)",
+        flush=True,
+    )
 
     id2main_raw = _read_json(labels_main_path)
     id2sub_raw = _read_json(labels_sub_path)

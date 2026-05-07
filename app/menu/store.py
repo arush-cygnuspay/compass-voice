@@ -235,6 +235,7 @@ class MenuStore:
                     choices=choices,
                     prompt_noun=prompt_noun,
                     prompt_verb=prompt_verb,
+                    allow_duplicate_selections=bool(group.get("allow_duplicate_selections", True)),
                 )
             )
 

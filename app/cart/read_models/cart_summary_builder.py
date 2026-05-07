@@ -1,6 +1,7 @@
 # app/cart/read_models/cart_summary_builder.py
 from __future__ import annotations
 
+from collections import Counter
 from typing import Any, Dict, Tuple
 
 from app.cart.cart import Cart
@@ -116,12 +117,17 @@ class CartSummaryBuilder:
         labels: list[str] = []
 
         for group in getattr(menu_item, "side_groups", []) or []:
-            chosen_ids = set(cart_item.sides.get(group.group_id, []))
+            chosen_ids = cart_item.sides.get(group.group_id, [])
             if not chosen_ids:
                 continue
 
+            # Count occurrences per item_id to support duplicate selections
+            # (e.g. ["coke","coke"] → "Coke x2").
+            id_counts = Counter(chosen_ids)
+
             for choice in getattr(group, "choices", []) or []:
-                if choice.item_id not in chosen_ids:
+                count = id_counts.get(choice.item_id, 0)
+                if count == 0:
                     continue
 
                 label = choice.name
@@ -131,6 +137,8 @@ class CartSummaryBuilder:
                     if variant_label:
                         label = f"{label} {variant_label}"
 
+                if count > 1:
+                    label = f"{label} x{count}"
                 labels.append(label)
 
         return tuple(labels)
@@ -225,9 +233,10 @@ class CartSummaryBuilder:
         total = 0
         for group in menu_item.side_groups:
             chosen_ids = cart_item.sides.get(group.group_id, [])
+            id_counts = Counter(chosen_ids)
             for choice in group.choices:
-                if choice.item_id in chosen_ids:
-                    total += choice.pricing.price_cents or 0
+                count = id_counts.get(choice.item_id, 0)
+                total += (choice.pricing.price_cents or 0) * count
         return total
 
     def _get_modifiers_price(self, cart_item, menu_item) -> int:

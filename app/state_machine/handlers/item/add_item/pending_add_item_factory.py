@@ -5,6 +5,7 @@ import re
 
 from app.menu.models import MenuItem
 from app.nlu.query_normalization.text_preprocessor import normalize_text
+from app.state_machine.handlers.item.add_item.group_classification import is_drink_like_group
 from app.state_machine.models.pending_item_models import (
     PendingAddItem,
     PendingModifierChoice,
@@ -191,11 +192,16 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
             choices_by_normalized_name=choices_by_normalized_name,
             choice_names=tuple(choice_names),
             normalized_choice_names=tuple(normalized_choice_names),
-            top_choice_names=tuple(choice_names[:3]),
+            top_choice_names=tuple(choice_names[:6]),
+            allow_duplicate_selections=bool(getattr(group, "allow_duplicate_selections", True)),
         )
 
         side_groups.append(pending_group)
         side_groups_by_id[pending_group.group_id] = pending_group
+
+    # Stable sort: non-drink groups first, drink-like groups last.
+    # Preserves relative order within each bucket and does not change group IDs.
+    side_groups.sort(key=lambda g: is_drink_like_group(g.name))
 
     modifier_groups: list[PendingModifierGroup] = []
     modifier_groups_by_id: dict[str, PendingModifierGroup] = {}
@@ -248,7 +254,7 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
             choices_by_normalized_name=choices_by_normalized_name,
             choice_names=tuple(choice_names),
             normalized_choice_names=tuple(normalized_choice_names),
-            top_choice_names=tuple(choice_names[:4]),
+            top_choice_names=tuple(choice_names[:6]),
         )
 
         modifier_groups.append(pending_group)

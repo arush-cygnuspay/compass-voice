@@ -11,6 +11,7 @@ from app.state_machine.control_intent_resolver import (
     log_control_intent_event,
     resolve_control_intent,
 )
+from app.state_machine.handlers.item.add_item.group_classification import speech_noun_for_modifier_group
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.pending_item_models import InterruptProposal, PendingModifierGroup
 from app.state_machine.models.conversation_state import ConversationState
@@ -319,6 +320,9 @@ class WaitingForModifierHandler(GroupResolutionHandler):
                             "selected_count": skip.selected_count,
                             "min_required": skip.min_required,
                             "intent_kind": control_intent.kind.value,
+                            "speech_noun": speech_noun_for_modifier_group(
+                                group.name, getattr(group, "prompt_noun", None)
+                            ),
                         },
                     )
 
@@ -360,6 +364,20 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             already_selected_ids=existing_ids,
             known_choice_phrases=self._all_modifier_choice_phrases(pending),
         )
+
+        if resolution.duplicate_names and not resolution.selections:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_MODIFIER,
+                response_key="repeat_modifier_options",
+                response_payload={
+                    **self._choice_payload(group, existing_selections),
+                    "repeat_reason": "duplicate",
+                    "duplicate_names": resolution.duplicate_names,
+                    "speech_noun": speech_noun_for_modifier_group(
+                        group.name, getattr(group, "prompt_noun", None)
+                    ),
+                },
+            )
 
         if resolution.selections:
             return self._apply_modifier_selection(
@@ -597,8 +615,9 @@ class WaitingForModifierHandler(GroupResolutionHandler):
 
         return {
             "group_name": group.name,
-            "top_choices": remaining_choice_names[:4],
+            "top_choices": remaining_choice_names[:6],
             "all_choices": remaining_choice_names,
+            "total_choices": len(group.choices),
             "selected_names": selected_names,
             "selected_count": selected_count,
             "min_selector": min_selector,

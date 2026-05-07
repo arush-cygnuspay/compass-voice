@@ -42,6 +42,9 @@ class SideGroup:
     choices: list[SideChoice]
     prompt_noun: str | None = None
     prompt_verb: str = "would you like"
+    # Allows the same choice to be selected more than once (e.g. 3× Coke).
+    # Defaults to True; set to False in menu JSON to disallow.
+    allow_duplicate_selections: bool = True
 
 
 @dataclass(slots=True)

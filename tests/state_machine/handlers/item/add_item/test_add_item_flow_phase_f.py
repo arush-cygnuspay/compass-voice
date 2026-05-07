@@ -184,7 +184,7 @@ class TestRequiredModifierBeforeSize:
         assert step.response_key == "ask_for_size"
 
     def test_required_modifier_before_size_then_optional_after(self):
-        """Full sequence: req_modifier → size → optional_modifier → finalize."""
+        """Full sequence: req_modifier → optional_modifier → size → finalize."""
         item = _make_item(
             has_variants=True,
             required_modifier_groups=[_req_modifier_group("req_mod")],
@@ -201,17 +201,17 @@ class TestRequiredModifierBeforeSize:
         # Satisfy required modifier
         context.selected_modifier_groups = {"req_mod": [MagicMock(modifier_id="chicken", name="Chicken", action="add", instruction=None)]}
 
-        # Step 2: size
-        step = determine_next_add_item_step(context)
-        assert step.next_state == ConversationState.WAITING_FOR_SIZE
-
-        # Select size
-        context.selected_variant_id = "small"
-
-        # Step 3: optional modifier
+        # Step 2: optional modifier (size is now asked after all optional groups)
         step = determine_next_add_item_step(context)
         assert step.next_state == ConversationState.WAITING_FOR_MODIFIER
         assert step.response_payload["group_name"] == "Add extras"
+
+        # Skip optional modifier
+        context.skipped_modifier_groups = {"opt_mod"}
+
+        # Step 3: size (after optional groups are resolved)
+        step = determine_next_add_item_step(context)
+        assert step.next_state == ConversationState.WAITING_FOR_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -254,7 +254,7 @@ class TestRequiredSideBeforeSize:
 
 class TestFullOrderingSequence:
     def test_ordering_req_mod_req_side_size_opt_mod_opt_side(self):
-        """Complete ordering: req_modifier → req_side → size → opt_modifier → opt_side → finalize."""
+        """Complete ordering: req_modifier → req_side → opt_modifier → opt_side → size → finalize."""
         item = _make_item(
             has_variants=True,
             required_modifier_groups=[_req_modifier_group("req_mod")],
@@ -279,25 +279,25 @@ class TestFullOrderingSequence:
 
         context.selected_side_groups = {"req_side": ["fries"]}
 
-        # 3. Item size/variant
-        step = determine_next_add_item_step(context)
-        assert step.next_state == ConversationState.WAITING_FOR_SIZE
-
-        context.selected_variant_id = "small"
-
-        # 4. Optional modifier
+        # 3. Optional modifier (size is now asked after all optional groups)
         step = determine_next_add_item_step(context)
         assert step.next_state == ConversationState.WAITING_FOR_MODIFIER
         assert step.response_payload["group_name"] == "Add extras"
 
         context.skipped_modifier_groups = {"opt_mod"}
 
-        # 5. Optional side
+        # 4. Optional side
         step = determine_next_add_item_step(context)
         assert step.next_state == ConversationState.WAITING_FOR_SIDE
         assert step.response_payload["group_name"] == "Add a drink"
 
         context.skipped_side_groups = {"opt_side"}
+
+        # 5. Item size/variant (after all optional groups are resolved)
+        step = determine_next_add_item_step(context)
+        assert step.next_state == ConversationState.WAITING_FOR_SIZE
+
+        context.selected_variant_id = "small"
         context.quantity = 1
 
         # 6. ReadyToFinalize

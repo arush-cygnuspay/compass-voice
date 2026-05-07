@@ -1,6 +1,7 @@
 # app/state_machine/handlers/item/add_item/waiting_for_side_handler.py
 from __future__ import annotations
 
+from collections import Counter
 from dataclasses import dataclass
 
 from app.menu.repository import MenuRepository
@@ -12,6 +13,7 @@ from app.state_machine.control_intent_resolver import (
     log_control_intent_event,
     resolve_control_intent,
 )
+from app.state_machine.handlers.item.add_item.group_classification import speech_noun_for_side_group
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.pending_item_models import InterruptProposal, PendingSideGroup
 from app.state_machine.models.conversation_state import ConversationState
@@ -27,6 +29,7 @@ from app.state_machine.handlers.item.add_item.side_group_resolver import (
     build_side_option_candidates,
     extract_side_slot_values_normalized,
     dedupe_keep_order,
+    _normalize_side_candidate,
 )
 from app.state_machine.handlers.item.add_item.group_collection_utils import (
     effective_group_selector_bounds,
@@ -158,6 +161,7 @@ class WaitingForSideHandler(GroupResolutionHandler):
                         "selected_count": _skip.selected_count,
                         "min_required": _skip.min_required,
                         "intent_kind": _cp.action,
+                        "speech_noun": speech_noun_for_side_group(group.name),
                     },
                 )
             if _skip.decision == GroupSkipDecision.SKIP_OPTIONAL and not existing_ids:
@@ -197,6 +201,7 @@ class WaitingForSideHandler(GroupResolutionHandler):
                         "selected_count": _skip.selected_count,
                         "min_required": _skip.min_required,
                         "intent_kind": "negated_option",
+                        "speech_noun": speech_noun_for_side_group(group.name),
                     },
                 )
             if not existing_ids:
@@ -304,6 +309,7 @@ class WaitingForSideHandler(GroupResolutionHandler):
                             "selected_count": skip.selected_count,
                             "min_required": skip.min_required,
                             "intent_kind": control_intent.kind.value,
+                            "speech_noun": speech_noun_for_side_group(group.name),
                         },
                     )
 
@@ -337,12 +343,27 @@ class WaitingForSideHandler(GroupResolutionHandler):
                 step = determine_next_add_item_step(context)
                 return self._step_to_result(context, step)
 
+        # Build raw slot counts (before deduplication) so the resolver can
+        # repeat a matched ID when the same side slot appears multiple times
+        # in one utterance (e.g. "Coke, Coke" → 2 SIDE=coke slots → 2 Cokes).
+        allow_dupes = getattr(group, "allow_duplicate_selections", True)
+        slot_value_counts: dict[str, int] | None = None
+        if allow_dupes:
+            raw_slot_values = [
+                _normalize_side_candidate(str(getattr(slot, "value", "") or ""))
+                for slot in (context.last_slots or ())
+                if str(getattr(slot, "name", "") or "").upper() in {"SIDE", "VARIANT"}
+                and getattr(slot, "value", None)
+            ]
+            slot_value_counts = dict(Counter(raw_slot_values)) if raw_slot_values else None
+
         resolution = self.side_resolver.resolve(
             group=group,
             normalized_user_text=normalized_user_text,
             option_candidates=build_side_option_candidates(context, normalized_user_text),
             normalized_slot_values=extract_side_slot_values_normalized(context),
             already_selected_ids=existing_ids,
+            slot_value_counts=slot_value_counts,
         )
 
         if resolution.matched_item_ids:
@@ -440,8 +461,13 @@ class WaitingForSideHandler(GroupResolutionHandler):
         normalized_user_text: str,
         match_debug: dict[str, object] | None = None,
     ) -> HandlerResult:
+        allow_dupes = getattr(group, "allow_duplicate_selections", True)
         existing_ids = list(context.selected_side_groups.get(group.group_id, []))
-        proposed_ids = dedupe_keep_order(existing_ids + matched_ids)
+        if allow_dupes:
+            # Preserve duplicate IDs — don't collapse repeated selections.
+            proposed_ids = existing_ids + matched_ids
+        else:
+            proposed_ids = dedupe_keep_order(existing_ids + matched_ids)
 
         min_selector, max_selector = effective_group_selector_bounds(group)
 
@@ -450,6 +476,7 @@ class WaitingForSideHandler(GroupResolutionHandler):
 
         # ── Over-max: accept up to limit, tell user what was capped ──
         if max_selector > 0 and len(proposed_ids) > max_selector:
+            accepted_ids = proposed_ids[:max_selector]
             dropped_ids = proposed_ids[max_selector:]
             dropped_names = [
                 group.choices_by_item_id[item_id].name
@@ -477,7 +504,12 @@ class WaitingForSideHandler(GroupResolutionHandler):
         context.selected_side_groups[group.group_id] = proposed_ids
         context.skipped_side_groups.discard(group.group_id)
 
-        newly_added_ids = [item_id for item_id in proposed_ids if item_id not in existing_ids]
+        if allow_dupes:
+            # All matched_ids are newly added (duplicates preserved).
+            newly_added_ids = list(matched_ids)
+        else:
+            existing_id_set = set(existing_ids)
+            newly_added_ids = [item_id for item_id in proposed_ids if item_id not in existing_id_set]
         newly_added_names = [
             group.choices_by_item_id[item_id].name
             for item_id in newly_added_ids
@@ -549,7 +581,9 @@ class WaitingForSideHandler(GroupResolutionHandler):
         )
 
     def _choice_payload(self, context: ConversationContext, group: PendingSideGroup) -> dict:
+        allow_dupes = getattr(group, "allow_duplicate_selections", True)
         selected_ids = list(context.selected_side_groups.get(group.group_id, []))
+        # selected_names with duplicate preservation for display
         selected_names = [
             group.choices_by_item_id[item_id].name
             for item_id in selected_ids
@@ -558,17 +592,24 @@ class WaitingForSideHandler(GroupResolutionHandler):
 
         selected_count = len(selected_ids)
         min_selector, max_selector = effective_group_selector_bounds(group)
-        selected_id_set = set(selected_ids)
-        remaining_choice_names = [
-            choice.name
-            for choice in group.choices
-            if choice.item_id not in selected_id_set
-        ]
+
+        if allow_dupes:
+            # When duplicates are allowed, keep all choices available so the
+            # user can re-select the same item (e.g. "another Coke").
+            remaining_choice_names = [choice.name for choice in group.choices]
+        else:
+            selected_id_set = set(selected_ids)
+            remaining_choice_names = [
+                choice.name
+                for choice in group.choices
+                if choice.item_id not in selected_id_set
+            ]
 
         return {
             "group_name": group.name,
-            "top_choices": remaining_choice_names[:4],
+            "top_choices": remaining_choice_names[:6],
             "all_choices": remaining_choice_names,
+            "total_choices": len(group.choices),
             "selected_names": selected_names,
             "selected_count": selected_count,
             "min_selector": min_selector,

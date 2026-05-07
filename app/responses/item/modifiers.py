@@ -8,13 +8,48 @@ from app.responses.item.format_utils import (
     _GENERIC_MODIFIER_NOUN,
     _build_entity_feedback,
     _current_modifier_payload,
-    _format_examples,
     _format_options,
     _format_selected_names,
     _progress_prompt,
     _top_modifier_choices,
 )
+from app.state_machine.handlers.item.add_item.group_classification import (
+    ordinal_word,
+    speech_noun_for_modifier_group,
+)
 from app.state_machine.models.conversation_context import ConversationContext
+
+_MODIFIER_OVERFLOW_HINT = "or say 'options' to hear them all"
+
+
+def build_modifier_prompt_lead(
+    *,
+    position: int,
+    total: int,
+    is_last: bool,
+    speech_noun: str,
+) -> str:
+    """Return the opening sentence for a modifier-selection prompt.
+
+    Single group:       "Which {noun} would you like?"
+    First of two:       "Choose your {noun}."
+    Last of two+:       "Lastly, choose your {noun}."
+    Middle/last (3+):   "Now choose your {ordinal} {noun}."
+    """
+    noun = speech_noun or _GENERIC_MODIFIER_NOUN
+
+    if total <= 1:
+        return f"Which {noun} would you like?"
+
+    if is_last:
+        return f"Lastly, choose your {noun}."
+
+    if position == 0:
+        if total == 2:
+            return f"Choose your {noun}."
+        return f"Choose your first {noun}."
+
+    return f"Now choose your {ordinal_word(position + 1)} {noun}."
 
 
 def ask_for_modifier(
@@ -24,36 +59,49 @@ def ask_for_modifier(
 ) -> str:
     payload = payload or {}
 
-    item_name: str | None = None
-    noun = _GENERIC_MODIFIER_NOUN
-    verb = "would you like"
     min_selector = 0
     top_choices: list[str] = list(payload.get("top_choices") or [])
 
     try:
-        item = menu_repo.store.get_item(context.current_item_id)
-        group = item.modifier_groups[context.current_modifier_group_index]
-        item_name = item.name
-        noun = (getattr(group, "prompt_noun", None) or _GENERIC_MODIFIER_NOUN).strip() or _GENERIC_MODIFIER_NOUN
-        verb = (getattr(group, "prompt_verb", None) or "would you like").strip() or "would you like"
         group_payload = _current_modifier_payload(context, menu_repo, payload)
         min_selector = int(group_payload.get("min_selector", 0) or 0)
         top_choices = group_payload.get("top_choices") or top_choices
     except Exception:
         pass
 
-    item_name = (
-        item_name
-        or payload.get("current_item_name")
-        or getattr(context, "current_item_name", None)
-        or "your item"
+    # Progressive lead
+    position = int(payload.get("modifier_group_position") or 0)
+    total = int(payload.get("total_modifier_groups") or 1)
+    is_last = bool(payload.get("is_last_modifier_prompt", total <= 1))
+    speech_noun = str(payload.get("speech_noun") or _GENERIC_MODIFIER_NOUN)
+
+    lead = build_modifier_prompt_lead(
+        position=position,
+        total=total,
+        is_last=is_last,
+        speech_noun=speech_noun,
     )
 
-    examples = _format_examples(top_choices)
-    if examples:
-        prompt = f"Any {noun} {verb}, like {examples}?"
+    total_choices = int(payload.get("total_choices") or len(top_choices))
+    options_str = _format_options(
+        top_choices,
+        max_items=6,
+        overflow_hint=_MODIFIER_OVERFLOW_HINT if total_choices > 6 else None,
+        has_more=total_choices > 6 if total_choices else None,
+    )
+
+    if options_str:
+        prompt = f"{lead} {options_str}."
     else:
-        prompt = f"Any {noun} {verb} on your {item_name}?"
+        item_name = (
+            payload.get("item_name")
+            or payload.get("current_item_name")
+            or getattr(context, "current_item_name", None)
+        )
+        if item_name:
+            prompt = f"Any {speech_noun} with your {item_name}?"
+        else:
+            prompt = lead
 
     if min_selector == 0:
         return f"{prompt} You can say none."
@@ -65,8 +113,20 @@ def repeat_modifier_options(
     menu_repo: MenuRepository,
     payload: dict | None,
 ) -> str:
-    feedback = _build_entity_feedback(payload or {})
-    miss_count = int((payload or {}).get("reprompt_count") or 0)
+    _payload = payload or {}
+    feedback = _build_entity_feedback(_payload)
+    reason = _payload.get("repeat_reason")
+
+    # Duplicate-modifier shortcut: skip reprompt policy, give targeted feedback.
+    if reason == "duplicate":
+        duplicate_names = _payload.get("duplicate_names") or []
+        noun = str(_payload.get("speech_noun") or _GENERIC_MODIFIER_NOUN)
+        if duplicate_names:
+            already_text = _format_selected_names(duplicate_names)
+            return f"I already have {already_text}. Choose another {noun}."
+        return f"You already selected that {noun}. Choose a different one."
+
+    miss_count = int(_payload.get("reprompt_count") or 0)
     action = PromptRepromptPolicy.next_action("modifier", miss_count)
 
     if action == RepromptAction.CONCISE:
@@ -144,11 +204,15 @@ def required_modifier_cannot_skip(
     modifier_payload = _current_modifier_payload(context, menu_repo, payload)
     options = _format_options(modifier_payload.get("top_choices") or _top_modifier_choices(context, menu_repo))
     remaining = max(int(modifier_payload.get("remaining_to_min", 0) or 0), 0)
+    noun = str((payload or {}).get("speech_noun") or _GENERIC_MODIFIER_NOUN)
+    article = "An" if noun[0].lower() in "aeiou" else "A"
     if options:
         if remaining > 1:
-            return f"Need {remaining} more options. {options}."
-        return f"An option is required. {options}."
-    return "An option is required."
+            return f"Need {remaining} more {noun}s. {options}."
+        return f"{article} {noun} is required. {options}."
+    if remaining > 1:
+        return f"Need {remaining} more {noun}s."
+    return f"{article} {noun} is required."
 
 
 def list_modifier_options(

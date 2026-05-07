@@ -96,12 +96,23 @@ def _format_examples(choices: list[str], max_items: int = 3) -> str:
     return ", ".join(sample[:-1]) + f", or {sample[-1]}"
 
 
-def _format_options(options: list[str], max_items: int = 3) -> str:
-    """Format a list of options for voice output, appending 'and N more' for overflow."""
+def _format_options(
+    options: list[str],
+    max_items: int = 6,
+    overflow_hint: str | None = None,
+    has_more: bool | None = None,
+) -> str:
+    """Format a list of options for voice output.
+
+    Truncates silently at *max_items*.  When *overflow_hint* is provided and
+    there are more options than *max_items*, the hint is appended after the
+    last item (e.g. "or say 'options' to hear them all").  Never emits "and N
+    more".  Pass *has_more=True* to force the hint when the caller knows there
+    are more choices but the list is already pre-capped at *max_items*.
+    """
     clean = [str(option).strip() for option in options if str(option).strip()]
-    total = len(clean)
+    has_overflow = (len(clean) > max_items) if has_more is None else (has_more or len(clean) > max_items)
     limited = clean[:max_items]
-    extras = total - len(limited)
 
     if not limited:
         return ""
@@ -114,8 +125,8 @@ def _format_options(options: list[str], max_items: int = 3) -> str:
         lead = ", ".join(limited[:-1])
         base = f"{lead}, or {limited[-1]}"
 
-    if extras > 0:
-        return f"{base}, and {extras} more"
+    if has_overflow and overflow_hint:
+        return f"{base}, {overflow_hint}"
     return base
 
 
@@ -132,6 +143,48 @@ def _format_selected_names(selected_names: list[str]) -> str:
     if len(clean) == 2:
         return f"{clean[0]} and {clean[1]}"
     return f"{', '.join(clean[:-1])}, and {clean[-1]}"
+
+
+def _format_names_with_counts(names: list[str]) -> str:
+    """Format a list of names (potentially with duplicates) for voice output.
+
+    Repeated names are collapsed into natural spoken phrases:
+        ["Coke"] → "Coke"
+        ["Coke", "Coke"] → "Coke twice"
+        ["Coke", "Coke", "Coke"] → "Coke 3 times"
+        ["Coke", "Coke", "Sprite"] → "Coke twice and Sprite"
+
+    Order of first appearance is preserved.
+    """
+    from collections import Counter, OrderedDict
+
+    clean = [str(n).strip() for n in names if str(n).strip()]
+    if not clean:
+        return ""
+
+    counts: dict[str, int] = {}
+    order: list[str] = []
+    for name in clean:
+        if name not in counts:
+            counts[name] = 0
+            order.append(name)
+        counts[name] += 1
+
+    parts: list[str] = []
+    for name in order:
+        count = counts[name]
+        if count == 1:
+            parts.append(name)
+        elif count == 2:
+            parts.append(f"{name} twice")
+        else:
+            parts.append(f"{name} {count} times")
+
+    if len(parts) == 1:
+        return parts[0]
+    if len(parts) == 2:
+        return f"{parts[0]} and {parts[1]}"
+    return f"{', '.join(parts[:-1])}, and {parts[-1]}"
 
 
 def _format_item_summary_list(items: list[str]) -> str:
@@ -177,7 +230,7 @@ def _build_entity_feedback(payload: dict) -> str:
 
     matched = payload.get("matched_names") or []
     if matched:
-        parts.append(f"Got {_format_selected_names(matched)}.")
+        parts.append(f"Got {_format_names_with_counts(matched)}.")
 
     unmatched = [u for u in (payload.get("unmatched_names") or []) if _has_echable_content(u)]
     if unmatched:
@@ -230,6 +283,18 @@ def _group_payload(
         "requested_names",
         "over_max",
         "dropped_names",
+        # Side-group prompt metadata — pass through untouched.
+        "side_group_position",
+        "total_side_groups",
+        "is_drink_group",
+        "is_last_side_prompt",
+        "speech_noun",
+        # Modifier-group prompt metadata — pass through untouched.
+        "modifier_group_position",
+        "total_modifier_groups",
+        "is_last_modifier_prompt",
+        # Uncapped option count for overflow-hint decisions.
+        "total_choices",
     ):
         if _ctrl_key in payload:
             result[_ctrl_key] = payload[_ctrl_key]
@@ -299,7 +364,7 @@ def _current_modifier_payload(
 def _top_side_choices(
     context: ConversationContext,
     menu_repo: MenuRepository,
-    k: int = 4,
+    k: int = 6,
 ) -> list[str]:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.side_groups[context.current_side_group_index]
@@ -309,7 +374,7 @@ def _top_side_choices(
 def _top_modifier_choices(
     context: ConversationContext,
     menu_repo: MenuRepository,
-    k: int = 4,
+    k: int = 6,
 ) -> list[str]:
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.modifier_groups[context.current_modifier_group_index]

@@ -31,10 +31,14 @@ def effective_group_selector_bounds(group) -> tuple[int, int]:
     """
     Clamp selector bounds to what the caller can actually choose from the group.
     Optional groups may legitimately have min_selector=0.
+
+    When ``allow_duplicate_selections`` is True the max is NOT clamped to
+    option_count because the same choice may be selected multiple times.
     """
     raw_min = int(getattr(group, "min_selector", 0) or 0)
     raw_max = int(getattr(group, "max_selector", 0) or 0)
     option_count = len(getattr(group, "choice_names", ()) or getattr(group, "choices", ()) or ())
+    allow_dupes = getattr(group, "allow_duplicate_selections", True)
 
     min_selector = max(raw_min, 1 if bool(getattr(group, "is_required", False)) else 0)
     if option_count > 0:
@@ -42,7 +46,9 @@ def effective_group_selector_bounds(group) -> tuple[int, int]:
 
     if raw_max > 0:
         max_selector = raw_max
-        if option_count > 0:
+        # Only clamp by option_count when duplicates are disallowed; when
+        # duplicates are allowed a single option can fill multiple slots.
+        if option_count > 0 and not allow_dupes:
             max_selector = min(max_selector, option_count)
     else:
         max_selector = option_count
@@ -105,6 +111,6 @@ def build_group_progress_payload(
         "max_selector": max_selector,
         "remaining_to_min": remaining_to_min,
         "remaining_to_max": remaining_to_max,
-        "top_choices": option_names[:4],
+        "top_choices": option_names[:6],
     }
     return payload

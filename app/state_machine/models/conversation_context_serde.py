@@ -105,6 +105,7 @@ def _pending_side_group_to_dict(value: PendingSideGroup) -> dict:
         "min_selector": value.min_selector,
         "max_selector": value.max_selector,
         "choices": [_pending_side_choice_to_dict(choice) for choice in value.choices],
+        "allow_duplicate_selections": value.allow_duplicate_selections,
     }
 
 
@@ -218,6 +219,7 @@ def _pending_side_group_from_dict(data: dict) -> PendingSideGroup:
         choice_names=tuple(choice_names),
         normalized_choice_names=tuple(normalized_choice_names),
         top_choice_names=tuple(choice_names[:3]),
+        allow_duplicate_selections=bool(data.get("allow_duplicate_selections", True)),
     )
 
 
