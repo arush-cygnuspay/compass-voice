@@ -98,6 +98,13 @@ class ConversationContext:
     # within the same order session so the loop guard survives retries.
     item_not_found_attempts: Dict[str, int] = field(default_factory=dict)
 
+    # Turn-level "no input / unknown intent" miss counter. Bumped by
+    # TurnEngine on the global intent_not_allowed path; reset on any
+    # successful, allowed handler turn. Drives NoInputEscalationPolicy
+    # so we don't loop the same fallback string forever. Survives
+    # reset_item_scope (it's per-call, not per-item).
+    consecutive_unknown_count: int = 0
+
     def bump_reprompt(self, field_name: str) -> int:
         """Increment and return the new attempt count for the field."""
         current = int(self.reprompt_attempts.get(field_name, 0)) + 1
@@ -109,6 +116,14 @@ class ConversationContext:
 
     def reprompt_count(self, field_name: str) -> int:
         return int(self.reprompt_attempts.get(field_name, 0))
+
+    def bump_unknown(self) -> int:
+        """Increment and return the new turn-level UNKNOWN miss count."""
+        self.consecutive_unknown_count = int(self.consecutive_unknown_count or 0) + 1
+        return self.consecutive_unknown_count
+
+    def reset_unknown(self) -> None:
+        self.consecutive_unknown_count = 0
 
     def bump_not_found(self, query_key: str) -> int:
         """Increment and return the NOT_FOUND attempt count for the normalized item query."""
@@ -277,6 +292,7 @@ class ConversationContext:
             "group_prompt_cursors": dict(self.group_prompt_cursors),
             "group_multi_select_announced": list(self.group_multi_select_announced),
             "reprompt_attempts": dict(self.reprompt_attempts),
+            "consecutive_unknown_count": int(self.consecutive_unknown_count or 0),
         }
 
     @classmethod
@@ -370,6 +386,7 @@ class ConversationContext:
             str(k): int(v or 0)
             for k, v in (data.get("reprompt_attempts") or {}).items()
         }
+        ctx.consecutive_unknown_count = int(data.get("consecutive_unknown_count") or 0)
 
         return ctx
 

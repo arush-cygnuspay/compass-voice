@@ -28,6 +28,7 @@ from app.api.ui.ui import router as ui_router
 from app.api.checkout_routes import router as checkout_api_router, page_router as checkout_page_router
 from app.api.health_routes import router as health_router
 from app.api.payment_links_webhook import router as payment_links_webhook_router
+from app.config.realtime import get_realtime_turn_config
 from app.config.required_env import assert_required_env_or_die
 
 # Fail fast at import time if any required secret/config is missing.
@@ -53,9 +54,7 @@ from app.core.session_task_manager import SessionTaskManager
 from app.realtime.turn_commit_controller import TurnCommitController
 from app.session.repository import load_existing_session, load_session, save_session
 from app.session.session import Session
-from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
-    HUMAN_AGENT_TRANSFER_NUMBER,
-)
+from app.config.voice_transfer import HUMAN_AGENT_TRANSFER_NUMBER
 from app.state_machine.models.conversation_state import ConversationState
 
 TWILIO_MULAW_FRAME_BYTES = 160
@@ -97,9 +96,6 @@ DYNAMIC_RESPONSE_KEYS = {
     "ask_for_size",
     "ask_for_quantity",
     "ask_for_side_size",
-    "ask_for_caller_device_type",
-    "repeat_caller_device_type",
-    "confirm_landline_pickup_only",
     "repeat_landline_pickup_only",
     "transferring_to_human_agent",
     "ask_for_order_type",
@@ -571,6 +567,15 @@ async def twilio_media_ws(websocket: WebSocket):
     disable_barge_in = True
     playback_generation = 0
     welcome_sent = False
+
+    # Debounce timer — fires USER_TURN_COMMIT_DELAY_MS after the last STT final
+    # when speech_final / UtteranceEnd have not already triggered an immediate
+    # commit.  Replaced (not stacked) on each new final fragment.
+    _commit_debounce_task: asyncio.Task | None = None
+
+    # Monotonic timestamp when the current barge-in candidate speech started.
+    # Reset on each SpeechStarted event; used to measure candidate audio duration.
+    _barge_in_speech_started_at: float | None = None
 
     twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID", "").strip()
     twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN", "").strip()
@@ -1264,27 +1269,178 @@ async def twilio_media_ws(websocket: WebSocket):
         transport=_TwilioVoiceTransport(),
     )
 
+    async def _cancel_debounce() -> None:
+        nonlocal _commit_debounce_task
+        if _commit_debounce_task is not None and not _commit_debounce_task.done():
+            _commit_debounce_task.cancel()
+            _commit_debounce_task = None
+
+    async def _schedule_debounce_commit(reason: str) -> None:
+        """Schedule a delayed commit for USER_TURN_COMMIT_DELAY_MS.
+
+        Called after each STT final that doesn't satisfy the early-commit
+        whitelist.  Replaces any existing pending timer so multiple finals
+        within the debounce window merge into one logical turn.
+        """
+        nonlocal _commit_debounce_task
+        rt_cfg = get_realtime_turn_config()
+        delay_s = rt_cfg.user_turn_commit_delay_ms / 1000.0
+
+        await _cancel_debounce()
+
+        _debug_log(
+            "[user_turn_commit_scheduled]",
+            {
+                "stream_sid": stream_session.stream_sid,
+                "delay_ms": rt_cfg.user_turn_commit_delay_ms,
+                "reason": reason,
+                "session_id": _safe_session_id(conv_session.app_session if conv_session else None),
+            },
+        )
+
+        async def _debounce_fire() -> None:
+            nonlocal _commit_debounce_task
+            await asyncio.sleep(delay_s)
+            _commit_debounce_task = None
+            committed = controller.commit()
+            if committed is not None:
+                _debug_log(
+                    "[user_turn_committed]",
+                    {
+                        "stream_sid": stream_session.stream_sid,
+                        "turn_id": committed.turn_id,
+                        "text": committed.text,
+                        "trigger": "debounce_timer",
+                        "session_id": _safe_session_id(
+                            conv_session.app_session if conv_session else None
+                        ),
+                    },
+                )
+                barge_audio_ms = (
+                    (time.monotonic() - _barge_in_speech_started_at) * 1000.0
+                    if _barge_in_speech_started_at is not None
+                    else None
+                )
+                await conv_session.process_committed_turn(
+                    committed.text,
+                    turn_id=committed.turn_id,
+                    barge_in_audio_ms=barge_audio_ms,
+                )
+
+        _commit_debounce_task = session_mgr.create_task(
+            session_id, _debounce_fire(), name="commit_debounce"
+        )
+
     async def on_dg_transcript(transcript: str, is_final: bool, payload: dict) -> None:
-        committed = controller.on_transcript(transcript, is_final)
+        nonlocal _commit_debounce_task
 
         if is_final:
             stream_session.last_dg_final_transcript_monotonic = time.perf_counter()
+            _debug_log(
+                "[stt_final_received]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "transcript": transcript,
+                    "speech_final": payload.get("speech_final", False),
+                    "session_id": _safe_session_id(
+                        conv_session.app_session if conv_session else None
+                    ),
+                },
+            )
+        else:
+            _debug_log(
+                "[stt_partial_received]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "transcript": transcript,
+                    "session_id": _safe_session_id(
+                        conv_session.app_session if conv_session else None
+                    ),
+                },
+            )
+
+        committed = controller.on_transcript(transcript, is_final)
 
         if committed is not None:
-            await conv_session.process_committed_turn(committed.text)
+            # Early-committed via whitelist (yes/no/ok/checkout…)
+            await _cancel_debounce()
+            _debug_log(
+                "[user_turn_committed]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "turn_id": committed.turn_id,
+                    "text": committed.text,
+                    "trigger": "early_commit_whitelist",
+                    "session_id": _safe_session_id(
+                        conv_session.app_session if conv_session else None
+                    ),
+                },
+            )
+            barge_audio_ms = (
+                (time.monotonic() - _barge_in_speech_started_at) * 1000.0
+                if _barge_in_speech_started_at is not None
+                else None
+            )
+            await conv_session.process_committed_turn(
+                committed.text,
+                turn_id=committed.turn_id,
+                barge_in_audio_ms=barge_audio_ms,
+            )
+            return
+
+        if not is_final:
             return
 
         speech_final = bool(payload.get("speech_final", False))
         if speech_final:
+            # Deepgram signals end of utterance — commit immediately.
+            await _cancel_debounce()
             committed = controller.on_speech_final()
             if committed is not None:
-                await conv_session.process_committed_turn(committed.text)
+                _debug_log(
+                    "[user_turn_committed]",
+                    {
+                        "stream_sid": stream_session.stream_sid,
+                        "turn_id": committed.turn_id,
+                        "text": committed.text,
+                        "trigger": "speech_final",
+                        "session_id": _safe_session_id(
+                            conv_session.app_session if conv_session else None
+                        ),
+                    },
+                )
+                barge_audio_ms = (
+                    (time.monotonic() - _barge_in_speech_started_at) * 1000.0
+                    if _barge_in_speech_started_at is not None
+                    else None
+                )
+                await conv_session.process_committed_turn(
+                    committed.text,
+                    turn_id=committed.turn_id,
+                    barge_in_audio_ms=barge_audio_ms,
+                )
+        else:
+            # Non-speech_final final — schedule debounce to wait for more fragments.
+            _debug_log(
+                "[user_turn_commit_scheduled]",
+                {
+                    "stream_sid": stream_session.stream_sid,
+                    "transcript": transcript,
+                    "session_id": _safe_session_id(
+                        conv_session.app_session if conv_session else None
+                    ),
+                },
+            )
+            await _schedule_debounce_commit(reason="stt_final_no_speech_final")
 
     async def on_dg_event(name: str, payload: dict) -> None:
+        nonlocal _barge_in_speech_started_at
+
         if name == "message:SpeechStarted":
             controller.on_speech_started()
             now = time.perf_counter()
             stream_session.last_dg_speech_started_monotonic = now
+            _barge_in_speech_started_at = time.monotonic()
 
             if stream_session.current_utterance_first_media_monotonic is None:
                 stream_session.current_utterance_first_media_monotonic = now
@@ -1294,18 +1450,59 @@ async def twilio_media_ws(websocket: WebSocket):
                 if disable_barge_in:
                     return
 
+                rt_cfg = get_realtime_turn_config()
+                guard_s = rt_cfg.post_playback_guard_ms / 1000.0
+                from app.realtime.barge_in_policy import is_within_barge_in_guard_window
+                if is_within_barge_in_guard_window(bot_playback_started_at, guard_s):
+                    _debug_log(
+                        "[barge_in_candidate]",
+                        {
+                            "stream_sid": stream_session.stream_sid,
+                            "status": "suppressed_guard_window",
+                            "playback_age_ms": round(
+                                (time.monotonic() - bot_playback_started_at) * 1000
+                            ) if bot_playback_started_at else None,
+                        },
+                    )
+                    return
+
                 _debug_log(
-                    "[BARGE IN CANDIDATE]",
+                    "[barge_in_candidate]",
                     {
                         "stream_sid": stream_session.stream_sid,
+                        "status": "pending",
                         "active_mark_name": active_mark_name,
                     },
                 )
 
         elif name == "message:UtteranceEnd":
+            # UtteranceEnd is the most reliable commit signal — cancel debounce
+            # and commit the merged finals immediately.
+            await _cancel_debounce()
             committed = controller.on_utterance_end()
             if committed is not None:
-                await conv_session.process_committed_turn(committed.text)
+                _debug_log(
+                    "[user_turn_committed]",
+                    {
+                        "stream_sid": stream_session.stream_sid,
+                        "turn_id": committed.turn_id,
+                        "text": committed.text,
+                        "trigger": "utterance_end",
+                        "session_id": _safe_session_id(
+                            conv_session.app_session if conv_session else None
+                        ),
+                    },
+                )
+                barge_audio_ms = (
+                    (time.monotonic() - _barge_in_speech_started_at) * 1000.0
+                    if _barge_in_speech_started_at is not None
+                    else None
+                )
+                await conv_session.process_committed_turn(
+                    committed.text,
+                    turn_id=committed.turn_id,
+                    barge_in_audio_ms=barge_audio_ms,
+                )
 
     async def on_dg_error(name: str, payload: dict) -> None:
         print(
@@ -1397,6 +1594,7 @@ async def twilio_media_ws(websocket: WebSocket):
                         restaurant_id,
                     )
 
+                _rt_cfg = get_realtime_turn_config()
                 dg_stt_client = DeepgramSTTClient(
                     config=DeepgramSTTConfig(
                         model="nova-3",
@@ -1408,7 +1606,8 @@ async def twilio_media_ws(websocket: WebSocket):
                         smart_format=True,
                         punctuate=True,
                         vad_events=True,
-                        endpointing=160,
+                        endpointing=_rt_cfg.deepgram_stt_endpointing_ms,
+                        utterance_end_ms=_rt_cfg.deepgram_stt_utterance_end_ms,
                         keepalive_interval_seconds=4.0,
                     ),
                     callbacks=DeepgramSTTCallbacks(
@@ -1432,7 +1631,7 @@ async def twilio_media_ws(websocket: WebSocket):
                 if not welcome_sent:
                     try:
                         await speak_response_text(
-                            "Welcome to Compass. Is this for pickup or delivery?"
+                            app.state.responder.build("ask_for_order_type", None, None)
                         )
                     finally:
                         welcome_sent = True

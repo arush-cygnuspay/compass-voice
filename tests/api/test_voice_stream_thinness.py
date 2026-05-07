@@ -10,9 +10,10 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
-VOICE_STREAM_SERVER = (
-    Path(__file__).resolve().parents[2] / "app" / "api" / "voice_stream_server.py"
-)
+APP_ROOT = Path(__file__).resolve().parents[2]
+
+VOICE_STREAM_SERVER = APP_ROOT / "app" / "api" / "voice_stream_server.py"
+TWILIO_SERVER = APP_ROOT / "app" / "api" / "twilio_server.py"
 
 
 def _load_module() -> ast.Module:
@@ -220,3 +221,54 @@ def test_ws_handler_owns_playback_generation_token() -> None:
         "playback_generation cancellation token must be initialized inside "
         "the WebSocket handler so transport retains ownership."
     )
+
+
+# ── Transport prompt thinness guards ─────────────────────────────────────────
+
+_HARDCODED_STARTUP_PROMPT = "Welcome to Compass. Is this for pickup or delivery?"
+
+_DEAD_CODE_SYMBOLS = [
+    "WaitingForCallerDeviceTypeHandler",
+    "WAITING_FOR_CALLER_DEVICE_TYPE",
+    "WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION",
+    "ask_for_caller_device_type",
+    "repeat_caller_device_type",
+    "confirm_landline_pickup_only",
+    "waiting_for_caller_device_type_handler",
+]
+
+
+def test_voice_stream_server_no_hardcoded_startup_prompt() -> None:
+    """Transport must not own the order-type prompt text."""
+    text = VOICE_STREAM_SERVER.read_text(encoding="utf-8")
+    assert _HARDCODED_STARTUP_PROMPT not in text, (
+        f"voice_stream_server.py must not hardcode {_HARDCODED_STARTUP_PROMPT!r}; "
+        "use app.state.responder.build('ask_for_order_type', ...) instead."
+    )
+
+
+def test_twilio_server_no_hardcoded_startup_prompt() -> None:
+    """Twilio transport must not own the order-type prompt text."""
+    text = TWILIO_SERVER.read_text(encoding="utf-8")
+    assert _HARDCODED_STARTUP_PROMPT not in text, (
+        f"twilio_server.py must not hardcode {_HARDCODED_STARTUP_PROMPT!r}; "
+        "use responder.build('ask_for_order_type', ...) instead."
+    )
+
+
+def test_no_dead_caller_device_symbols_in_voice_stream_server() -> None:
+    """Dead caller-device symbols must not appear in transport."""
+    text = VOICE_STREAM_SERVER.read_text(encoding="utf-8")
+    for symbol in _DEAD_CODE_SYMBOLS:
+        assert symbol not in text, (
+            f"voice_stream_server.py still references dead symbol {symbol!r}."
+        )
+
+
+def test_no_dead_caller_device_symbols_in_twilio_server() -> None:
+    """Dead caller-device symbols must not appear in Twilio transport."""
+    text = TWILIO_SERVER.read_text(encoding="utf-8")
+    for symbol in _DEAD_CODE_SYMBOLS:
+        assert symbol not in text, (
+            f"twilio_server.py still references dead symbol {symbol!r}."
+        )

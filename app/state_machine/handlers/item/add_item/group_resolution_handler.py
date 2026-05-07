@@ -11,11 +11,37 @@ responses, overflow, skip policy) stays in each subclass.
 """
 from __future__ import annotations
 
+from app.nlu.modifier_instructions import speak as _speak_modifier
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.item.add_item.add_item_flow import ReadyToFinalize
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
+
+
+def _spoken_modifiers_for(context: ConversationContext) -> list[str]:
+    """Return modifier selections rendered as spoken phrases.
+
+    Mirrors confirmation_decision_helper._spoken_modifiers_for so any path
+    that emits item_added_successfully voices the same "no/extra/light/...
+    on the side" clause.  The action and instruction live on each
+    ModifierSelection — formatting is centralized in
+    app.nlu.modifier_instructions.speak.
+    """
+    pending = context.pending_add_item
+    if pending is None:
+        return []
+    spoken: list[str] = []
+    for group in pending.modifier_groups:
+        for selection in context.selected_modifier_groups.get(group.group_id, []):
+            phrase = _speak_modifier(
+                selection.name,
+                action=selection.action,
+                instruction=selection.instruction,
+            )
+            if phrase:
+                spoken.append(phrase)
+    return spoken
 
 
 class GroupResolutionHandler(BaseHandler):
@@ -63,6 +89,10 @@ class GroupResolutionHandler(BaseHandler):
             payload: dict[str, object] = {
                 "item_name": pending.item_name,
                 "quantity": context.quantity or 1,
+                # Voice the customer's modifier choices back in the success
+                # line ("...with no onions and extra cheese added").  Built
+                # from the cart selections via the canonical speech helper.
+                "spoken_modifiers": _spoken_modifiers_for(context),
             }
             if matched_names:
                 payload["matched_names"] = matched_names

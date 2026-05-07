@@ -427,6 +427,20 @@ class MenuStore:
         add(stripped_bbq)
         add(stripped_barbecue)
 
+        # For multi-word labels emit a compact joined form so that spoken
+        # contractions like "cheeseburger" match "Cheese Burger" and
+        # "doublebaconburger" matches "Double Bacon Burger".
+        # Only do this for labels with 2+ tokens and total length >= 7
+        # to avoid spurious joins of very short tokens.
+        _base_tokens = [t for t in stripped_number.split() if t]
+        if len(_base_tokens) >= 2:
+            joined = "".join(_base_tokens)
+            if len(joined) >= 7:
+                add(joined)
+                # Also add singular/plural of the joined form.
+                for sv in self._singular_plural_variants(joined):
+                    add(sv)
+
         singular_plural_variants: list[str] = []
         for value in list(variants):
             singular_plural_variants.extend(self._singular_plural_variants(value))

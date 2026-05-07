@@ -1,6 +1,9 @@
+# app/realtime/barge_in_policy.py
 from __future__ import annotations
 
 import re
+import time
+from dataclasses import dataclass
 
 from app.nlu.query_normalization.text_preprocessor import normalize_text, normalize_waiting_value
 from app.session.session import Session
@@ -15,10 +18,6 @@ from app.state_machine.handlers.common.preorder_redirect_utils import (
 from app.state_machine.handlers.order.waiting_for_order_type_handler import (
     DELIVERY_WORDS,
     PICKUP_WORDS,
-)
-from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
-    LANDLINE_WORDS,
-    MOBILE_WORDS,
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.utils.quantity_detection import normalize_quantity
@@ -67,6 +66,166 @@ _CONTROL_PHRASES = (
     "how much",
 )
 
+# Single filler/noise tokens that carry no informational content.
+_FILLER_WORDS: frozenset[str] = frozenset({
+    "uh", "um", "hmm", "uhh", "mm", "mhm", "huh", "ah", "oh",
+    "uhm", "umm", "err", "er", "mmm",
+})
+
+# Known command/correction phrases — must never be classified as filler even
+# though they can be short.
+_COMMAND_OVERRIDES: frozenset[str] = frozenset({
+    "no", "stop", "cancel", "wait", "hold on", "change that",
+    "agent", "repeat", "go back", "undo",
+})
+
+
+# ---------------------------------------------------------------------------
+# Guard-window helper
+# ---------------------------------------------------------------------------
+
+def is_within_barge_in_guard_window(
+    playback_started_at: float | None,
+    guard_seconds: float,
+    now_monotonic: float | None = None,
+) -> bool:
+    """Return True if we are still inside the post-playback guard window.
+
+    During the guard window (first N ms of TTS playback), bot-tail audio and
+    echo artefacts should not be treated as user speech.
+
+    Args:
+        playback_started_at: monotonic timestamp when TTS started, or None.
+        guard_seconds:        Guard window duration in seconds (0 = disabled).
+        now_monotonic:        Inject a fake clock for testing; defaults to
+                              ``time.monotonic()``.
+    """
+    if playback_started_at is None:
+        return False
+    if guard_seconds <= 0:
+        return False
+    now = now_monotonic if now_monotonic is not None else time.monotonic()
+    return (now - playback_started_at) < guard_seconds
+
+
+# ---------------------------------------------------------------------------
+# Filler detection
+# ---------------------------------------------------------------------------
+
+def is_filler_only(text: str) -> bool:
+    """Return True when the transcript consists entirely of noise/filler tokens.
+
+    Real command words (stop, cancel, no, …) always return False even when
+    they are one-word utterances.  Empty transcripts return True.
+
+    Examples:
+        is_filler_only("")          → True
+        is_filler_only("uh")        → True
+        is_filler_only("um hmm")    → True
+        is_filler_only("no")        → False  (command override)
+        is_filler_only("change that") → False
+        is_filler_only("coke")      → False
+    """
+    if not text:
+        return True
+
+    # Strip punctuation, lowercase
+    normalized = re.sub(r"[^\w\s]", "", text.lower()).strip()
+    if not normalized:
+        return True
+
+    # Command phrases take priority — never treat as filler
+    if any(cmd in normalized for cmd in _COMMAND_OVERRIDES):
+        return False
+
+    tokens = normalized.split()
+    return all(token in _FILLER_WORDS for token in tokens)
+
+
+# ---------------------------------------------------------------------------
+# Barge-in evaluation
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True, slots=True)
+class BargeInDecision:
+    """Result of evaluate_barge_in_candidate."""
+    accepted: bool
+    reason: str
+
+
+def evaluate_barge_in_candidate(
+    *,
+    session: Session | None,
+    text: str,
+    audio_duration_ms: float | None,
+    confidence: float | None,
+    playback_started_at: float | None,
+    config,  # RealtimeTurnConfig — avoid circular import at module level
+) -> BargeInDecision:
+    """Run the full acceptance pipeline for a barge-in candidate.
+
+    Returns BargeInDecision(accepted=True, reason="accepted") or a rejection
+    with a specific human-readable reason that gets logged.
+
+    Acceptance requires ALL of:
+    - barge_in_enabled flag is True
+    - not inside post-playback guard window
+    - transcript is not filler/noise
+    - audio_duration_ms (if known) >= min_barge_in_audio_ms
+    - confidence (if known) >= min_barge_in_confidence
+    - word count >= min_barge_in_words  OR  transcript is a known command
+    - is_actionable_barge_in() returns True (semantic/state gate)
+    """
+    if not config.barge_in_enabled:
+        return BargeInDecision(accepted=False, reason="barge_in_disabled")
+
+    guard_seconds = config.post_playback_guard_ms / 1000.0
+    if is_within_barge_in_guard_window(playback_started_at, guard_seconds):
+        return BargeInDecision(accepted=False, reason="inside_playback_guard_window")
+
+    if is_filler_only(text):
+        return BargeInDecision(accepted=False, reason="filler_only")
+
+    if audio_duration_ms is not None and audio_duration_ms < config.min_barge_in_audio_ms:
+        return BargeInDecision(
+            accepted=False,
+            reason=f"audio_too_short_ms={audio_duration_ms:.0f}",
+        )
+
+    if confidence is not None and confidence < config.min_barge_in_confidence:
+        return BargeInDecision(
+            accepted=False,
+            reason=f"confidence_too_low={confidence:.2f}",
+        )
+
+    normalized = normalize_text(text) or ""
+    word_count = len(normalized.split()) if normalized else 0
+    known_commands = {"stop", "cancel", "no", "hold on", "wait", "change that", "agent", "repeat"}
+    is_known_command = any(cmd in normalized for cmd in known_commands)
+
+    # Semantic gate: if actionable in the current state, accept regardless of
+    # word count — the state machine already confirmed this is meaningful.
+    is_action = is_actionable_barge_in(session, text)
+
+    if not is_action:
+        # Not state-actionable. Check if it's a known global command that
+        # bypasses state-specific gating.
+        if is_known_command:
+            return BargeInDecision(accepted=True, reason="accepted")
+        # Apply word count as a noise pre-filter for non-actionable text.
+        if word_count < config.min_barge_in_words:
+            return BargeInDecision(
+                accepted=False,
+                reason=f"too_few_words={word_count}",
+            )
+        return BargeInDecision(accepted=False, reason="not_actionable")
+
+    return BargeInDecision(accepted=True, reason="accepted")
+
+
+# ---------------------------------------------------------------------------
+# Semantic / state-aware barge-in gate
+# ---------------------------------------------------------------------------
 
 def is_actionable_barge_in(
     session: Session | None,
@@ -84,15 +243,6 @@ def is_actionable_barge_in(
 
     if _looks_like_global_control(context=context, normalized_text=normalized):
         return True
-
-    if state == ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE:
-        return _contains_phrase(normalized, LANDLINE_WORDS) or _contains_phrase(
-            normalized,
-            MOBILE_WORDS,
-        )
-
-    if state == ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION:
-        return _is_yes_like(normalized) or _is_no_like(normalized)
 
     if state == ConversationState.WAITING_FOR_ORDER_TYPE:
         return _contains_phrase(normalized, PICKUP_WORDS) or _contains_phrase(

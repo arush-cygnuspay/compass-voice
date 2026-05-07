@@ -230,15 +230,6 @@ class ResponseBuilder:
             "confirm_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')}? Yes or no.",
             "confirm_side_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')} for {p.get('side_item_name', 'that side')}? Yes or no.",
 
-            "ask_for_caller_device_type": lambda *_: (
-                "Welcome to Compass. Are you calling from a landline or a mobile phone?"
-            ),
-            "repeat_caller_device_type": lambda *_: (
-                "Sorry, are you on a landline or mobile phone?"
-            ),
-            "confirm_landline_pickup_only": lambda *_: (
-                "I'll connect you with a team member to place your order. Would you like to proceed?"
-            ),
             "repeat_landline_pickup_only": lambda *_: (
                 "Would you like to connect with a team member? Yes or no."
             ),
@@ -249,7 +240,7 @@ class ResponseBuilder:
                 "No problem. Call us anytime. Goodbye."
             ),
 
-            "ask_for_order_type": lambda *_: "Is this for pickup or delivery?",
+            "ask_for_order_type": lambda *_: "Welcome to Compass. Is this for pickup or delivery?",
             "repeat_order_type": lambda *_: "Is this for pickup or delivery?",
             "order_type_captured_pickup": lambda *_: "Pickup. What would you like to order?",
             "order_type_captured_delivery": lambda *_: "Delivery. What would you like to order?",

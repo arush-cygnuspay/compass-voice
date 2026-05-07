@@ -51,14 +51,13 @@ from app.services.checkout_service import CheckoutService
 from app.services.sms_service import SmsService
 from app.session.session import Session
 from app.state_machine.handler_result import HandlerResult
-from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
-    HUMAN_AGENT_TRANSFER_NUMBER,
-)
+from app.config.voice_transfer import HUMAN_AGENT_TRANSFER_NUMBER
 from app.state_machine.handlers.order.waiting_for_order_type_handler import (
     WaitingForOrderTypeHandler,
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.resume_prompt_builder import ResumePromptBuilder
+from app.state_machine.policy.intent_coercion import IntentCoercionPolicy
 from app.state_machine.state_router import StateRouter
 
 
@@ -171,6 +170,7 @@ class TurnEngine:
             slot_bundle=slot_bundle,
             diagnostics=self.diagnostics,
         )
+        self.intent_coercion = IntentCoercionPolicy(menu_repo=menu_repo)
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -214,6 +214,11 @@ class TurnEngine:
         route_ms: float | None = None,
         handler_ms: float | None = None,
         total_ms: float | None = None,
+        # Extended diagnostics — optional, populated by callers that have the info.
+        coercion_reason: str | None = None,
+        route_reason: str | None = None,
+        resolved_entity_type: str | None = None,
+        resolved_entity_id: str | None = None,
     ) -> None:
         if not self.diagnostics.enabled:
             return
@@ -271,6 +276,14 @@ class TurnEngine:
                 route_ms=route_ms,
                 handler_ms=handler_ms,
                 total_ms=total_ms,
+                # Extended diagnostics
+                raw_slots=slots,
+                effective_slots=slots,
+                active_resolution_scope=state_before.value,
+                resolved_entity_type=resolved_entity_type,
+                resolved_entity_id=resolved_entity_id,
+                route_reason=route_reason,
+                coercion_reason=coercion_reason,
             )
             self.diagnostics.record(event)
         except Exception as exc:
@@ -556,6 +569,18 @@ class TurnEngine:
             normalized_text=nlu.normalized_text,
         )
 
+        # FSM-aware intent coercion (idle add-item rules).
+        # Runs after all FlowGate rewrites so that coercion decisions see the
+        # final effective intent, not the raw model output.
+        _coercion = self.intent_coercion.coerce(
+            state=session.conversation_state,
+            intent_result=intent_result,
+            nlu=nlu,
+            cart=session.cart,
+        )
+        intent_result = _coercion.intent_result
+        _coercion_reason: str | None = _coercion.coercion_reason
+
         t0 = time.perf_counter()
         flow = self.flow_policy.evaluate(
             state=session.conversation_state,
@@ -597,6 +622,7 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
                 total_ms=total_ms,
+                coercion_reason=_coercion_reason,
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -656,6 +682,7 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
                 total_ms=total_ms,
+                coercion_reason=_coercion_reason,
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -708,6 +735,7 @@ class TurnEngine:
                     route_ms=0.0,
                     handler_ms=0.0,
                     total_ms=total_ms,
+                    coercion_reason=_coercion_reason,
                 )
                 self.diagnostics._finalize_trace_and_timing(
                     trace=trace,
@@ -747,9 +775,81 @@ class TurnEngine:
             )
 
         if not route.allowed or not route.handler_name:
+            from app.policies.no_input_escalation_policy import (
+                NoInputEscalationPolicy,
+                NoInputTier,
+            )
+
+            miss_count = ctx.bump_unknown()
+            tier = NoInputEscalationPolicy.next_tier(miss_count)
+
+            # Terminal tier - hand off to a human via the existing transfer path.
+            if tier == NoInputTier.HANDOFF:
+                ctx.reset_unknown()
+                session.conversation_state = ConversationState.TRANSFERRING_TO_HUMAN_AGENT
+                handoff_payload = {
+                    "transfer_number": HUMAN_AGENT_TRANSFER_NUMBER,
+                    "reason": "no_input_escalation",
+                    "miss_count": miss_count,
+                }
+                self.response_writer._apply_session_response(
+                    session=session,
+                    intent=intent_result.intent,
+                    response_key="transferring_to_human_agent",
+                    response_payload=handoff_payload,
+                )
+                total_ms = (time.perf_counter() - t_total_start) * 1000.0
+                _diag = self.diagnostics._update_session_diagnostics(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    response_key="transferring_to_human_agent",
+                    response_payload=handoff_payload,
+                )
+                self._record_turn_event(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    result=None,
+                    response_key="transferring_to_human_agent",
+                    response_payload=handoff_payload,
+                    diag=_diag,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=t_flow * 1000.0,
+                    route_ms=t_route * 1000.0,
+                    handler_ms=0.0,
+                    total_ms=total_ms,
+                    coercion_reason=_coercion_reason,
+                    route_reason=route.reason,
+                )
+                self.diagnostics._finalize_trace_and_timing(
+                    trace=trace,
+                    session=session,
+                    response_key="transferring_to_human_agent",
+                    total_start_monotonic=t_total_start,
+                    total_ms=total_ms,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=t_flow * 1000.0,
+                    route_ms=t_route * 1000.0,
+                    handler_ms=0.0,
+                )
+                return self.response_writer._hydrate_output(
+                    session=session,
+                    output=TurnOutput(
+                        response_key="transferring_to_human_agent",
+                        response_payload=handoff_payload,
+                        transfer_call_to_number=HUMAN_AGENT_TRANSFER_NUMBER,
+                        end_call_after_playback=True,
+                    ),
+                )
+
             payload = {
                 "state": session.conversation_state.value,
                 "intent": intent_result.intent.value,
+                "tier": tier.value,
+                "miss_count": miss_count,
             }
 
             self.response_writer._apply_session_response(
@@ -781,6 +881,8 @@ class TurnEngine:
                 route_ms=t_route * 1000.0,
                 handler_ms=0.0,
                 total_ms=total_ms,
+                coercion_reason=_coercion_reason,
+                route_reason=route.reason,
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -805,6 +907,10 @@ class TurnEngine:
         handler = self.dispatcher.get_handler(route.handler_name)
         if handler is None:
             raise KeyError(f"Handler not registered: {route.handler_name}")
+
+        # NB: turn-level UNKNOWN counter is reset centrally in
+        # SessionResponseWriter._apply_session_response on any non-fallback
+        # emission, so we don't need to reset here.
 
         t0 = time.perf_counter()
         result: HandlerResult = handler.handle(
@@ -920,6 +1026,11 @@ class TurnEngine:
             response_key=result.response_key,
             response_payload=result.response_payload,
         )
+        _resolved_entity_type: str | None = None
+        _resolved_entity_id: str | None = None
+        if result.command and result.command.get("type") == "ADD_ITEM_TO_CART":
+            _resolved_entity_type = "item"
+            _resolved_entity_id = result.command.get("payload", {}).get("item_id")
         self._record_turn_event(
             session=session,
             state_before=state_before,
@@ -935,6 +1046,10 @@ class TurnEngine:
             route_ms=t_route * 1000.0,
             handler_ms=t_handler * 1000.0,
             total_ms=total_ms,
+            coercion_reason=_coercion_reason,
+            route_reason=route.reason if route else None,
+            resolved_entity_type=_resolved_entity_type,
+            resolved_entity_id=_resolved_entity_id,
         )
         self.diagnostics._finalize_trace_and_timing(
             trace=trace,

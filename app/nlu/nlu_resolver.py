@@ -292,7 +292,6 @@ def resolve_nlu(
         ConversationState.CANCELLATION_CONFIRMATION,
         ConversationState.CONFIRMING_ITEM,
         ConversationState.CONFIRMING_ORDER,
-        ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
     }:
         confirm_intent = _extract_confirmation_intent(normalized_text)
         if confirm_intent is not None:

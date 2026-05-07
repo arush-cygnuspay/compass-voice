@@ -571,12 +571,30 @@ class ConfirmingHandler(BaseHandler):
         step = determine_next_add_item_step(context)
 
         if isinstance(step, ReadyToFinalize):
+            # Voice modifier selections back in the success line. See
+            # confirmation_decision_helper._spoken_modifiers_for for the
+            # central rendering rule (action / instruction → "no onions",
+            # "extra cheese", "light mayo", "ranch on the side").
+            from app.nlu.modifier_instructions import speak as _speak_modifier
+            spoken_modifiers: list[str] = []
+            pending = context.pending_add_item
+            if pending is not None:
+                for grp in pending.modifier_groups:
+                    for selection in context.selected_modifier_groups.get(grp.group_id, []):
+                        phrase = _speak_modifier(
+                            selection.name,
+                            action=selection.action,
+                            instruction=selection.instruction,
+                        )
+                        if phrase:
+                            spoken_modifiers.append(phrase)
             return HandlerResult(
                 next_state=ConversationState.IDLE,
                 response_key="item_added_successfully",
                 response_payload={
                     "item_name": item.name,
                     "quantity": context.quantity or 1,
+                    "spoken_modifiers": spoken_modifiers,
                 },
                 command=step.command.to_dict(),
                 reset_context=True,

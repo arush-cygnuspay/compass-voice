@@ -64,10 +64,26 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
             response_key="item_context_missing",
         )
 
+    # 1. Side variant — a previously selected side needs a size/variant choice.
     side_variant_step = _find_pending_side_variant_step(context, pending)
     if side_variant_step is not None:
         return side_variant_step
 
+    # 2. Required modifier groups — ask before size so toppings/protein come first.
+    next_modifier_index = _find_next_unresolved_modifier_group_index(
+        context, pending, required_only=True
+    )
+    if next_modifier_index is not None:
+        return _build_modifier_step(context, pending, next_modifier_index)
+
+    # 3. Required side groups.
+    next_side_index = _find_next_unresolved_side_group_index(
+        context, pending, required_only=True
+    )
+    if next_side_index is not None:
+        return _build_side_step(context, pending, next_side_index)
+
+    # 4. Item size/variant — only asked once required groups are satisfied.
     if pending.item_variants and not _has_valid_variant_selected(context, pending):
         context.size_target = {"type": "item"}
         context.current_prompt_field = "size"
@@ -83,52 +99,19 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
             },
         )
 
-    next_side_index = _find_next_unresolved_side_group_index(context, pending)
-    if next_side_index is not None:
-        context.current_side_group_index = next_side_index
-        group = pending.side_groups[next_side_index]
-        selected_ids = list(context.selected_side_groups.get(group.group_id, []))
-
-        context.current_prompt_field = "side"
-        context.available_choices_kind = "side"
-        context.available_choices_values = group.choice_names
-
-        return AddItemNextStep(
-            next_state=ConversationState.WAITING_FOR_SIDE,
-            response_key="ask_for_side",
-            response_payload={
-                "item_name": pending.item_name,
-                "group_name": group.name,
-                "top_choices": list(group.top_choice_names),
-                "min_selector": effective_group_selector_bounds(group)[0],
-                "max_selector": effective_group_selector_bounds(group)[1],
-                "selected_count": len(selected_ids),
-            },
-        )
-
-    next_modifier_index = _find_next_unresolved_modifier_group_index(context, pending)
+    # 5. Optional modifier groups.
+    next_modifier_index = _find_next_unresolved_modifier_group_index(
+        context, pending, required_only=False
+    )
     if next_modifier_index is not None:
-        context.current_modifier_group_index = next_modifier_index
-        group = pending.modifier_groups[next_modifier_index]
+        return _build_modifier_step(context, pending, next_modifier_index)
 
-        selected_ids = list(context.selected_modifier_groups.get(group.group_id, []))
-
-        context.current_prompt_field = "modifier"
-        context.available_choices_kind = "modifier"
-        context.available_choices_values = group.choice_names
-
-        return AddItemNextStep(
-            next_state=ConversationState.WAITING_FOR_MODIFIER,
-            response_key="ask_for_modifier",
-            response_payload={
-                "item_name": pending.item_name,
-                "group_name": group.name,
-                "top_choices": list(group.top_choice_names),
-                "min_selector": effective_group_selector_bounds(group)[0],
-                "max_selector": effective_group_selector_bounds(group)[1],
-                "selected_count": len(selected_ids),
-            },
-        )
+    # 6. Optional side groups.
+    next_side_index = _find_next_unresolved_side_group_index(
+        context, pending, required_only=False
+    )
+    if next_side_index is not None:
+        return _build_side_step(context, pending, next_side_index)
 
     if not _has_valid_quantity(context):
         context.current_prompt_field = "quantity"
@@ -215,14 +198,81 @@ def _find_pending_side_variant_step(
     return None
 
 
+def _build_side_step(
+    context: ConversationContext,
+    pending: PendingAddItem,
+    next_side_index: int,
+) -> AddItemNextStep:
+    context.current_side_group_index = next_side_index
+    group = pending.side_groups[next_side_index]
+    selected_ids = list(context.selected_side_groups.get(group.group_id, []))
+
+    context.current_prompt_field = "side"
+    context.available_choices_kind = "side"
+    context.available_choices_values = group.choice_names
+
+    return AddItemNextStep(
+        next_state=ConversationState.WAITING_FOR_SIDE,
+        response_key="ask_for_side",
+        response_payload={
+            "item_name": pending.item_name,
+            "group_name": group.name,
+            "top_choices": list(group.top_choice_names),
+            "min_selector": effective_group_selector_bounds(group)[0],
+            "max_selector": effective_group_selector_bounds(group)[1],
+            "selected_count": len(selected_ids),
+        },
+    )
+
+
+def _build_modifier_step(
+    context: ConversationContext,
+    pending: PendingAddItem,
+    next_modifier_index: int,
+) -> AddItemNextStep:
+    context.current_modifier_group_index = next_modifier_index
+    group = pending.modifier_groups[next_modifier_index]
+    selected_ids = list(context.selected_modifier_groups.get(group.group_id, []))
+
+    context.current_prompt_field = "modifier"
+    context.available_choices_kind = "modifier"
+    context.available_choices_values = group.choice_names
+
+    return AddItemNextStep(
+        next_state=ConversationState.WAITING_FOR_MODIFIER,
+        response_key="ask_for_modifier",
+        response_payload={
+            "item_name": pending.item_name,
+            "group_name": group.name,
+            "top_choices": list(group.top_choice_names),
+            "min_selector": effective_group_selector_bounds(group)[0],
+            "max_selector": effective_group_selector_bounds(group)[1],
+            "selected_count": len(selected_ids),
+        },
+    )
+
+
 def _find_next_unresolved_side_group_index(
     context: ConversationContext,
     pending: PendingAddItem,
+    required_only: bool | None = None,
 ) -> int | None:
+    """Return index of the next unsatisfied side group.
+
+    required_only=True  → only consider required groups
+    required_only=False → only consider optional groups
+    required_only=None  → consider all groups (legacy behaviour)
+    """
     selected_side_groups = context.selected_side_groups
     skipped_side_groups = context.skipped_side_groups
 
     for idx, group in enumerate(pending.side_groups):
+        group_is_required = bool(getattr(group, "is_required", False))
+        if required_only is True and not group_is_required:
+            continue
+        if required_only is False and group_is_required:
+            continue
+
         group_id = group.group_id
         selected = selected_side_groups.get(group_id, ())
         skipped = group_id in skipped_side_groups
@@ -246,11 +296,24 @@ def _side_group_satisfied(group, selected_item_ids: list[str] | tuple[str, ...],
 def _find_next_unresolved_modifier_group_index(
     context: ConversationContext,
     pending: PendingAddItem,
+    required_only: bool | None = None,
 ) -> int | None:
+    """Return index of the next unsatisfied modifier group.
+
+    required_only=True  → only consider required groups
+    required_only=False → only consider optional groups
+    required_only=None  → consider all groups (legacy behaviour)
+    """
     selected_modifier_groups = context.selected_modifier_groups
     skipped_modifier_groups = context.skipped_modifier_groups
 
     for idx, group in enumerate(pending.modifier_groups):
+        group_is_required = bool(getattr(group, "is_required", False))
+        if required_only is True and not group_is_required:
+            continue
+        if required_only is False and group_is_required:
+            continue
+
         group_id = group.group_id
         selected = selected_modifier_groups.get(group_id, ())
         skipped = group_id in skipped_modifier_groups

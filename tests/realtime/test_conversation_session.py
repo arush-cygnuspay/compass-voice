@@ -1,16 +1,14 @@
-# D:/Working/Cygnus/compass-voice/tests/realtime/test_conversation_session.py
+# tests/realtime/test_conversation_session.py
 """Behavior tests for :class:`ConversationSession`.
 
 Run the orchestrator with a fake transport and a stub engine so the
 conversation-layer contract can be asserted without booting Twilio,
 Deepgram, or Redis.
-
-Async cases follow the project convention of wrapping each test body in
-``asyncio.run`` rather than depending on ``pytest-asyncio``.
 """
 from __future__ import annotations
 
 import asyncio
+import time
 from dataclasses import dataclass, field
 from typing import Any
 from unittest.mock import patch
@@ -45,10 +43,12 @@ class _StubEngine:
         *,
         output: _StubTurnOutput | None = None,
         next_state: ConversationState | None = None,
+        delay_s: float = 0.0,
     ) -> None:
         self.output = output or _StubTurnOutput()
         self.next_state = next_state
         self.calls: list[dict] = []
+        self.delay_s = delay_s
 
     def process_turn(self, *, session: Session, user_text: str, trace=None):
         self.calls.append(
@@ -73,6 +73,8 @@ class _StubTransport:
     debug_events: list[tuple[str, dict]] = field(default_factory=list)
     begin_trace_calls: int = 0
     annotate_calls: list[dict] = field(default_factory=list)
+    # Expose playback start time for barge-in guard checks
+    _playback_started_at: float | None = None
 
     def is_barge_in_disabled(self) -> bool:
         return self.barge_in_disabled
@@ -279,7 +281,7 @@ def test_payment_link_response_schedules_auto_check() -> None:
 def test_non_payment_response_does_not_schedule_auto_check() -> None:
     engine = _StubEngine(
         output=_StubTurnOutput(
-            response_key="ack",  # not in PAYMENT_LINK_SENT_KEYS
+            response_key="ack",
             internal_response_text="ok",
             spoken_response_text="ok",
         ),
@@ -308,7 +310,6 @@ def test_payment_auto_check_dispatches_auto_text() -> None:
             internal_response_text="still waiting",
             spoken_response_text="still waiting",
         ),
-        # End in COMPLETED so the re-arm guard short-circuits.
         next_state=ConversationState.COMPLETED,
     )
     transport = _StubTransport()
@@ -361,6 +362,20 @@ def test_barge_in_ignored_when_transport_disables_it() -> None:
     assert conv_session.is_speaking()
 
 
+def test_barge_in_filler_does_not_interrupt_tts() -> None:
+    """Single filler word 'uh' during TTS must not interrupt playback."""
+    engine = _StubEngine()
+    transport = _StubTransport(barge_in_disabled=False)
+    conv_session, _saves = _make_conv_session(engine=engine, transport=transport)
+    conv_session.set_phase_speaking()
+
+    asyncio.run(conv_session.process_committed_turn("uh"))
+
+    assert engine.calls == []
+    assert transport.interrupt_calls == []
+    assert conv_session.is_speaking()
+
+
 def test_barge_in_non_actionable_does_not_interrupt() -> None:
     engine = _StubEngine()
     transport = _StubTransport(barge_in_disabled=False)
@@ -395,7 +410,45 @@ def test_barge_in_actionable_routes_interrupt_then_engine() -> None:
     assert engine.calls[0]["user_text"] == "pickup"
 
 
-# ------------------------------------------------------- pending interrupt
+def test_barge_in_cough_no_transcript_does_not_interrupt() -> None:
+    """Empty transcript during TTS must be silently ignored."""
+    engine = _StubEngine()
+    transport = _StubTransport(barge_in_disabled=False)
+    conv_session, _saves = _make_conv_session(engine=engine, transport=transport)
+    conv_session.set_phase_speaking()
+
+    asyncio.run(conv_session.process_committed_turn(""))
+
+    assert engine.calls == []
+    assert transport.interrupt_calls == []
+
+
+def test_barge_in_correction_accepted_and_processed() -> None:
+    """'no change that to coke' must interrupt TTS and process a new FSM turn."""
+    engine = _StubEngine(
+        output=_StubTurnOutput(
+            response_key="ack",
+            internal_response_text="ok changed",
+            spoken_response_text="ok changed",
+        ),
+    )
+    transport = _StubTransport(barge_in_disabled=False)
+    session = _make_session(state=ConversationState.WAITING_FOR_ORDER_TYPE)
+    conv_session, _saves = _make_conv_session(
+        engine=engine, transport=transport, app_session=session,
+    )
+    conv_session.set_phase_speaking()
+
+    asyncio.run(conv_session.process_committed_turn("no change that to coke"))
+
+    # TTS was interrupted
+    assert len(transport.interrupt_calls) == 1
+    # Engine was called with the correction
+    assert len(engine.calls) == 1
+    assert engine.calls[0]["user_text"] == "no change that to coke"
+
+
+# ------------------------------------------------------- pending interrupt / queue
 def test_pending_interrupt_buffered_during_processing() -> None:
     engine = _StubEngine()
     transport = _StubTransport()
@@ -405,7 +458,32 @@ def test_pending_interrupt_buffered_during_processing() -> None:
     asyncio.run(conv_session.process_committed_turn("interrupt me"))
 
     assert engine.calls == []
+    # Compat shim must still work
     assert conv_session.pending_interrupt_text == "interrupt me"
+
+
+def test_pending_queue_bounded_and_logs_overflow() -> None:
+    """Entries beyond max_pending_interrupt_queue are dropped, not stacked."""
+    from unittest.mock import patch as _patch
+
+    engine = _StubEngine()
+    transport = _StubTransport()
+    conv_session, _ = _make_conv_session(engine=engine, transport=transport)
+    conv_session.set_phase_processing()
+
+    printed: list[str] = []
+    original_print = __builtins__["print"] if isinstance(__builtins__, dict) else print
+
+    import builtins
+    with _patch.object(builtins, "print", side_effect=lambda *a, **kw: printed.append(str(a[0]))):
+        asyncio.run(conv_session.process_committed_turn("first"))
+        asyncio.run(conv_session.process_committed_turn("second"))
+        asyncio.run(conv_session.process_committed_turn("overflow"))
+
+    overflow_logs = [p for p in printed if "pending_queue_overflow_dropped" in p]
+    assert overflow_logs, "Expected pending_queue_overflow_dropped log"
+    # Queue must not grow beyond config limit
+    assert len(conv_session._pending_queue) <= 2
 
 
 def test_on_playback_completed_drains_pending_interrupt() -> None:
@@ -490,6 +568,114 @@ def test_playback_failure_hangs_up_when_requested() -> None:
     assert conv_session.should_end_call_after_playback is False
 
 
+def test_tts_failure_releases_lock_no_deadlock() -> None:
+    """TTSFailureError must not leave the lock held — no deadlock on next turn."""
+    from app.realtime.tts_exceptions import TTSFailureError
+
+    engine = _StubEngine(
+        output=_StubTurnOutput(
+            response_key="ack",
+            internal_response_text="ok",
+            spoken_response_text="ok",
+        ),
+    )
+
+    class _FailingTransport(_StubTransport):
+        async def speak_response(self, spoken_text, *, trace, end_call_after_playback):
+            raise TTSFailureError("TTS exploded", attempts=1, provider="deepgram")
+
+    transport = _FailingTransport()
+    conv_session, _ = _make_conv_session(engine=engine, transport=transport)
+
+    asyncio.run(conv_session.process_committed_turn("hello"))
+
+    # Lock must not be held — second call must complete without hanging
+    engine2 = _StubEngine()
+    conv_session.engine = engine2
+    conv_session.transport = _StubTransport()
+    asyncio.run(conv_session.process_committed_turn("world"))
+
+    assert len(engine2.calls) == 1
+
+
+# ------------------------------------------------ turn_id / stale guard
+def test_stale_turn_id_is_ignored() -> None:
+    """A committed turn with turn_id <= last_committed_turn_id must be dropped."""
+    engine = _StubEngine()
+    transport = _StubTransport()
+    conv_session, _ = _make_conv_session(engine=engine, transport=transport)
+
+    # Process turn 5 first
+    asyncio.run(conv_session.process_committed_turn("first", turn_id=5))
+    assert len(engine.calls) == 1
+
+    # Now try to process turn 3 (stale)
+    asyncio.run(conv_session.process_committed_turn("stale turn", turn_id=3))
+    # Engine must NOT be called again
+    assert len(engine.calls) == 1
+
+
+def test_fresh_turn_id_is_accepted() -> None:
+    """Two sequential turns with increasing turn_ids both process normally."""
+    engine = _StubEngine()
+    transport = _StubTransport()
+    conv_session, _ = _make_conv_session(engine=engine, transport=transport)
+
+    asyncio.run(conv_session.process_committed_turn("first", turn_id=1))
+    # Simulate Twilio mark ack — resets phase to LISTENING for next turn.
+    asyncio.run(conv_session.on_playback_completed())
+    asyncio.run(conv_session.process_committed_turn("second", turn_id=2))
+
+    assert len(engine.calls) == 2
+
+
+def test_no_turn_id_is_never_stale() -> None:
+    """System probes (turn_id=None) must never be dropped as stale."""
+    engine = _StubEngine()
+    transport = _StubTransport()
+    conv_session, _ = _make_conv_session(engine=engine, transport=transport)
+
+    asyncio.run(conv_session.process_committed_turn("probe", turn_id=None))
+    asyncio.run(conv_session.on_playback_completed())
+    asyncio.run(conv_session.process_committed_turn("probe again", turn_id=None))
+
+    assert len(engine.calls) == 2
+
+
+# ------------------------------------------------ no concurrent FSM processing
+def test_concurrent_process_committed_turn_serialised() -> None:
+    """The processing lock ensures FSM calls are strictly serial."""
+    call_order: list[str] = []
+    call_times: list[float] = []
+
+    class _TimingEngine:
+        output = _StubTurnOutput(
+            response_key="ack",
+            internal_response_text="ok",
+            spoken_response_text="ok",
+        )
+
+        def process_turn(self, *, session, user_text, trace=None):
+            call_order.append(user_text)
+            call_times.append(time.monotonic())
+            return self.output
+
+    transport = _StubTransport()
+    engine = _TimingEngine()
+    conv_session, _ = _make_conv_session(engine=engine, transport=transport)
+
+    # Serial with mark-ack simulation between turns.
+    async def _run():
+        await conv_session.process_committed_turn("first")
+        await conv_session.on_playback_completed()  # simulate mark ack
+        await conv_session.process_committed_turn("second")
+
+    asyncio.run(_run())
+
+    assert call_order == ["first", "second"]
+    assert call_times[1] >= call_times[0]
+
+
 # ---------------------------------------------------- explicit FSM contract
 def test_conversation_session_does_not_mutate_state_outside_engine() -> None:
     """Acceptance: only the engine writes ``conversation_state``."""
@@ -518,3 +704,24 @@ def test_conversation_session_does_not_mutate_state_outside_engine() -> None:
     asyncio.run(conv_session.process_committed_turn("hello"))
 
     assert engine.touched_state is False
+
+
+# ------------------------------------------------ playback guard / echo suppression
+def test_playback_guard_suppresses_echo_immediately_after_tts() -> None:
+    """Speech arriving within POST_PLAYBACK_GUARD_MS of TTS start is rejected."""
+    engine = _StubEngine()
+    transport = _StubTransport(barge_in_disabled=False)
+    # Simulate TTS just started (now)
+    transport._playback_started_at = time.monotonic()
+
+    session = _make_session(state=ConversationState.WAITING_FOR_ORDER_TYPE)
+    conv_session, _ = _make_conv_session(
+        engine=engine, transport=transport, app_session=session,
+    )
+    conv_session.set_phase_speaking()
+
+    asyncio.run(conv_session.process_committed_turn("pickup please", barge_in_audio_ms=900))
+
+    # Must be rejected because we're inside the guard window
+    assert engine.calls == []
+    assert transport.interrupt_calls == []

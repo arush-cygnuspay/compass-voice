@@ -3,6 +3,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 import re
 
+from app.nlu.modifier_instructions import (
+    Action as _MIAction,
+    Instruction as _MIInstruction,
+    ModifierIntent,
+    parse_phrase as _parse_modifier_phrase,
+    priority as _modifier_intent_priority,
+)
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.handlers.item.add_item.option_matching import (
     OptionCandidate,
@@ -23,17 +30,24 @@ AUTO_ACCEPT_THRESHOLD = 0.80
 CONFIRM_THRESHOLD = 0.60
 MIN_CONFIRM_GAP = 0.08
 
-REMOVE_PREFIXES = (
-    "no ",
-    "without ",
-    "hold the ",
-    "hold ",
-    "remove the ",
-    "remove ",
+# Re-exported so any external import (tests, plugins) keeps working.
+# New code should import from app.nlu.modifier_instructions instead.
+from app.nlu.modifier_instructions import (
+    REMOVE_PREFIXES,
+    EXTRA_PREFIXES as _EXTRA_PREFIXES,
+    LESS_PREFIXES as _LESS_PREFIXES,
+    ON_SIDE_SUFFIXES as ON_SIDE_SUFFIXES_FULL,
 )
-EXTRA_WORDS = {"extra", "more", "double"}
-LESS_WORDS = {"less", "light"}
-ON_SIDE_SUFFIXES = ("on the side", "on side")
+
+# Legacy single-word sets used by the greedy phrase-context scanner that
+# inspects the immediate previous token (not a prefix string). Keep them as
+# token sets, but derive them from the canonical lexicon so an alias added
+# in modifier_instructions.py automatically lights up here too.
+EXTRA_WORDS = {p.strip().split()[0] for p in _EXTRA_PREFIXES if " " not in p.strip()} | {"more"}
+LESS_WORDS = {p.strip().split()[0] for p in _LESS_PREFIXES if " " not in p.strip()}
+# The "on the side" suffix in this file historically had no leading space,
+# so map back to the unprefixed forms for the existing call sites.
+ON_SIDE_SUFFIXES = tuple(s.strip() for s in ON_SIDE_SUFFIXES_FULL)
 GREEDY_CONTEXT_WORDS = {
     "with",
     "and",
@@ -358,15 +372,32 @@ class ModifierGroupResolver:
                 break
 
     def _priority(self, selection: ModifierSelection) -> int:
-        if selection.action == "remove":
-            return 4
-        if selection.instruction == "extra":
-            return 3
-        if selection.instruction == "less":
-            return 2
-        if selection.instruction == "on_side":
-            return 2
-        return 1
+        """Conflict-resolution priority for two parses against the same modifier.
+
+        Routes through the canonical ``modifier_instructions.priority`` so the
+        ranking stays consistent with the prefill engine.  REMOVE wins over
+        any ADD; a specific instruction (extra > less > on_side) beats bare ADD.
+        """
+        try:
+            action = _MIAction(selection.action) if selection.action else _MIAction.ADD
+        except ValueError:
+            action = _MIAction.ADD
+        try:
+            instruction = (
+                _MIInstruction(selection.instruction)
+                if selection.instruction
+                else _MIInstruction.NONE
+            )
+        except ValueError:
+            instruction = _MIInstruction.NONE
+        return _modifier_intent_priority(
+            ModifierIntent(
+                action=action,
+                instruction=instruction,
+                target=selection.name,
+                raw=selection.name,
+            )
+        )
 
     def _selection_from_phrase_context(self, *, text: str, choice, label: str) -> ModifierSelection | None:
         pattern = re.compile(rf"\b{re.escape(label)}\b")
@@ -492,41 +523,24 @@ class ModifierGroupResolver:
         return dedupe_option_candidates(cleaned_candidates)
 
     def _parse(self, text: str):
-        text = (text or "").strip()
+        """Delegate to the canonical modifier-instruction parser.
 
-        for prefix in REMOVE_PREFIXES:
-            if text.startswith(prefix):
-                target = text[len(prefix):].strip()
-                if target.startswith("the "):
-                    target = target[4:].strip()
-                return {
-                    "action": "remove",
-                    "instruction": None,
-                    "target": target,
-                }
-
-        tokens = text.split()
-        if not tokens:
+        The historical inline parser supported only ``no/without/hold/remove``,
+        ``extra/more/double``, ``less/light`` and the ``on the side`` suffix.
+        It missed ``skip / drop / kill / easy on / go light on / half /
+        double the / lots of / triple`` etc.  Routing through the canonical
+        module gives this resolver the same coverage as the prefill engine
+        and the response layer in one shot — and means future aliases land
+        in exactly one file.
+        """
+        intent = _parse_modifier_phrase(text)
+        if intent is None:
             return {"action": "add", "instruction": None, "target": ""}
-
-        first = tokens[0]
-        rest = " ".join(tokens[1:]).strip()
-
-        if first in EXTRA_WORDS and rest:
-            return {"action": "add", "instruction": "extra", "target": rest}
-
-        if first in LESS_WORDS and rest:
-            return {"action": "add", "instruction": "less", "target": rest}
-
-        for suffix in ON_SIDE_SUFFIXES:
-            if text.endswith(f" {suffix}"):
-                return {
-                    "action": "add",
-                    "instruction": "on_side",
-                    "target": text[: -(len(suffix) + 1)].strip(),
-                }
-
-        return {"action": "add", "instruction": None, "target": text}
+        return {
+            "action": intent.action.value,
+            "instruction": intent.instruction.value or None,
+            "target": intent.target,
+        }
 
     @staticmethod
     def _group_choice_phrases(group) -> list[str]:

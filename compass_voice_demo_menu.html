@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Compass Voice Demo Menu</title>
+<style>
+@page { size: Letter; margin: 0.45in 0.5in 0.55in 0.5in; }
+@media print { @page { size: A4; margin: 12mm; } }
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  color: #1a1a1a;
+  font-size: 8.6pt;
+  line-height: 1.28;
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}
+.header {
+  text-align: center;
+  border-bottom: 2.5px solid #1a1a1a;
+  padding-bottom: 6px;
+  margin-bottom: 8px;
+}
+.header h1 {
+  margin: 0;
+  font-size: 20pt;
+  letter-spacing: 1.2px;
+  font-weight: 800;
+  font-family: Georgia, 'Times New Roman', serif;
+}
+.header .subtitle {
+  font-size: 8.4pt;
+  color: #555;
+  margin-top: 2px;
+  font-style: italic;
+  letter-spacing: 0.4px;
+}
+.cols {
+  column-count: 2;
+  column-gap: 14px;
+  column-rule: 1px solid #d8d8d8;
+}
+.cat {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  margin-bottom: 8px;
+  padding-bottom: 2px;
+}
+.cat-title {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 11.5pt;
+  margin: 0 0 3px 0;
+  padding: 2px 6px;
+  background: #1a1a1a;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  border-radius: 2px;
+}
+.item {
+  break-inside: avoid;
+  page-break-inside: avoid;
+  border-bottom: 1px dotted #c4c4c4;
+  padding: 2.5px 0 3px 0;
+}
+.item:last-child { border-bottom: none; }
+.item-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 6px;
+}
+.item-name {
+  font-weight: 700;
+  font-size: 9pt;
+  color: #111;
+}
+.item-price {
+  font-weight: 600;
+  font-size: 8.4pt;
+  white-space: nowrap;
+  color: #1a1a1a;
+  font-variant-numeric: tabular-nums;
+}
+.desc {
+  font-size: 7.7pt;
+  color: #555;
+  margin: 1px 0 1px 0;
+  font-style: italic;
+}
+.groups { margin-top: 1px; }
+.grp {
+  font-size: 7.5pt;
+  color: #333;
+  margin: 0;
+  line-height: 1.22;
+}
+.grp-label { font-weight: 600; color: #111; }
+.grp-meta { color: #777; font-size: 7.1pt; font-style: italic; }
+.footer {
+  position: fixed;
+  bottom: 4mm;
+  left: 0; right: 0;
+  text-align: center;
+  font-size: 6.8pt;
+  color: #888;
+  font-style: italic;
+}
+</style>
+</head>
+<body>
+<div class="footer">Prices and options are based on the provided menu data.</div>
+<header class="header">
+  <h1>Compass Voice Demo Menu</h1>
+  <div class="subtitle">Simplified menu for AI voice ordering</div>
+</header>
+<div class="cols">
+<section class="cat">
+<h2 class="cat-title">Tacos</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Korean Tacos - Spicy Chicken</span><span class="item-price">$13.39</span></div>
+<div class="desc">Spicy chicken over three flour tortillas. Topped with lettuce, coleslaw, buttermilk ranch, spicy mayo, and red onions.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Chicken Taco</span><span class="item-price">$4.99</span></div>
+<div class="desc">Chicken Taco</div><div class="groups"><div class="grp"><span class="grp-label">Can Drinks</span> <span class="grp-meta">(Required · Choose 1)</span>: Coke (12 oz.), Sprite (12 oz.)</div></div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Special Selection</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Bourbon Chicken</span><span class="item-price">$9.99</span></div>
+<div class="desc">Bourbon Chicken with choice of Chicken Toppings</div><div class="groups"><div class="grp"><span class="grp-label">Bourbon Chicken Toppings</span> <span class="grp-meta">(Optional · Choose 1)</span>: Green Bell Pepper, Jalapenos, Onion, Fresh Mushroom</div></div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Party Platters</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Dungeness Crab legs Platter</span><span class="item-price">$115.19</span></div>
+<div class="desc">5 lb. of Dungeness Crab Legs with Butter.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Snow Crab leg Platter</span><span class="item-price">$100.79</span></div>
+<div class="desc">5 lb. of Snow Crab Legs with Butter.</div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Broiled Seafood Platters</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Lobster Tail Platter</span><span class="item-price">$23.99</span></div>
+<div class="desc">2 Delicious Lobster Tails along with the 2 Side Orders of your Choice.</div><div class="groups"><div class="grp"><span class="grp-label">Platter Sides</span> <span class="grp-meta">(Required · Choose 2)</span>: Potato Salad, Rice, Corn on the Cob, Cole Slaw, Collard Greens, Mixed Vegetables</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Backfin Crabcake Platter</span><span class="item-price">$21.11</span></div>
+<div class="desc">Two Backfin Crab Cakes along with the 2 Side orders of your choice.</div><div class="groups"><div class="grp"><span class="grp-label">Platter Sides</span> <span class="grp-meta">(Required · Choose 2)</span>: Potato Salad, Rice, Corn on the Cob, Cole Slaw, Collard Greens, Mixed Vegetables</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Jumbo Lump Crabcake Platte</span><span class="item-price">$38.39</span></div>
+<div class="desc">2 Jumbo Lump Crab Cakes along with 2 side orders of your choice.</div><div class="groups"><div class="grp"><span class="grp-label">Platter Sides</span> <span class="grp-meta">(Required · Choose 2)</span>: Potato Salad, Rice, Corn on the Cob, Cole Slaw, Collard Greens, Mixed Vegetables</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Salmon Platter</span><span class="item-price">$23.03</span></div>
+<div class="desc">Salmon platter with any two sides from a selection: salads, vegetables, fries, and more.</div><div class="groups"><div class="grp"><span class="grp-label">Platter Sides</span> <span class="grp-meta">(Required · Choose 2)</span>: Potato Salad, Rice, Corn on the Cob, Cole Slaw, Collard Greens, Mixed Vegetables</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Stuffed Lobster Tail Platt</span><span class="item-price">$21.11</span></div>
+<div class="desc">1 Stuffed Lobster Tail along with the 2 Side Orders of your Choice. Tail is stuffed with Crab Meat.</div><div class="groups"><div class="grp"><span class="grp-label">Platter Sides</span> <span class="grp-meta">(Required · Choose 2)</span>: Potato Salad, Rice, Corn on the Cob, Cole Slaw, Collard Greens, Mixed Vegetables</div></div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Soups</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">New England Clam Chowder</span><span class="item-price">Small $4.79 · Medium $6.71 · Large $8.63</span></div>
+<div class="desc">Creamy New England clam chowder with potatoes, celery, and onions.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Lobster Bisque</span><span class="item-price">Small $4.79 · Medium $6.71 · Large $8.63</span></div>
+<div class="desc">Rich lobster bisque</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Cream of Crab</span><span class="item-price">Small $4.79 · Medium $6.71 · Large $8.63</span></div>
+<div class="desc">Cream of Crab</div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Kids Menu</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Chicken Strip Snack</span><span class="item-price">$8.63</span></div>
+<div class="desc">3 Chicken Strips along with French Fries.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Fish Snack</span><span class="item-price">$8.63</span></div>
+<div class="desc">2 Pcs. of Fish along with French Fries.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Pop Corn Shrimp Snack</span><span class="item-price">$8.63</span></div>
+<div class="desc">Pop Corn Shrimp(20 Pcs.) along with French Fries.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Wing Snack</span><span class="item-price">$7.67</span></div>
+<div class="desc">4 Chicken Wings along with French Fries.</div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Appetizers</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Loaded Fries</span><span class="item-price">Medium $7.50 · Large $10.00</span></div>
+<div class="desc">Loaded Fries</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Tater Tots</span><span class="item-price">$3.83</span></div>
+<div class="desc">Tater Tots</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Jalapeno Poppers</span><span class="item-price">$7.19</span></div>
+<div class="desc">Filled with cream cheese, ranch sauce</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Pot Stickers</span><span class="item-price">$7.67</span></div>
+<div class="desc">Fried chicken dumplings, teriyaki dipping sauce or wasabi ranch.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Calamari</span><span class="item-price">$11.51</span></div>
+<div class="desc">Crispy fried calamari served with Marinara</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Cheese Garlic Bread</span><span class="item-price">$5.28</span></div>
+<div class="desc">6 pieces of bread served with marinara</div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Sandwiches &amp; Combos</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Burger Family Deal</span><span class="item-price">$37.92</span></div>
+<div class="groups"><div class="grp"><span class="grp-label">Burger Meal Drinks</span> <span class="grp-meta">(Required · Choose 3)</span>: Unsweet Tea, Fanta Orange, Dr Pepper, Diet Coke, Sprite, Sweet Tea</div><div class="grp"><span class="grp-label">Burger Meal Burger</span> <span class="grp-meta">(Required · Choose 3)</span>: Smash Burger, Ribeye Sandwich, Grilled Chicken Sandwich</div><div class="grp"><span class="grp-label">Burger Meal Side</span> <span class="grp-meta">(Required · Choose 1)</span>: Family Fries, Family Tater Tots, Family Onion Rings</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Grilled Chicken Sandwich</span><span class="item-price">$10.08</span></div>
+<div class="desc">Included Lettuce and Mayo</div><div class="groups"><div class="grp"><span class="grp-label">Sandwich Condiments - Select to Add or Remove</span> <span class="grp-meta">(Required · Choose 1–6)</span>: Mayo, Grilled Onions, Banana Pepper, Ketchup, Mustard, Sauce on the side</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Smash Burger</span><span class="item-price">$9.60</span></div>
+<div class="groups"><div class="grp"><span class="grp-label">Bun Modification</span> <span class="grp-meta">(Optional · Choose 1)</span>: Plain Bun, Sesame Bun, Potato Bun, Brioche Bun, Whole Wheat Bun, Gluten-Free Bun</div><div class="grp"><span class="grp-label">Burger Modification</span> <span class="grp-meta">(Optional · Choose 1)</span>: Mayo</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Cheese Burger</span><span class="item-price">$4.79</span></div>
+<div class="desc">Flat top cooked burger with cheese.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Double Bacon Burger</span><span class="item-price">$8.46</span></div>
+<div class="desc">Two all beef patties with bacon, cheese, lettuce and tomato.</div><div class="groups"><div class="grp"><span class="grp-label">Bun Modification</span> <span class="grp-meta">(Optional · Choose 1)</span>: Brioche Bun, Plain Bun, Whole Wheat Bun, Gluten-Free Bun, Pretzel Bun, Sesame Bun</div><div class="grp"><span class="grp-label">Burger Modification</span> <span class="grp-meta">(Optional · Choose 1)</span>: Mayo</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Beef Tacos</span><span class="item-price">$4.32</span></div>
+<div class="desc">Corn Tortilla Tacos with ground beef, lettuce, tomato and cheese.</div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Raw Sushi Rolls</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Spicy Tuna Roll</span><span class="item-price">$6.86</span></div>
+<div class="desc">8 pieces of Spicy Tuna Roll</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Tuna Roll</span><span class="item-price">$6.67</span></div>
+<div class="desc">6 pieces of Tuna Roll</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Alaska Roll</span><span class="item-price">$6.67</span></div>
+<div class="desc">8 pieces of Salmon, cucumber and Avocado Roll</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">California Roll</span><span class="item-price">$7.63</span></div>
+<div class="desc">8 pcs California Roll</div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Pizza</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">BBQ Chicken Pizza</span><span class="item-price">Small $12.47 · Medium $16.31 · Large $18.23</span></div>
+<div class="desc">Smoked BBQ Chicken Pizza</div><div class="groups"><div class="grp"><span class="grp-label">Meat Toppings</span> <span class="grp-meta">(Optional · Choose 1–15)</span>: Grilled Chicken, Smoked Ham, Ground Beef, Bacon bits, Meatballs, Pepperoni</div><div class="grp"><span class="grp-label">Pizza Sauce</span> <span class="grp-meta">(Required · Choose 1)</span>: No Sauce, Regular Tomato Sauce, Spicy Tomato Sauce</div><div class="grp"><span class="grp-label">Veggie Toppings</span> <span class="grp-meta">(Optional · Choose 1–15)</span>: Pineapple, Black Olives, Banana Peppers, Onions, Jalapeno, Fresh Mushrooms</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Build Your Own Pizza</span><span class="item-price">Small $9.59 · Medium $12.47 · Large $14.39</span></div>
+<div class="desc">Create your own Pizza.  Comes with Regular Tomato Sauce and Mozzarella Cheese</div><div class="groups"><div class="grp"><span class="grp-label">Meat Toppings</span> <span class="grp-meta">(Optional · Choose 1–15)</span>: Bacon bits, Meatballs, Anchovies, Grilled Chicken, Pepperoni, Italian Sausage</div><div class="grp"><span class="grp-label">Veggie Toppings</span> <span class="grp-meta">(Optional · Choose 1–15)</span>: Green Peppers, Green Olives, Fresh Mushrooms, Black Olives, Banana Peppers, Pineapple</div><div class="grp"><span class="grp-label">Pizza Sauce</span> <span class="grp-meta">(Required · Choose 1)</span>: Regular Tomato Sauce, Spicy Tomato Sauce, No Sauce</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">All Meat Pizza</span><span class="item-price">Small $12.47 · Medium $16.31 · Large $18.23</span></div>
+<div class="desc">Comes with Tomato Sauce, Mozzarella, Pepperoni, Italian Sausage, Smoked Ham, and Meatballs.</div><div class="groups"><div class="grp"><span class="grp-label">Veggie Toppings</span> <span class="grp-meta">(Optional · Choose 1–15)</span>: Fresh Mushrooms, Pineapple, Green Peppers, Green Olives, Jalapeno, Onions</div><div class="grp"><span class="grp-label">Meat Toppings</span> <span class="grp-meta">(Optional · Choose 1–15)</span>: Bacon bits, Meatballs, Anchovies, Grilled Chicken, Ground Beef, Smoked Ham</div><div class="grp"><span class="grp-label">Pizza Sauce</span> <span class="grp-meta">(Required · Choose 1)</span>: Spicy Tomato Sauce, Regular Tomato Sauce, No Sauce</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Hawaiian Pizza</span><span class="item-price">Small $12.47 · Medium $16.31 · Large $18.23</span></div>
+<div class="desc">Comes with Pineapple, Ham and Cheese.</div><div class="groups"><div class="grp"><span class="grp-label">Meat Toppings</span> <span class="grp-meta">(Optional · Choose 1–15)</span>: Smoked Ham, Ground Pork, Pepperoni, Anchovies, Ground Beef, Meatballs</div></div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Desserts</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Cheese Cake</span><span class="item-price">$6.00</span></div>
+<div class="desc">Cheesecake</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Baklava</span><span class="item-price">$5.75</span></div>
+<div class="desc">Baklava</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Chocolate Cake</span><span class="item-price">$3.83</span></div>
+<div class="desc">Chocolate Cake</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Carrot Cake</span><span class="item-price">$3.83</span></div>
+<div class="desc">Carrot Cake</div>
+</div>
+</section><section class="cat">
+<h2 class="cat-title">Drinks</h2>
+<div class="item">
+<div class="item-head"><span class="item-name">Coke</span><span class="item-price">Small $2.28 · Medium $2.48 · Large $2.77</span></div>
+<div class="desc">Coke</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Diet Coke</span><span class="item-price">Small $2.28 · Medium $2.48 · Large $2.77</span></div>
+<div class="desc">Diet Coke</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Sprite</span><span class="item-price">Small $2.28 · Medium $2.48 · Large $2.77</span></div>
+<div class="desc">Sprite</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Lemonade</span><span class="item-price">Small $2.24 · Medium $2.73 · Large $3.04</span></div>
+<div class="desc">Sprite, Lemon and ice.</div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Sweet Tea</span><span class="item-price">Small $2.28 · Medium $2.48 · Large $2.77</span></div>
+<div class="desc">Sweet Tea</div><div class="groups"><div class="grp"><span class="grp-label">Drink Modifications</span> <span class="grp-meta">(Optional · Choose 1)</span>: No Ice, Light Ice</div></div>
+</div><div class="item">
+<div class="item-head"><span class="item-name">Unsweet Tea</span><span class="item-price">Small $2.28 · Medium $2.48 · Large $2.77</span></div>
+<div class="desc">Unsweet Tea</div>
+</div>
+</section>
+</div>
+</body>
+</html>

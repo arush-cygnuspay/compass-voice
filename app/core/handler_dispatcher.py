@@ -66,9 +66,6 @@ from app.state_machine.handlers.payment.waiting_for_payment_handler import (
 from app.state_machine.handlers.payment.waiting_for_pickup_sms_permission_handler import (
     WaitingForPickupSmsPermissionHandler,
 )
-from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
-    WaitingForCallerDeviceTypeHandler,
-)
 from app.state_machine.models.conversation_state import ConversationState
 
 
@@ -128,7 +125,6 @@ class HandlerDispatcher:
             "cancellation_confirmation_handler": CancellationConfirmationHandler(),
             "ask_menu_info_handler": AskMenuInfoHandler(menu_repo),
             "ask_price_handler": AskPriceHandler(menu_repo),
-            "waiting_for_caller_device_type_handler": WaitingForCallerDeviceTypeHandler(),
             "waiting_for_order_type_handler": WaitingForOrderTypeHandler(),
             "waiting_for_delivery_eligibility_handler": WaitingForDeliveryEligibilityHandler(),
             "waiting_for_delivery_address_collection_handler": WaitingForDeliveryAddressCollectionHandler(

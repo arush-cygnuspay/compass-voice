@@ -1,0 +1,16 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = [
+    "error::pytest.PytestUnraisableExceptionWarning",
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning",
+]
+markers = [
+    "smoke: fast smoke tests safe to run on every commit",
+    "regression: scenarios from the QA audit (Phase 5)",
+    "slow: takes >2s; skip with -m 'not slow'",
+    "integration: hits a real external service (deepgram, twilio, redis)",
+]
+# Keep the suite quiet by default; bump to -vv locally with `pytest -vv`.
+addopts = "-ra --strict-markers --strict-config"

@@ -20,9 +20,9 @@ def flow_guard_confirm_cancel(payload: dict) -> str:
     item_name = payload.get("item_name")
 
     if item_name:
-        return f"Do you want to cancel {item_name}? Please say yes or no."
+        return f"Do you want to cancel {item_name}?"
 
-    return "Do you want to cancel this? Please say yes or no."
+    return "Do you want to cancel this?"
 
 
 def flow_guard_cancelled(_: dict | None = None) -> str:

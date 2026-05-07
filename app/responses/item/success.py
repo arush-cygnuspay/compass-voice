@@ -3,13 +3,28 @@
 from __future__ import annotations
 
 from app.menu.repository import MenuRepository
+from app.nlu.modifier_instructions import speak_join as _speak_join
 from app.responses.item.format_utils import _added_text, _format_selected_names
 from app.state_machine.models.conversation_context import ConversationContext
+
+
+def _with_clause(modifier_phrases: list[str]) -> str:
+    """Build a 'with no onions and extra cheese' clause, or empty string."""
+    joined = _speak_join(modifier_phrases)
+    return f" with {joined}" if joined else ""
 
 
 def item_added_successfully(payload: dict) -> str:
     quantity = int(payload.get("quantity", 1))
     item_name = str(payload.get("item_name") or "").strip()
+
+    # Spoken modifier list, in customer-spoken order, e.g.:
+    #   ["no onions", "extra cheese", "light mayo", "ranch on the side"]
+    # The handler builds this via app.nlu.modifier_instructions.speak() so
+    # that the action ("no") and instruction ("extra"/"light"/"on the side")
+    # surface back to the caller exactly the way they asked.
+    spoken_modifiers = list(payload.get("spoken_modifiers") or [])
+    with_clause = _with_clause(spoken_modifiers)
 
     unmatched = payload.get("unmatched_names") or []
     unmatched_note = ""
@@ -23,19 +38,21 @@ def item_added_successfully(payload: dict) -> str:
         remaining = int(payload.get("remaining_queue_count", 0) or 0)
 
         added = _added_text(prev_name, prev_qty)
-        this_added = _added_text(item_name, quantity)
+        # The "with X, Y, and Z" clause attaches to the *current* item being
+        # added in this turn, not to any prior queue entry.
+        this_added = _added_text(item_name, quantity) + with_clause
 
         if remaining > 0:
             return f"{added}. {this_added}.{unmatched_note} {remaining} more to go. Would you like anything else?"
         return f"{added}. {this_added}.{unmatched_note} That's everything. Would you like anything else?"
 
     if quantity > 1 and item_name:
-        return f"Added {quantity} {item_name}.{unmatched_note} Would you like anything else?"
+        return f"Added {quantity} {item_name}{with_clause}.{unmatched_note} Would you like anything else?"
     if quantity > 1:
-        return f"Added {quantity}.{unmatched_note} Would you like anything else?"
+        return f"Added {quantity}{with_clause}.{unmatched_note} Would you like anything else?"
     if item_name:
-        return f"{item_name} added.{unmatched_note} Would you like anything else?"
-    return f"Added.{unmatched_note} Would you like anything else?"
+        return f"{item_name}{with_clause} added.{unmatched_note} Would you like anything else?"
+    return f"Added{with_clause}.{unmatched_note} Would you like anything else?"
 
 
 def item_cancelled_successfully(

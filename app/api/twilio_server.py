@@ -69,11 +69,12 @@ async def voice(request: Request):
 
     print(f"[CALL START] SID={call_sid}")
 
+    responder: ResponseBuilder = request.app.state.responder
     vr = VoiceResponse()
     vr.append(
         gather(
             action_url=str(request.url_for("process_speech")),
-            say="Welcome to Compass. Is this for pickup or delivery?",
+            say=responder.build("ask_for_order_type", None, None),
         )
     )
 
@@ -92,18 +93,18 @@ async def process_speech(
     call_sid = form.get("CallSid")
     restaurant_id = "demo"
 
-    user_text = SpeechResult or ""
+    # Empty / whitespace-only STT result: still route through TurnEngine
+    # so that the same NoInputEscalationPolicy applies as for unintelligible
+    # utterances. Never branch on empty text in the transport layer - that
+    # historically caused infinite "Sorry, I didn't catch that" loops because
+    # the global UNKNOWN counter was bypassed.
+    user_text = (SpeechResult or "").strip()
 
-    print(f"[TWILIO SPEECH] SID={call_sid} TEXT={user_text}")
+    print(f"[TWILIO SPEECH] SID={call_sid} TEXT={user_text!r}")
 
     session = load_session(call_sid, restaurant_id)
 
     vr = VoiceResponse()
-
-    if not user_text.strip():
-        vr.say("Sorry, I didn’t catch that. Could you repeat?")
-        vr.append(gather(str(request.url_for("process_speech"))))
-        return Response(str(vr), media_type="application/xml")
 
     turn_start = time.perf_counter()
 

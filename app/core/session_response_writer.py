@@ -30,6 +30,16 @@ class SessionResponseWriter:
         self.responder = responder
         self.menu_repo = menu_repo
 
+    # Response keys that represent an unresolved global fallback. When one
+    # of these is the final emission, we must NOT reset the turn-level
+    # UNKNOWN miss counter - that counter drives NoInputEscalationPolicy,
+    # which keeps the fallback path from looping forever. Any other
+    # response_key indicates the system understood the turn well enough
+    # to act on it, so the counter is safely reset.
+    _UNRESOLVED_FALLBACK_KEYS: frozenset[str] = frozenset({
+        "intent_not_allowed",
+    })
+
     def _apply_session_response(
         self,
         *,
@@ -44,6 +54,15 @@ class SessionResponseWriter:
         session.last_response_payload = response_payload
         session.last_response_at_epoch = now
         session.turn_count += 1
+
+        # Single chokepoint: reset turn-level UNKNOWN counter on any
+        # non-fallback emission. The intent_not_allowed path bumps the
+        # counter BEFORE calling this method and then emits an
+        # intent_not_allowed key, so the bump survives.
+        if response_key not in self._UNRESOLVED_FALLBACK_KEYS:
+            ctx = getattr(session, "conversation_context", None)
+            if ctx is not None and hasattr(ctx, "reset_unknown"):
+                ctx.reset_unknown()
 
         delivery = getattr(session.conversation_context, "delivery_address", None)
         if delivery is not None:

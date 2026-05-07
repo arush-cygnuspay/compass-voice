@@ -21,7 +21,9 @@ import re
 from typing import Sequence
 
 from app.menu.models import MenuItem
+from app.nlu.modifier_instructions import speak as _speak_modifier
 from app.nlu.nlu_result import SlotValue
+from app.nlu.order_scaffolding import ORDER_FILLER_PREFIXES, ORDER_FILLER_TOKENS
 from app.nlu.quantity_resolver import QuantityResolver
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.nlu.slot_consumption import consume_slot_or_fallback
@@ -82,27 +84,8 @@ SIZE_WORDS = (
     "xl",
 )
 
-ITEM_FILLER_PREFIXES: tuple[str, ...] = (
-    "i want ",
-    "i want a ",
-    "i want an ",
-    "i would like ",
-    "i would like a ",
-    "i would like an ",
-    "i would like to order ",
-    "i would like to get ",
-    "i will take ",
-    "ill take ",
-    "can i get ",
-    "give me ",
-    "add ",
-    "get ",
-    "bring ",
-    "make it ",
-    "a ",
-    "an ",
-    "the ",
-)
+# Re-export for any external code that still imports from this module.
+ITEM_FILLER_PREFIXES: tuple[str, ...] = ORDER_FILLER_PREFIXES
 
 
 def normalize_item_request_text(text: str) -> str:
@@ -113,7 +96,7 @@ def normalize_item_request_text(text: str) -> str:
     changed = True
     while changed and normalized:
         changed = False
-        for prefix in ITEM_FILLER_PREFIXES:
+        for prefix in ORDER_FILLER_PREFIXES:
             if normalized.startswith(prefix):
                 normalized = normalized[len(prefix):].strip()
                 changed = True
@@ -806,14 +789,13 @@ class PrefillOrchestrator:
 
         for group in pending.modifier_groups:
             for sel in context.selected_modifier_groups.get(group.group_id, []):
-                if sel.action == "remove":
-                    parts.append(f"no {sel.name}")
-                elif sel.instruction == "extra":
-                    parts.append(f"extra {sel.name}")
-                elif sel.instruction == "less":
-                    parts.append(f"less {sel.name}")
-                else:
-                    parts.append(sel.name)
+                spoken = _speak_modifier(
+                    sel.name,
+                    action=sel.action,
+                    instruction=sel.instruction,
+                )
+                if spoken:
+                    parts.append(spoken)
 
         if not parts:
             return ""
@@ -910,14 +892,12 @@ class PrefillOrchestrator:
                 "extra", "more", "double", "less", "light",
                 "on", "the", "side",
                 "a", "an",
-                # Ordering filler / command residue — strip so that leftover
-                # phrases like "okay then give me a" after item resolution are
-                # never surfaced as "I couldn't find okay then give me a".
-                "okay", "ok", "then", "give", "me", "can", "i",
-                "want", "would", "like", "to", "order", "get",
-                "please", "just",
             }
         )
+        # Merge the canonical shared filler-token set so that residue like
+        # "wanted", "needed", "said", "will", "take" etc. is never surfaced
+        # as "I couldn't find wanted / needed / said …".
+        ignored_tokens.update(ORDER_FILLER_TOKENS)
         canonical_ignored = ignored_tokens | {"no", "without", "hold", "remove"}
 
         result: list[str] = []

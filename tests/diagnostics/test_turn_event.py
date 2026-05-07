@@ -48,6 +48,51 @@ def _make_event(**overrides) -> TurnEvent:
     return TurnEvent(**defaults)
 
 
+class TestTurnEventExtendedFields:
+    """New optional fields added in Phase A must be None by default and accept values."""
+
+    def test_extended_fields_default_to_none(self):
+        event = _make_event()
+        assert event.raw_slots is None
+        assert event.effective_slots is None
+        assert event.active_resolution_scope is None
+        assert event.resolved_entity_type is None
+        assert event.resolved_entity_id is None
+        assert event.route_reason is None
+        assert event.coercion_reason is None
+
+    def test_extended_fields_accept_values(self):
+        slots = (object(),)
+        event = _make_event(
+            raw_slots=slots,
+            effective_slots=slots,
+            active_resolution_scope="idle",
+            resolved_entity_type="item",
+            resolved_entity_id="item_123",
+            route_reason="idle_item_slot_with_menu_evidence",
+            coercion_reason="idle_modify_no_target_with_item_slot",
+        )
+        assert event.raw_slots is slots
+        assert event.effective_slots is slots
+        assert event.active_resolution_scope == "idle"
+        assert event.resolved_entity_type == "item"
+        assert event.resolved_entity_id == "item_123"
+        assert event.route_reason == "idle_item_slot_with_menu_evidence"
+        assert event.coercion_reason == "idle_modify_no_target_with_item_slot"
+
+    def test_serialization_with_extended_fields(self):
+        """json_backend must not choke on the new fields."""
+        import dataclasses, json
+        event = _make_event(
+            raw_slots=(),
+            active_resolution_scope="waiting_for_side",
+            coercion_reason="idle_item_variant_no_cart_target",
+        )
+        d = {f.name: getattr(event, f.name) for f in dataclasses.fields(event)}
+        # Must serialize without raising.
+        json.dumps(d, default=str)
+
+
 class TestTurnEventConstruction:
     def test_basic_construction_succeeds(self):
         event = _make_event()

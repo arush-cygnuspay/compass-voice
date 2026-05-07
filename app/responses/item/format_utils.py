@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 
 from app.menu.repository import MenuRepository
+from app.nlu.modifier_instructions import speak as _speak_modifier
 from app.nlu.utterance_filter import DEFAULT_FILTER as _FILLER_FILTER
 from app.state_machine.models.conversation_context import ConversationContext
 from app.utils.top_k_choices import get_top_k_choices
@@ -208,7 +209,7 @@ def _group_payload(
     remaining_to_min = max(min_selector - selected_count, 0)
     remaining_to_max = max(effective_max - selected_count, 0) if effective_max > 0 else 0
 
-    return {
+    result = {
         "group_name": _payload_value(payload, "group_name", group_name),
         "top_choices": _payload_value(payload, "top_choices", option_names[:4]),
         "all_choices": _payload_value(payload, "all_choices", option_names),
@@ -219,6 +220,20 @@ def _group_payload(
         "remaining_to_min": int(_payload_value(payload, "remaining_to_min", remaining_to_min) or 0),
         "remaining_to_max": int(_payload_value(payload, "remaining_to_max", remaining_to_max) or 0),
     }
+    # Propagate control fields from the outer handler payload so that
+    # _progress_prompt can distinguish valid partial-selection reprompts
+    # ("need_more") from genuine invalid-input reprompts ("invalid").
+    for _ctrl_key in (
+        "repeat_reason",
+        "matched_names",
+        "unmatched_names",
+        "requested_names",
+        "over_max",
+        "dropped_names",
+    ):
+        if _ctrl_key in payload:
+            result[_ctrl_key] = payload[_ctrl_key]
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -262,18 +277,14 @@ def _current_modifier_payload(
     payload = payload or {}
     item = menu_repo.store.get_item(context.current_item_id)
     group = item.modifier_groups[context.current_modifier_group_index]
-    selected_names = []
-    for selection in context.selected_modifier_groups.get(group.group_id, []):
-        if selection.action == "remove":
-            selected_names.append(f"no {selection.name}")
-        elif selection.instruction == "extra":
-            selected_names.append(f"extra {selection.name}")
-        elif selection.instruction == "less":
-            selected_names.append(f"less {selection.name}")
-        elif selection.instruction == "on_side":
-            selected_names.append(f"{selection.name} on the side")
-        else:
-            selected_names.append(selection.name)
+    selected_names = [
+        _speak_modifier(
+            selection.name,
+            action=selection.action,
+            instruction=selection.instruction,
+        )
+        for selection in context.selected_modifier_groups.get(group.group_id, [])
+    ]
 
     return _group_payload(
         payload=payload,
@@ -370,10 +381,13 @@ def _progress_prompt(payload: dict, *, item_word: str, invalid_lead: str) -> str
         return "Say done when ready."
 
     selected_count = max(int(payload.get("selected_count", 0) or 0), 0)
-    if selected_count == 0:
+    if reason == "invalid":
+        # Explicit invalid signal — use invalid_lead regardless of how many are selected.
+        prompt = f"{invalid_lead} Pick 1 more." if remaining == 1 else f"{invalid_lead} Pick {remaining} more."
+    elif selected_count == 0:
         prompt = "Please choose one option." if remaining == 1 else f"Please choose {remaining} options."
-    elif remaining == 1:
-        prompt = f"{invalid_lead} Pick 1 more."
     else:
-        prompt = f"{invalid_lead} Pick {remaining} more."
+        # Valid partial selection: user already chose something; we just need more.
+        # Do NOT use invalid_lead here — the selection was accepted.
+        prompt = "Pick 1 more." if remaining == 1 else f"Pick {remaining} more."
     return f"{prompt} {options}." if options else prompt

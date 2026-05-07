@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.menu.models import MenuItem
+from app.nlu.modifier_instructions import speak as _speak_modifier
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     ReadyToFinalize,
@@ -9,6 +10,32 @@ from app.state_machine.handlers.item.add_item.add_item_flow import (
 )
 from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
+
+
+def _spoken_modifiers_for(context: ConversationContext) -> list[str]:
+    """Render the customer's selected modifiers as spoken phrases.
+
+    Used by the success-message path so "Chicken Burger added" becomes
+    "Chicken Burger with no onions and extra cheese added." The action
+    (add/remove) and instruction (extra/less/on_side) come straight
+    from each ModifierSelection — no inline branching here, all rules
+    live in app.nlu.modifier_instructions.
+    """
+    pending = context.pending_add_item
+    if pending is None:
+        return []
+
+    spoken: list[str] = []
+    for group in pending.modifier_groups:
+        for selection in context.selected_modifier_groups.get(group.group_id, []):
+            phrase = _speak_modifier(
+                selection.name,
+                action=selection.action,
+                instruction=selection.instruction,
+            )
+            if phrase:
+                spoken.append(phrase)
+    return spoken
 
 
 class ConfirmationDecisionHelper:
@@ -32,12 +59,20 @@ class ConfirmationDecisionHelper:
         step = determine_next_add_item_step(context)
 
         if isinstance(step, ReadyToFinalize):
+            spoken_modifiers = _spoken_modifiers_for(context)
             payload: dict = {
                 "item_name": item.name,
                 "quantity": context.quantity or 1,
-                "prefilled_summary": prefilled_summary,
                 "prefill_debug": prefill_debug,
+                # NEW: render modifiers with their action/instruction so the
+                # success line voices "with no onions and extra cheese" back.
+                "spoken_modifiers": spoken_modifiers,
             }
+            # Suppress the legacy prefilled_summary prefix when we already
+            # have a spoken_modifiers clause — the success line owns the
+            # listing, no need to double-confirm it.
+            if not spoken_modifiers and prefilled_summary:
+                payload["prefilled_summary"] = prefilled_summary
             if prefill_feedback:
                 payload["prefill_feedback"] = prefill_feedback
             return HandlerResult(

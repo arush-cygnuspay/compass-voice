@@ -26,9 +26,7 @@ from app.state_machine.handlers.order.prepayment_correction_support import (
     extract_requested_quantity,
     resolve_cart_item_for_quantity_change,
 )
-from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
-    HUMAN_AGENT_TRANSFER_NUMBER,
-)
+from app.config.voice_transfer import HUMAN_AGENT_TRANSFER_NUMBER
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.phase3_controls import (
     is_repeat_order_summary_request,
@@ -468,10 +466,8 @@ class FlowGate:
         """
         if session.conversation_state == ConversationState.COMPLETED:
             return None
-        # Don't clobber the device-type gate or the human-handoff state.
+        # Don't clobber the human-handoff state.
         if session.conversation_state in {
-            ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
-            ConversationState.WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION,
             ConversationState.TRANSFERRING_TO_HUMAN_AGENT,
         }:
             return None

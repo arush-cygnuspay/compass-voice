@@ -1,0 +1,1492 @@
+{
+  "ebt item": {
+    "type": "item",
+    "item_id": "e7bf034a-58d9-4d91-bb93-0fe70af675a4"
+  },
+  "ebt": {
+    "type": "category",
+    "category_id": "478f35c4-e433-4382-a15a-8356ea3120fd"
+  },
+  "bourbon chicken": {
+    "type": "item",
+    "item_id": "4f4fbd1d-4bfa-4fa5-b14a-4d11c90ae1ef"
+  },
+  "special selection": {
+    "type": "category",
+    "category_id": "61aed6ed-5f74-4c18-aeea-98ab6c596ac6"
+  },
+  "fresh mushroom": {
+    "type": "modifier",
+    "modifier_id": "587992fa-f720-44df-ac93-4f77296ce4a7",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "onion": {
+    "type": "modifier",
+    "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "green bell pepper": {
+    "type": "modifier",
+    "modifier_id": "58d1f33d-c3a5-4820-963d-5732419cfa1c",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "jalapenos": {
+    "type": "modifier",
+    "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "holiday gift card": {
+    "type": "item",
+    "item_id": "671d55ef-9e8c-4024-a3be-403a06c9601d"
+  },
+  "gift card": {
+    "type": "category",
+    "category_id": "eab6bfa0-2520-4ebd-937f-7021aa8e3c13"
+  },
+  "chicken taco": {
+    "type": "item",
+    "item_id": "e267fa3a-db86-4bf7-8124-c1523ddd6258"
+  },
+  "specials": {
+    "type": "category",
+    "category_id": "0752cb68-ad4e-4d55-bf2d-deaa91d57cc6"
+  },
+  "coke (12 oz.)": {
+    "type": "item",
+    "item_id": "5e57e093-8aab-4e93-acec-5a696fadd73e"
+  },
+  "sprite (12 oz.)": {
+    "type": "item",
+    "item_id": "fc25a3af-9a5e-4494-96e0-f2f69a16662a"
+  },
+  "steak": {
+    "type": "modifier",
+    "modifier_id": "370bd5a8-90bd-4996-a0c3-4be007075de4",
+    "group_id": "7888974e-e48b-4c4f-8b33-6aa888ca6cb3"
+  },
+  "chicken": {
+    "type": "modifier",
+    "modifier_id": "58d39f8d-ac18-4998-808a-12302f5e4884",
+    "group_id": "7888974e-e48b-4c4f-8b33-6aa888ca6cb3"
+  },
+  "sausage": {
+    "type": "modifier",
+    "modifier_id": "917d4025-7326-4fc7-b801-a6d76f14e0a9",
+    "group_id": "7888974e-e48b-4c4f-8b33-6aa888ca6cb3"
+  },
+  "tenderloin": {
+    "type": "modifier",
+    "modifier_id": "eb104a48-df47-4e18-a5fe-a8ba7170609a",
+    "group_id": "7888974e-e48b-4c4f-8b33-6aa888ca6cb3"
+  },
+  "bacon": {
+    "type": "modifier",
+    "modifier_id": "06617c2c-4033-48a2-912e-ca552415eb1f",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "ham": {
+    "type": "modifier",
+    "modifier_id": "c4a822d6-f264-4ae0-bdd6-8e809307df9c",
+    "group_id": "7888974e-e48b-4c4f-8b33-6aa888ca6cb3"
+  },
+  "sausage link": {
+    "type": "modifier",
+    "modifier_id": "44b1d695-76ec-454e-b8d3-c01d5f1dcf92",
+    "group_id": "7888974e-e48b-4c4f-8b33-6aa888ca6cb3"
+  },
+  "cheese": {
+    "type": "modifier",
+    "modifier_id": "38352951-3cfc-4bed-aa59-bdef96e6edea",
+    "group_id": "6ffec512-3321-4e2e-95a0-fbe2fa89970e"
+  },
+  "jelly": {
+    "type": "modifier",
+    "modifier_id": "fce50f96-e4ad-48ff-914a-cb944402a4f1",
+    "group_id": "1e0fad0b-4d65-4e2d-a8bf-ad9d20696705"
+  },
+  "sausage gravy": {
+    "type": "modifier",
+    "modifier_id": "ce917822-1bdf-4536-9a77-41a24d62d0ef",
+    "group_id": "1e0fad0b-4d65-4e2d-a8bf-ad9d20696705"
+  },
+  "plain gravy": {
+    "type": "modifier",
+    "modifier_id": "0833a4e9-b1d6-4f82-ad50-72c778710f23",
+    "group_id": "1e0fad0b-4d65-4e2d-a8bf-ad9d20696705"
+  },
+  "egg": {
+    "type": "modifier",
+    "modifier_id": "dd6ec80c-fddf-4272-a9e5-13ef00aebbcd",
+    "group_id": "1e0fad0b-4d65-4e2d-a8bf-ad9d20696705"
+  },
+  "iced mocha": {
+    "type": "item",
+    "item_id": "ed073238-dba9-4537-9445-daaa7ee1f3a5"
+  },
+  "drinks": {
+    "type": "category",
+    "category_id": "b68eb6e2-bf3f-4ddf-85a1-5d3c5acb73b6"
+  },
+  "cream": {
+    "type": "item",
+    "item_id": "bb02b126-e07f-4aa3-afd0-68d445faa5cf"
+  },
+  "sugar": {
+    "type": "item",
+    "item_id": "63d582b7-9164-4ad4-8ab6-033bb385ff9f"
+  },
+  "sweet-n-low": {
+    "type": "item",
+    "item_id": "62ab3b2d-6157-4ed4-b0a8-9672cddd2d2d"
+  },
+  "24. jumbo lump crabck sand": {
+    "type": "item",
+    "item_id": "ea7f7a98-8f5b-42f8-a9d7-5fda57230dd5"
+  },
+  "fried combo platters": {
+    "type": "category",
+    "category_id": "b2749896-026f-4460-ae4e-187830712f27"
+  },
+  "sandwiches": {
+    "type": "category",
+    "category_id": "e47f6fc9-7342-42ce-afed-9569aee68425"
+  },
+  "mayo": {
+    "type": "modifier",
+    "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+    "group_id": "6ffec512-3321-4e2e-95a0-fbe2fa89970e"
+  },
+  "banana pepper": {
+    "type": "modifier",
+    "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "tomato": {
+    "type": "modifier",
+    "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+    "group_id": "6ffec512-3321-4e2e-95a0-fbe2fa89970e"
+  },
+  "mustard": {
+    "type": "modifier",
+    "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+    "group_id": "6ffec512-3321-4e2e-95a0-fbe2fa89970e"
+  },
+  "grilled onions": {
+    "type": "modifier",
+    "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "sauce on the side": {
+    "type": "modifier",
+    "modifier_id": "1aa59b6b-5490-4248-a38e-6401d0d4d68a",
+    "group_id": "6ffec512-3321-4e2e-95a0-fbe2fa89970e"
+  },
+  "ketchup": {
+    "type": "modifier",
+    "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+    "group_id": "6ffec512-3321-4e2e-95a0-fbe2fa89970e"
+  },
+  "lettuce": {
+    "type": "modifier",
+    "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+    "group_id": "6ffec512-3321-4e2e-95a0-fbe2fa89970e"
+  },
+  "49. seafood combo platter": {
+    "type": "item",
+    "item_id": "439c6d06-7dc7-42c1-8fc3-dbea8346e874"
+  },
+  "potato salad": {
+    "type": "item",
+    "item_id": "04b9e232-fae2-4c94-aa33-09951771abd5"
+  },
+  "rice": {
+    "type": "item",
+    "item_id": "c8b7ace4-e287-4c28-a5f6-30b111b1f61a"
+  },
+  "corn on the cob": {
+    "type": "item",
+    "item_id": "a74a0f33-f814-4a28-be9c-fec5053a7a40"
+  },
+  "cole slaw": {
+    "type": "item",
+    "item_id": "9fbfd66f-fbbc-4126-a6b3-41423be63c52"
+  },
+  "collard greens": {
+    "type": "item",
+    "item_id": "9ddc50f7-3f7b-4219-bc0f-b2eb28a5b8e0"
+  },
+  "mixed vegetables": {
+    "type": "item",
+    "item_id": "7df8c93e-0d6a-4326-a70a-65835f89ab6d"
+  },
+  "macaroni & cheese": {
+    "type": "item",
+    "item_id": "bb3f28c4-0089-477d-8b01-c738989919a1"
+  },
+  "french fries": {
+    "type": "item",
+    "item_id": "1424103a-0414-46f5-8455-9c1d5d2d9ac1"
+  },
+  "41. ultimate combo platter": {
+    "type": "item",
+    "item_id": "e2ed3d54-b806-4bf2-b044-c534cf858087"
+  },
+  "broiled combo platters": {
+    "type": "category",
+    "category_id": "dbc33ad8-5b3e-429c-a1dd-212ba3961960"
+  },
+  "40. homeboy seafood platter": {
+    "type": "item",
+    "item_id": "e42e6a04-ad26-4f0a-842c-6690b63892f4"
+  },
+  "fanta orange": {
+    "type": "item",
+    "item_id": "27bd9ac9-6034-470d-bfea-f5cfb7f10678"
+  },
+  "sprite": {
+    "type": "item",
+    "item_id": "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18"
+  },
+  "coke": {
+    "type": "item",
+    "item_id": "23f9fcab-6088-4906-930e-8e627fd46d9d"
+  },
+  "39. seafood combo platter": {
+    "type": "item",
+    "item_id": "f298947f-dde1-4fa7-a792-78e81506e2a3"
+  },
+  "lunch special (mon-fri)": {
+    "type": "item",
+    "item_id": "c00d7630-0750-430e-b259-1cdd61dd96d6"
+  },
+  "crabcake combo": {
+    "type": "item",
+    "item_id": "89daa1f7-99b1-455d-8efa-f50df9528db7"
+  },
+  "steamer special": {
+    "type": "item",
+    "item_id": "c12e9e9b-2587-4fe4-8a03-8cb1d2aad144"
+  },
+  "carrot cake": {
+    "type": "item",
+    "item_id": "e30e1c56-fc09-4da7-a166-44f395f9971b"
+  },
+  "desserts": {
+    "type": "category",
+    "category_id": "9042a05b-2225-43cc-9b2b-635e54a25610"
+  },
+  "chocolate cake": {
+    "type": "item",
+    "item_id": "bfd8c353-e2ae-4100-a234-e91ebbb9a679"
+  },
+  "#5. steam shrimp platter": {
+    "type": "item",
+    "item_id": "4230747b-6513-4585-91b9-1ebe53cca635"
+  },
+  "#4. dungeness crab legs platte": {
+    "type": "item",
+    "item_id": "b47a8f92-4631-4051-929a-0bee56dc7111"
+  },
+  "party platters": {
+    "type": "category",
+    "category_id": "c05a09ac-a5d8-485c-bd3c-f75e8998e188"
+  },
+  "#3. snow crab leg platter": {
+    "type": "item",
+    "item_id": "1a39ec12-ebae-4c52-8b46-f451b3452a01"
+  },
+  "61. 50 wings": {
+    "type": "item",
+    "item_id": "01bae609-e333-4b3e-b424-47896b584049"
+  },
+  "fried party wings": {
+    "type": "category",
+    "category_id": "9a3966eb-9b28-4136-8678-ac696b93184a"
+  },
+  "hot": {
+    "type": "item",
+    "item_id": "fc006782-eb27-4ec4-bd40-a66934c9e5aa"
+  },
+  "mild": {
+    "type": "item",
+    "item_id": "339639d6-c19f-4642-bb00-7455a98e4785"
+  },
+  "bbq": {
+    "type": "item",
+    "item_id": "595349d6-0731-4bde-be02-422abe8bc459"
+  },
+  "mumbo": {
+    "type": "item",
+    "item_id": "02080761-2d5f-4b4a-953c-a3d807097404"
+  },
+  "no seasoning": {
+    "type": "item",
+    "item_id": "64c35c91-4ab0-4c85-8124-082dd685b292"
+  },
+  "plain (no sauce)": {
+    "type": "item",
+    "item_id": "07c0db5a-1c5c-4488-adbc-47c62bcae7a6"
+  },
+  "baked": {
+    "type": "item",
+    "item_id": "bced9a23-597a-4695-aee4-30f75f402bd8"
+  },
+  "fried": {
+    "type": "item",
+    "item_id": "5e9da009-149f-4b80-83bf-7686980b19a7"
+  },
+  "60. 24 wings": {
+    "type": "item",
+    "item_id": "c96713a9-5e57-4ac3-83f1-4d6395492b8b"
+  },
+  "59. 12 wings": {
+    "type": "item",
+    "item_id": "2c11c763-c194-48b8-adf7-2a74fbe95e40"
+  },
+  "58. 6 wings": {
+    "type": "item",
+    "item_id": "a6781502-cdad-45f8-b7f4-c9f4d100e605"
+  },
+  "33. jumbo lump crabcake platte": {
+    "type": "item",
+    "item_id": "d83a28ea-450c-4bd5-829e-b5d9cb2dc973"
+  },
+  "broiled seafood platters": {
+    "type": "category",
+    "category_id": "993e7e15-aa86-44f7-9d20-1d93d2bf33d5"
+  },
+  "32. backfin crabcake platter": {
+    "type": "item",
+    "item_id": "294d2ebb-f011-4add-969d-4d65b4474199"
+  },
+  "31. salmon platter": {
+    "type": "item",
+    "item_id": "192afdd2-1e14-4bb3-861c-d72360ce73f9"
+  },
+  "30. stuffed lobster tail platt": {
+    "type": "item",
+    "item_id": "fbafc150-1cbb-45cf-bdba-a7535c3b2ab7"
+  },
+  "29. lobster tail platter": {
+    "type": "item",
+    "item_id": "330cca18-ded0-4b15-b293-5e5b86e37383"
+  },
+  "broiled": {
+    "type": "item",
+    "item_id": "42d87acd-cdd6-46a3-8c8e-d5edb8cbb3c1"
+  },
+  "45. shrimp & oyster platter": {
+    "type": "item",
+    "item_id": "9549bf45-1883-41a4-881c-bd796e9eea33"
+  },
+  "fried seafood platters": {
+    "type": "category",
+    "category_id": "3d0967a6-f848-409e-9db3-7832faa6f07e"
+  },
+  "44. backfin crabcake platter": {
+    "type": "item",
+    "item_id": "5f8fedab-cb82-4de5-9606-7501c487cbbf"
+  },
+  "43. croaker bone platter": {
+    "type": "item",
+    "item_id": "7a767379-8cdf-4ac3-8a67-faae5fec211f"
+  },
+  "fried okra": {
+    "type": "item",
+    "item_id": "efe8b761-79b7-4a84-a057-de0c0dc937f2"
+  },
+  "sweet potato fries": {
+    "type": "item",
+    "item_id": "78757950-65b5-49fe-b745-47d2e7f657cd"
+  },
+  "hush puppies": {
+    "type": "item",
+    "item_id": "16358b0f-230c-4242-9939-f7193f94ac68"
+  },
+  "trout": {
+    "type": "item",
+    "item_id": "3453673b-6458-42de-8c36-cdf3da9a09ff"
+  },
+  "whiting": {
+    "type": "item",
+    "item_id": "a5b0d763-202a-4607-85b7-328b66c6d85f"
+  },
+  "42. whiting/trout platter": {
+    "type": "item",
+    "item_id": "ec1609b4-b4bd-4bda-aee9-cd22c38459b3"
+  },
+  "lobster bisque": {
+    "type": "item",
+    "item_id": "2737ab4e-8f00-46b6-971d-67c38bb529c6"
+  },
+  "soups": {
+    "type": "category",
+    "category_id": "923efb1d-8d9b-4022-9a88-9e35551fc7e0"
+  },
+  "new england clam chowder": {
+    "type": "item",
+    "item_id": "e71e38e3-5224-4d57-b0da-65f78e4a273e"
+  },
+  "cream of crab": {
+    "type": "item",
+    "item_id": "be2742c8-131e-4985-aa6d-edfa453fcedb"
+  },
+  "crab ball sanck": {
+    "type": "item",
+    "item_id": "6130eb1e-3945-41a1-a6ab-95f71757e275"
+  },
+  "wing snack": {
+    "type": "item",
+    "item_id": "fd504c95-9c1d-4864-b6fe-6f5e585441e6"
+  },
+  "kids menu": {
+    "type": "category",
+    "category_id": "53225ba6-a268-4f29-a3d3-a1227b25b3d2"
+  },
+  "pop corn shrimp snack": {
+    "type": "item",
+    "item_id": "b8368633-ed43-4968-b3d4-d258afea5b59"
+  },
+  "chicken strip snack": {
+    "type": "item",
+    "item_id": "62f18792-4e82-4f51-b685-d37bd244fa86"
+  },
+  "fish snack": {
+    "type": "item",
+    "item_id": "1c5097c5-4d0b-4d06-a285-3dbdec6c20c0"
+  },
+  "15. littleneck clams (per doz)": {
+    "type": "item",
+    "item_id": "f889a18a-73a0-4128-b9dc-76e233a3e08b"
+  },
+  "14. mussels (per dozen)": {
+    "type": "item",
+    "item_id": "0986d45a-6880-4985-82d4-aa3f53fdc9d3"
+  },
+  "11. backfin crab cake": {
+    "type": "item",
+    "item_id": "a9e1a73e-a83b-4723-85e8-46887c0b1898"
+  },
+  "appetizers-home boy": {
+    "type": "category",
+    "category_id": "6e24a17f-e102-4773-b932-570aeb1e0f59"
+  },
+  "family onion rings": {
+    "type": "item",
+    "item_id": "cc14cd5c-4804-4b8e-9a44-14199c9fe93c"
+  },
+  "family tater tots": {
+    "type": "item",
+    "item_id": "e7cae6a4-6cf1-4b42-8d4c-9bdd595cd6ae"
+  },
+  "family fries": {
+    "type": "item",
+    "item_id": "aedb9dfa-54de-46e4-81c3-3462bf47b8d9"
+  },
+  "build your own pizza": {
+    "type": "item",
+    "item_id": "f28ea2d9-5d8e-4646-b08e-9a036e7c40b0"
+  },
+  "pizza": {
+    "type": "category",
+    "category_id": "d90cd3b6-dc8c-4006-8645-b5bca5a35d7f"
+  },
+  "meatballs": {
+    "type": "modifier",
+    "modifier_id": "30109dc7-47a6-4f27-acde-9fd9ba173b54",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "italian sausage": {
+    "type": "modifier",
+    "modifier_id": "4d9f8ee6-bb29-460a-8a74-d991021772d3",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "grilled chicken": {
+    "type": "modifier",
+    "modifier_id": "51f7ccc5-f6e9-4029-bb2b-7bf84d9287b8",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "ground beef": {
+    "type": "modifier",
+    "modifier_id": "f30bc510-ec1b-4c75-94c1-f05120abead0",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "smoked ham": {
+    "type": "modifier",
+    "modifier_id": "b807e746-6ada-4870-bdfd-52c3aceb68c3",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "pepperoni": {
+    "type": "modifier",
+    "modifier_id": "2d834ab2-0c53-44bb-bd75-eef7f3c2bcc0",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "ground pork": {
+    "type": "modifier",
+    "modifier_id": "4060eaa9-8bdf-40e8-88eb-776a63c76721",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "anchovies": {
+    "type": "modifier",
+    "modifier_id": "0bfa2d52-5808-45d6-8141-7a742e61f845",
+    "group_id": "f1d63ffe-ec97-4ce5-af35-7701f6738b81"
+  },
+  "green olives": {
+    "type": "modifier",
+    "modifier_id": "4997589f-c1f9-410c-8d43-ec78cffb5917",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "fresh mushrooms": {
+    "type": "modifier",
+    "modifier_id": "6b32f85b-71f9-4bde-b6fc-d80930505f1a",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "jalapeno": {
+    "type": "modifier",
+    "modifier_id": "f58d2594-2e10-4c2e-85eb-4027beb20146",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "onions": {
+    "type": "modifier",
+    "modifier_id": "ee6ddd9f-e5e7-40e7-9326-a5cd1610edc0",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "banana peppers": {
+    "type": "modifier",
+    "modifier_id": "15be8476-75e4-4a21-8974-992b25ea74af",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "black olives": {
+    "type": "modifier",
+    "modifier_id": "ac934c3f-e82a-4ed9-9fe5-94a05c6e2ff9",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "green peppers": {
+    "type": "modifier",
+    "modifier_id": "36d51f5e-02d7-4685-bd22-4b9c8396975b",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "pineapple": {
+    "type": "modifier",
+    "modifier_id": "514b07d4-7f06-4938-a86b-430bca6b04d2",
+    "group_id": "79de45c1-e0c7-4392-91c5-a0a587ed6361"
+  },
+  "no sauce": {
+    "type": "modifier",
+    "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+    "group_id": "f2253502-1973-4346-ba26-613db082038b"
+  },
+  "regular tomato sauce": {
+    "type": "modifier",
+    "modifier_id": "d8ca7358-2933-443e-9638-988eb06e1c38",
+    "group_id": "f2253502-1973-4346-ba26-613db082038b"
+  },
+  "spicy tomato sauce": {
+    "type": "modifier",
+    "modifier_id": "7ef672eb-f04f-48a0-9ebb-5558a453099b",
+    "group_id": "f2253502-1973-4346-ba26-613db082038b"
+  },
+  "bun": {
+    "type": "item",
+    "item_id": "11377897-fdf5-4a3b-a9f5-9d0d406c2dda"
+  },
+  "lavender latte": {
+    "type": "item",
+    "item_id": "c42f9cd6-80fb-4203-96e7-29aad207e343"
+  },
+  "chai latte (iced)": {
+    "type": "item",
+    "item_id": "6065c464-9c91-4b92-b3d6-00e997c86868"
+  },
+  "chai latte (hot)": {
+    "type": "item",
+    "item_id": "9298bedb-3747-4c0a-a915-1733db6b2453"
+  },
+  "caffe mocha cake": {
+    "type": "item",
+    "item_id": "05267be6-6547-4913-b08a-e9ef50e66015"
+  },
+  "black forest full sheet": {
+    "type": "item",
+    "item_id": "eabfa188-f3f2-499e-a963-d2971627a8ad"
+  },
+  "black forest 1/2 sheet": {
+    "type": "item",
+    "item_id": "79ce52ad-185f-48cb-866f-82dd783b6c0b"
+  },
+  "black forest 1/4 sheet": {
+    "type": "item",
+    "item_id": "3f5919ee-628c-45ca-b4a1-d8905b1916a8"
+  },
+  "black forest 10\"": {
+    "type": "item",
+    "item_id": "b8df037b-4b99-4b6b-a735-4440027cc3f8"
+  },
+  "black forest 9\"": {
+    "type": "item",
+    "item_id": "c5d6acb5-2b77-467b-ad1f-3ba9fb863c8a"
+  },
+  "strawberry shortcake": {
+    "type": "item",
+    "item_id": "0d49842b-2a0d-40a5-935d-b933a606b9c4"
+  },
+  "chocolate milk cream 6\"": {
+    "type": "item",
+    "item_id": "76cec30c-7e95-4486-bc27-be667aa1ab2f"
+  },
+  "chocolate milk cream 8\"": {
+    "type": "item",
+    "item_id": "a1c01571-5e1b-4c9e-93e0-1c065efc5a1d"
+  },
+  "chocolate milk cream 7\"": {
+    "type": "item",
+    "item_id": "b1c7eb9e-2636-4b4b-bc56-fdd3420e7f7f"
+  },
+  "desayuno t\u00edpico": {
+    "type": "item",
+    "item_id": "cafb9732-1277-4298-ac58-36a4d3f09181"
+  },
+  "family wing meal": {
+    "type": "item",
+    "item_id": "073faff9-e5aa-4261-9eaf-41245ba00b3b"
+  },
+  "honey buffalo": {
+    "type": "item",
+    "item_id": "7627d097-3367-4ba5-a8da-2d7a8a99116e"
+  },
+  "honey bbq": {
+    "type": "item",
+    "item_id": "7f6cc8ce-82ae-4119-949a-1a5b8dbff37f"
+  },
+  "teriyaki": {
+    "type": "item",
+    "item_id": "e69549fa-07a6-464c-a525-836494787ab6"
+  },
+  "lemon pepper": {
+    "type": "item",
+    "item_id": "6ee0dcbb-78b3-47f6-b0ad-421c91e8105f"
+  },
+  "mango habanero": {
+    "type": "item",
+    "item_id": "5868669c-4d05-40a3-9c89-0301eb085663"
+  },
+  "garlic parmesan": {
+    "type": "item",
+    "item_id": "d3e532b0-c646-47db-8d41-03f157f44fe0"
+  },
+  "buffalo": {
+    "type": "item",
+    "item_id": "96ed529d-db0d-4245-b604-7149c790d430"
+  },
+  "old bay": {
+    "type": "item",
+    "item_id": "0941fa42-341b-4960-a1a0-0b9c93d1af6b"
+  },
+  "siriracha": {
+    "type": "item",
+    "item_id": "998b1962-b495-4cdb-8bae-4e4912039f2f"
+  },
+  "unsweet tea": {
+    "type": "item",
+    "item_id": "0233d89e-2c36-4abd-b9b6-4a9deb31b734"
+  },
+  "lemonade": {
+    "type": "item",
+    "item_id": "2324d601-9d02-450a-9c15-1ae8941c8786"
+  },
+  "dr pepper": {
+    "type": "item",
+    "item_id": "914c613c-130a-410f-9ca2-b771377cad35"
+  },
+  "diet coke": {
+    "type": "item",
+    "item_id": "2471af1b-76bc-4765-8391-ea62d863eacc"
+  },
+  "sweet tea": {
+    "type": "item",
+    "item_id": "1ee9b7cc-a180-47d2-a248-219d0f69ba66"
+  },
+  "bbq sauce": {
+    "type": "item",
+    "item_id": "cd6bb23d-62b0-422b-8ca4-8d2d77cc700d"
+  },
+  "garlic aioli": {
+    "type": "item",
+    "item_id": "d208192c-2d5d-40c8-89e0-f805e0e56e88"
+  },
+  "chipotle mayo": {
+    "type": "item",
+    "item_id": "45152158-4996-420a-9d3a-b9b3c20296f5"
+  },
+  "plant meat": {
+    "type": "item",
+    "item_id": "5bb47e26-ae7c-4d83-a055-e6d144e1e7c5"
+  },
+  "lamb meat": {
+    "type": "item",
+    "item_id": "907824e9-59e8-49c7-93ec-11f129d2b24e"
+  },
+  "beef meat": {
+    "type": "item",
+    "item_id": "3e398c85-68ce-4fd7-b6e1-6922f44e5723"
+  },
+  "american cheese": {
+    "type": "modifier",
+    "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "cheddar cheese": {
+    "type": "modifier",
+    "modifier_id": "c38204b5-e3cb-4e86-b8f0-26edc8597d16",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "mozzarella cheese": {
+    "type": "modifier",
+    "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "sesame bun": {
+    "type": "modifier",
+    "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+    "group_id": "df25d095-5f01-402e-b2f0-0f5633b69070"
+  },
+  "potato bun": {
+    "type": "modifier",
+    "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+    "group_id": "df25d095-5f01-402e-b2f0-0f5633b69070"
+  },
+  "plain bun": {
+    "type": "modifier",
+    "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+    "group_id": "df25d095-5f01-402e-b2f0-0f5633b69070"
+  },
+  "chicken burger": {
+    "type": "item",
+    "item_id": "f915405d-7ae7-4ff7-95ab-9638684863cd"
+  },
+  "red onions": {
+    "type": "modifier",
+    "modifier_id": "8ddd24f0-b0b5-495f-a2cf-81e391e4d64a",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "shredded cheese": {
+    "type": "modifier",
+    "modifier_id": "5330b8da-c392-46bc-b926-1865b9c43a7d",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "swiss cheese": {
+    "type": "modifier",
+    "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "feta cheese": {
+    "type": "modifier",
+    "modifier_id": "a5343e66-cf57-42c0-bac6-5837b1ef863b",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "parmesan cheese": {
+    "type": "modifier",
+    "modifier_id": "ef520fd1-f26f-4d44-bd19-ac3c0b8e2ebc",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "bleu cheese": {
+    "type": "modifier",
+    "modifier_id": "898bcae3-0e53-4175-85d3-78b835a66ce8",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "chili": {
+    "type": "modifier",
+    "modifier_id": "82f872f6-52eb-4e09-87a0-4b0f87908934",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "fiery mayo": {
+    "type": "modifier",
+    "modifier_id": "fcb2c5e9-0388-4ed1-9251-83125d9e262c",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "spicy ketchup": {
+    "type": "modifier",
+    "modifier_id": "12260496-a6e3-41a9-a167-b29226dd181e",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "garlic mayo": {
+    "type": "modifier",
+    "modifier_id": "4ce23b8c-1ab4-42cc-8df8-2db27de5af06",
+    "group_id": "c9d5417c-a93e-49da-a157-02bdf043fa90"
+  },
+  "gluten-free bun": {
+    "type": "modifier",
+    "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+    "group_id": "df25d095-5f01-402e-b2f0-0f5633b69070"
+  },
+  "whole wheat bun": {
+    "type": "modifier",
+    "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+    "group_id": "df25d095-5f01-402e-b2f0-0f5633b69070"
+  },
+  "pretzel bun": {
+    "type": "modifier",
+    "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+    "group_id": "df25d095-5f01-402e-b2f0-0f5633b69070"
+  },
+  "brioche bun": {
+    "type": "modifier",
+    "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+    "group_id": "df25d095-5f01-402e-b2f0-0f5633b69070"
+  },
+  "burger family deal": {
+    "type": "item",
+    "item_id": "c7fd5214-9c6e-45cf-bd13-d06e5133136c"
+  },
+  "smash burger": {
+    "type": "item",
+    "item_id": "da39a203-1425-45c2-bb5c-da4a18e5beac"
+  },
+  "ribeye sandwich": {
+    "type": "item",
+    "item_id": "a2fb585f-f5c9-4d62-822e-71addd1c75fa"
+  },
+  "grilled chicken sandwich": {
+    "type": "item",
+    "item_id": "f2f320ce-df79-42c1-9ff6-1990d5aac025"
+  },
+  "root beer": {
+    "type": "item",
+    "item_id": "203d06b1-09b5-48fe-a3fb-991cd128270e"
+  },
+  "grilled chicken combo": {
+    "type": "item",
+    "item_id": "28446555-8257-47d3-ba5c-8e3ae491a678"
+  },
+  "onion rings": {
+    "type": "item",
+    "item_id": "ecbda382-f618-46a4-937d-c6fe2256d4a7"
+  },
+  "fries": {
+    "type": "item",
+    "item_id": "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62"
+  },
+  "tater tots": {
+    "type": "item",
+    "item_id": "8069f7ab-e2fe-43ba-a4d4-afc490aee286"
+  },
+  "cheese paratha": {
+    "type": "item",
+    "item_id": "75179cdb-7e7a-435a-9f00-9bc23ce5f51b"
+  },
+  "beef tacos": {
+    "type": "item",
+    "item_id": "0f75d6f9-1b9f-4f94-be86-09a04dab5f27"
+  },
+  "no rice": {
+    "type": "item",
+    "item_id": "cbc40655-ea75-4bf5-a436-1eb8eda80fa5"
+  },
+  "cajun": {
+    "type": "item",
+    "item_id": "95cb6c1e-17d4-4e7b-8e33-ae0678e4f21f"
+  },
+  "brown rice": {
+    "type": "item",
+    "item_id": "8042ebf8-4c91-4f9b-9d67-596d59633f03"
+  },
+  "white rice": {
+    "type": "item",
+    "item_id": "69a00527-9ae9-4a4e-a6e1-6335ae39ebfc"
+  },
+  "croutons": {
+    "type": "item",
+    "item_id": "b7f3a509-407d-4279-96ac-5c4fb5e34c6e"
+  },
+  "no dressing": {
+    "type": "item",
+    "item_id": "a839886c-28e7-4702-a37b-aa576045bf3e"
+  },
+  "balsamic dressing": {
+    "type": "item",
+    "item_id": "7b9afc1e-0aea-4e21-9ec4-d5ab54d71199"
+  },
+  "honey mustard dressing": {
+    "type": "item",
+    "item_id": "097185aa-fe4c-43f8-b4c4-2fa610ab05a9"
+  },
+  "greek dressing": {
+    "type": "item",
+    "item_id": "c4586267-e39f-4d05-973e-12daf4d07051"
+  },
+  "caesar dressing": {
+    "type": "item",
+    "item_id": "24adc330-6c63-47f9-a82a-89c0c0de515d"
+  },
+  "french dressing": {
+    "type": "item",
+    "item_id": "e150bd22-3a7f-461a-a2f0-2abc39179f64"
+  },
+  "italian dressing": {
+    "type": "item",
+    "item_id": "2e65e198-9577-46e3-b1f4-284243f8d615"
+  },
+  "blue cheese dressing": {
+    "type": "item",
+    "item_id": "50e53824-5381-4c39-aac5-0e2c9ba0e133"
+  },
+  "ranch dressing": {
+    "type": "item",
+    "item_id": "5becba99-5972-4d93-b941-2d32c26f51ee"
+  },
+  "red velvet cake": {
+    "type": "item",
+    "item_id": "c3d355c3-fee8-4a97-b3e6-26488a7cba34"
+  },
+  "cheese cake": {
+    "type": "item",
+    "item_id": "59e248d1-559b-4408-a06b-19495eb44b90"
+  },
+  "baklava": {
+    "type": "item",
+    "item_id": "d8abde27-6102-4e88-888c-10559fcff778"
+  },
+  "steak & cheese sub combo": {
+    "type": "item",
+    "item_id": "f6a4a9df-ba4e-4eb2-816b-617b9024e8d6"
+  },
+  "steak & cheese sub": {
+    "type": "item",
+    "item_id": "bc32db05-38d5-45fe-a3f4-3d74ce9bb56a"
+  },
+  "double bacon burger combo": {
+    "type": "item",
+    "item_id": "8d4f3025-3530-48ea-9cbb-c68bcd9df6de"
+  },
+  "mandirin orange salad": {
+    "type": "item",
+    "item_id": "9175332e-cc89-4eec-af69-581103ec6840"
+  },
+  "diced chicken": {
+    "type": "modifier",
+    "modifier_id": "6a14eff0-acca-4d57-8708-264e2e833a56",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "tomatoes": {
+    "type": "modifier",
+    "modifier_id": "86a48ff3-89ca-46d6-aec2-6036f8573aa7",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "bacon bits": {
+    "type": "modifier",
+    "modifier_id": "7bf15aae-8af3-4066-ab42-44dabbcfa83a",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "black beans": {
+    "type": "modifier",
+    "modifier_id": "f83b88a2-a09f-4cb9-bd07-7a1528259166",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "pepperoncini": {
+    "type": "modifier",
+    "modifier_id": "fd26cbee-48f6-43aa-b133-2835470cc5e2",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "avocado": {
+    "type": "modifier",
+    "modifier_id": "14142310-bc4b-4497-80c9-66920be5b906",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "baby tomato": {
+    "type": "modifier",
+    "modifier_id": "831b48f8-7623-473c-81ec-416ab9353e3b",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "cucumbers": {
+    "type": "modifier",
+    "modifier_id": "59a8e160-f6b4-45e6-9c62-f4f8e3b5464a",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "chickpeas": {
+    "type": "modifier",
+    "modifier_id": "4e0f3fe9-dd53-41e0-8f02-3207b9ce73e8",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "chives": {
+    "type": "modifier",
+    "modifier_id": "bb4b5d68-0b69-4bd0-a9ee-8d1e1bd6524e",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "crutons": {
+    "type": "modifier",
+    "modifier_id": "a7dc9e36-002f-4862-b4e4-7782a5942265",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "dried cranberry": {
+    "type": "modifier",
+    "modifier_id": "69c4091a-5108-4545-9eb7-499d8768d74d",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "walnuts": {
+    "type": "modifier",
+    "modifier_id": "747eff87-ebfb-4bec-a70f-fea22386ede4",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "green olive": {
+    "type": "modifier",
+    "modifier_id": "fe2b2c0e-6393-4ea4-b6dd-c8f73d1fb55a",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "mandarin orange": {
+    "type": "modifier",
+    "modifier_id": "6a71fdb0-bfd3-4087-b01d-bccb7af76033",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "hard boiled egg": {
+    "type": "modifier",
+    "modifier_id": "7ce5d05e-205f-4e8a-a8af-62089425c715",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "roasted corn": {
+    "type": "modifier",
+    "modifier_id": "1d875d31-fe3e-4eeb-8c15-b43e7f3541f9",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "anchovie": {
+    "type": "modifier",
+    "modifier_id": "f618f055-db56-497e-ae2b-790d4415d6a7",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "black olive": {
+    "type": "modifier",
+    "modifier_id": "64c13775-1fb9-46ac-abc8-0337b6ae1249",
+    "group_id": "e88fc9f8-9ffa-47c5-8860-337bfb36aa84"
+  },
+  "kale & romaine caesar": {
+    "type": "item",
+    "item_id": "be8f80e6-e409-4439-bfd1-870ec730280d"
+  },
+  "chopped salad": {
+    "type": "item",
+    "item_id": "13dda184-9f26-40f8-9c75-8ebe154050bb"
+  },
+  "24 boneless wings": {
+    "type": "item",
+    "item_id": "72a8354f-2178-4b61-b5d4-a3114756b4d0"
+  },
+  "16 boneless wings": {
+    "type": "item",
+    "item_id": "34edc35f-b4e0-4212-9d15-95ac8e3a7503"
+  },
+  "8 boneless wings": {
+    "type": "item",
+    "item_id": "20868513-a90a-40ac-b020-3ae27aecb8fa"
+  },
+  "24 wings": {
+    "type": "item",
+    "item_id": "170ba7e6-26b4-4fee-9ea5-159ad78e9800"
+  },
+  "16 wings": {
+    "type": "item",
+    "item_id": "99f51fc4-065a-4c99-b4a3-3df9b70c7a08"
+  },
+  "8 wings": {
+    "type": "item",
+    "item_id": "1605c146-72ea-47c5-aa0e-95759a3ec664"
+  },
+  "salmon roll": {
+    "type": "item",
+    "item_id": "7d2bb727-b391-47e2-b43f-c46af9dc4ca8"
+  },
+  "rainbow roll": {
+    "type": "item",
+    "item_id": "eb4db82e-0a41-45bc-b413-c76e4858923a"
+  },
+  "california roll": {
+    "type": "item",
+    "item_id": "1b5357a4-b028-4c3e-8b3a-84cbac8bcb29"
+  },
+  "spicy salmon roll": {
+    "type": "item",
+    "item_id": "8efa986c-31d4-4d78-b504-f95d9a82a145"
+  },
+  "spicy tuna roll": {
+    "type": "item",
+    "item_id": "f293f0b5-9269-4b3a-8090-e05e576ea14f"
+  },
+  "tuna roll": {
+    "type": "item",
+    "item_id": "3d95b2b7-f950-4a7b-8011-139e3882077b"
+  },
+  "alaska roll": {
+    "type": "item",
+    "item_id": "e45687c8-e9ad-4c7a-adc7-81c1e58ca42a"
+  },
+  "double bacon burger": {
+    "type": "item",
+    "item_id": "40a02752-f6e7-459e-879d-aa0bf0672bae"
+  },
+  "cheese burger": {
+    "type": "item",
+    "item_id": "3f42bccf-2b9c-49cf-b371-6a5c38f87b73"
+  },
+  "fish dinner": {
+    "type": "item",
+    "item_id": "459c0fc9-7c3b-40a9-82f3-8e0ad00efde4"
+  },
+  "8 nuggets and fries": {
+    "type": "item",
+    "item_id": "b5b49bd6-f439-47fa-8487-09b7c0e2b176"
+  },
+  "steak burrito": {
+    "type": "item",
+    "item_id": "7d79f3e8-9ce9-4958-9ac2-63021bbb0540"
+  },
+  "fried rice": {
+    "type": "item",
+    "item_id": "d14a2d3b-b87d-4e9d-b10c-a4ba16df34f7"
+  },
+  "chicken wrap": {
+    "type": "item",
+    "item_id": "eebb5667-fc66-400c-a1cb-f5e509ec27dd"
+  },
+  "cashew shrimp": {
+    "type": "item",
+    "item_id": "74bd510a-14eb-4507-bbf9-500fa1eb7d3a"
+  },
+  "korean tacos - spicy chicken": {
+    "type": "item",
+    "item_id": "f2544785-4d89-439e-9154-f6709c3e1a0d"
+  },
+  "hummus": {
+    "type": "item",
+    "item_id": "886d727a-85ef-438a-83ad-2529523bf15e"
+  },
+  "cheese garlic bread": {
+    "type": "item",
+    "item_id": "64abbb00-1003-4c54-acb8-223c10e56cda"
+  },
+  "loaded fries": {
+    "type": "item",
+    "item_id": "01983ede-632d-4099-bbd5-8f53ce396bde"
+  },
+  "calamari": {
+    "type": "item",
+    "item_id": "6f1c13ed-7957-440e-9983-f56eab8e6d92"
+  },
+  "wisconsin fried cheese curds": {
+    "type": "item",
+    "item_id": "741e8e51-a607-4d73-88c3-ebfe6c94de37"
+  },
+  "jalapeno poppers": {
+    "type": "item",
+    "item_id": "67f66486-2ed2-4f6e-8bb5-d09bc4a1946f"
+  },
+  "spinach and artichoke dip": {
+    "type": "item",
+    "item_id": "f4f5dd65-3bdb-467b-bed3-095da82290ab"
+  },
+  "loco nachos": {
+    "type": "item",
+    "item_id": "1ceac2d7-350e-4e04-bfa8-11c40e2c6223"
+  },
+  "pot stickers": {
+    "type": "item",
+    "item_id": "dbe2bacd-26de-420f-b2a5-6241978c1d39"
+  },
+  "bbq chicken pizza": {
+    "type": "item",
+    "item_id": "47d75359-75ab-4e9a-a036-5c8594723010"
+  },
+  "hawaiian pizza": {
+    "type": "item",
+    "item_id": "e549d096-176c-402b-8d0d-9cf424dbaa4e"
+  },
+  "all meat pizza": {
+    "type": "item",
+    "item_id": "c373693e-d505-4026-b61b-6def39b70e3f"
+  },
+  "apple pie a la mode": {
+    "type": "item",
+    "item_id": "f3fc8404-a9c8-4aed-bf82-901ed731d7b1"
+  },
+  "strawberry shake": {
+    "type": "item",
+    "item_id": "da303233-9682-4a2f-8746-dfb9725236f6"
+  },
+  "chocolate shake": {
+    "type": "item",
+    "item_id": "edc23d01-846a-4176-9bae-9cfc631dfcb7"
+  },
+  "vanilla shake": {
+    "type": "item",
+    "item_id": "b1387a54-6804-41aa-8820-75836f44dba2"
+  },
+  "decaf coffee": {
+    "type": "item",
+    "item_id": "30e4f527-f5f8-4f86-80a0-ef76098d72e9"
+  },
+  "coffee": {
+    "type": "item",
+    "item_id": "cd8e8dfb-ce05-4582-bae9-ead39d8feadf"
+  },
+  "side of plain gravy": {
+    "type": "item",
+    "item_id": "c7fc3fdf-5682-4473-8b93-fe42d1de2b4f"
+  },
+  "breakfast special": {
+    "type": "item",
+    "item_id": "52baf600-b589-47f0-b6df-3287522310f8"
+  },
+  "grits": {
+    "type": "item",
+    "item_id": "6856ad06-f571-4f26-83d7-c091e8089568"
+  },
+  "side of sausage": {
+    "type": "item",
+    "item_id": "f886a507-4070-4e11-ba19-0963939dbb9b"
+  },
+  "hasbrowns": {
+    "type": "item",
+    "item_id": "7b26df56-42c3-4ffb-9242-60e2c5c76c58"
+  },
+  "steak plate": {
+    "type": "item",
+    "item_id": "825070a6-af01-4861-815e-aea51f1d284a"
+  },
+  "sausage plate": {
+    "type": "item",
+    "item_id": "e2702a79-60c3-4aca-a4d6-ae7866954972"
+  },
+  "ham plate": {
+    "type": "item",
+    "item_id": "bf7bcab3-a709-4c2f-abff-410060eb5fb5"
+  },
+  "side of sausage gravy": {
+    "type": "item",
+    "item_id": "efec63b7-8430-4a91-9700-c5f35c9f81cd"
+  },
+  "cheese grits": {
+    "type": "item",
+    "item_id": "6f77bbe0-b305-4be0-a512-340b3c9d33a8"
+  },
+  "side of tenderloin": {
+    "type": "item",
+    "item_id": "fa26abcd-2a74-43c6-bb06-ac5f651a7849"
+  },
+  "side of ham": {
+    "type": "item",
+    "item_id": "371c1d76-1cad-45fc-8c65-a8b2778c3194"
+  },
+  "ribeye combo": {
+    "type": "item",
+    "item_id": "f9b810cb-eac8-40e8-b956-3521ed0aacee"
+  },
+  "blt combo": {
+    "type": "item",
+    "item_id": "f806e1a8-0e45-4dd9-a8a2-73d48fccae25"
+  },
+  "sausage egg & cheese biscuit": {
+    "type": "item",
+    "item_id": "f94da5f8-1dd9-40cc-a474-73f5df1bc6ae"
+  },
+  "sausage & egg biscuit": {
+    "type": "item",
+    "item_id": "967afea7-cb4e-4437-a766-0a2219714c79"
+  },
+  "sausage biscuit": {
+    "type": "item",
+    "item_id": "c215cf22-941e-407f-b4f2-29a37b25fa54"
+  },
+  "small ham egg & cheese biscuit": {
+    "type": "item",
+    "item_id": "59a6452b-ef48-4c35-b2cd-ec9688230794"
+  },
+  "ham egg & cheeze biscuit": {
+    "type": "item",
+    "item_id": "8a7ae415-8cfe-4469-84df-8b0f65248fa8"
+  },
+  "small ham & egg biscuit": {
+    "type": "item",
+    "item_id": "6bdc52b1-81ae-4018-84cd-460a45453936"
+  },
+  "ham & egg biscuit": {
+    "type": "item",
+    "item_id": "3a2504b8-736e-42b1-a4fc-5bd275c3befb"
+  },
+  "small ham biscuit": {
+    "type": "item",
+    "item_id": "4f6cb47a-688c-4126-a3c9-f5e43e7b73bc"
+  },
+  "ham biscuit": {
+    "type": "item",
+    "item_id": "09a0540e-c088-428e-8d44-c6c0c07abcac"
+  },
+  "burger combo": {
+    "type": "item",
+    "item_id": "5f124af2-a6d2-4f6b-b982-cb7c968d705a"
+  },
+  "well done": {
+    "type": "modifier",
+    "modifier_id": "524d42d4-d7a8-47c2-aefb-b0ffcd33c176",
+    "group_id": "9a0b73b5-0935-435a-8029-24071f0d2121"
+  },
+  "crispy": {
+    "type": "modifier",
+    "modifier_id": "212e0f37-4be4-4b71-bd81-6aaf32f51424",
+    "group_id": "9a0b73b5-0935-435a-8029-24071f0d2121"
+  },
+  "cut": {
+    "type": "modifier",
+    "modifier_id": "29ca2f28-906a-46d9-8ca7-2ea7135ff1a4",
+    "group_id": "9a0b73b5-0935-435a-8029-24071f0d2121"
+  },
+  "plain": {
+    "type": "modifier",
+    "modifier_id": "014fa0c5-eff5-4623-8275-84beec245bb1",
+    "group_id": "9a0b73b5-0935-435a-8029-24071f0d2121"
+  },
+  "burger": {
+    "type": "item",
+    "item_id": "7d757545-aeb5-4a68-8760-b2a010427edb"
+  },
+  "asian chicken salad": {
+    "type": "item",
+    "item_id": "461dfed6-20f6-499f-9abc-075cc342ff13"
+  },
+  "southwest salad": {
+    "type": "item",
+    "item_id": "cb07a74c-6714-4a2a-80c5-424dd1b7ffc8"
+  },
+  "tuna salad": {
+    "type": "item",
+    "item_id": "ae5033f1-b94f-490f-b2ad-78896512a3a3"
+  },
+  "chicken caesar": {
+    "type": "item",
+    "item_id": "b8f73f64-3c5d-474a-bc4d-75bbf1c919c7"
+  },
+  "garlic bread": {
+    "type": "item",
+    "item_id": "d58e23f6-6876-4c00-a5ed-c507634070e3"
+  },
+  "nachos": {
+    "type": "item",
+    "item_id": "ec6d5b53-98da-4c29-8af8-4db914d129b2"
+  },
+  "wings (10 pcs)": {
+    "type": "item",
+    "item_id": "f4541fa1-3126-4dc2-9f10-23414e7d607a"
+  },
+  "mozzarella sticks": {
+    "type": "item",
+    "item_id": "72dbe8ea-ef63-4fca-86df-97e28a9595de"
+  },
+  "ice cream sundae": {
+    "type": "item",
+    "item_id": "10a8918c-d9f5-4759-aea4-1413926ff992"
+  },
+  "apple pie": {
+    "type": "item",
+    "item_id": "35407cfd-91b8-4147-bc9a-b1f4546aff7a"
+  },
+  "linguine carbonara": {
+    "type": "item",
+    "item_id": "36935dad-00dc-4276-b6df-528bb0e71c9a"
+  },
+  "mac & cheese": {
+    "type": "item",
+    "item_id": "f156c5b7-60be-4cc3-a62b-0616414b50b1"
+  },
+  "penne arrabiata": {
+    "type": "item",
+    "item_id": "08328439-3967-4189-9389-100180102404"
+  },
+  "fettuccine alfredo": {
+    "type": "item",
+    "item_id": "e66e12d0-e6c8-4942-9eff-3039ccf540d3"
+  },
+  "spaghetti & meatballs": {
+    "type": "item",
+    "item_id": "f96f9566-d95a-4126-b7d2-1d98da7c3e95"
+  },
+  "quinoa bowl": {
+    "type": "item",
+    "item_id": "9ada7861-ba60-4ce5-b05e-62cb7ba13023"
+  },
+  "garden salad": {
+    "type": "item",
+    "item_id": "2b3751d9-8a59-4036-b871-86f7f01c7b4c"
+  },
+  "cobb salad": {
+    "type": "item",
+    "item_id": "49c243bb-d81a-45af-884a-b9a25128fb58"
+  },
+  "greek salad": {
+    "type": "item",
+    "item_id": "e9eef04a-d300-4ad2-ab84-476d83db5cb5"
+  },
+  "caesar salad": {
+    "type": "item",
+    "item_id": "1624e113-e727-4232-bf3c-d0aac9a9ad28"
+  },
+  "tuna melt": {
+    "type": "item",
+    "item_id": "6b455da4-1735-4a94-9636-30b30e87d857"
+  },
+  "veggie wrap": {
+    "type": "item",
+    "item_id": "868c1c2c-cd89-49a1-9b2d-300e37e36c33"
+  },
+  "blt sandwich": {
+    "type": "item",
+    "item_id": "5ae3a4f0-0cd0-42ae-a23e-808745246e68"
+  },
+  "omelette": {
+    "type": "item",
+    "item_id": "d144a268-2907-40a2-9faf-545dcbd497b4"
+  },
+  "french toast": {
+    "type": "item",
+    "item_id": "14d919f0-65d4-42eb-9de7-b7f1e6c8c1e1"
+  },
+  "breakfast burrito": {
+    "type": "item",
+    "item_id": "f6693938-ce55-4ceb-8abd-082ead8aff80"
+  },
+  "eggs benedict": {
+    "type": "item",
+    "item_id": "daf97ffd-c1b6-477d-b015-68d5899eaba4"
+  },
+  "classic pancakes": {
+    "type": "item",
+    "item_id": "68f028a8-d87e-431e-949d-a2f0df80e9ab"
+  },
+  "cold brew": {
+    "type": "item",
+    "item_id": "7d7a079d-424f-45d0-9058-83cecc5decb4"
+  },
+  "frappe": {
+    "type": "item",
+    "item_id": "4982e27c-50e2-40f9-b7bd-75d9c635ee6b"
+  },
+  "iced coffee": {
+    "type": "item",
+    "item_id": "8006cdc5-3023-4142-afdc-308767ff19d8"
+  },
+  "iced latte": {
+    "type": "item",
+    "item_id": "a0ee523c-c257-4b69-ae8e-b8ebb70d4c07"
+  },
+  "hot chocolate": {
+    "type": "item",
+    "item_id": "0f0def50-8509-409e-a4c8-e376923927e9"
+  },
+  "americano": {
+    "type": "item",
+    "item_id": "c68f0952-4a03-49d2-b033-1365e22ddc1d"
+  },
+  "caf\u00e9 latte": {
+    "type": "item",
+    "item_id": "8ea1a140-811d-4034-8158-82531572077f"
+  },
+  "cappuccino": {
+    "type": "item",
+    "item_id": "c91f467c-10e3-465b-8205-3a5c4de98c54"
+  }
+}

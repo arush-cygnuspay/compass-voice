@@ -41,7 +41,15 @@ import logging
 import re
 from typing import Iterable, Sequence
 
+from app.nlu.modifier_instructions import (
+    Action as _MIAction,
+    Instruction as _MIInstruction,
+    ModifierIntent,
+    parse_phrase as _parse_modifier_phrase,
+    priority as _modifier_priority,
+)
 from app.nlu.nlu_result import SlotValue
+from app.nlu.order_scaffolding import ORDER_FILLER_TOKENS
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.handlers.item.add_item.option_matching import (
     score_scoped_choice,
@@ -84,29 +92,26 @@ _BRIDGE_TOKENS: frozenset[str] = frozenset(
 )
 
 # Pure structural fillers that should never become standalone candidates.
-_IGNORED_LEADING_WORDS: frozenset[str] = frozenset(
+# Derived from the shared ORDER_FILLER_TOKENS set plus a few connector/bridge
+# tokens that are specific to the phrase-mining context.
+_IGNORED_LEADING_WORDS: frozenset[str] = ORDER_FILLER_TOKENS | frozenset(
     {
-        "a", "an", "the",
-        "i", "id", "ill", "im",
-        "want", "would", "like", "get", "have", "take", "bring", "make",
-        "please", "just", "also", "and", "with",
-        "um", "uh", "okay", "ok",
+        "id", "ill", "im",
+        "with", "plus", "also",
+        "also", "bring", "make",
+        "um", "uh",
     }
 )
 
-# Modifier instruction prefixes. Order matters: longest first so
-# "hold the" wins over "hold".
-_REMOVE_PREFIXES: tuple[str, ...] = (
-    "hold the ",
-    "hold ",
-    "remove the ",
-    "remove ",
-    "without ",
-    "no ",
+# Modifier instruction prefixes/suffixes are owned by app.nlu.modifier_instructions.
+# Re-exported here for back-compat with any external import; new code should
+# import from the canonical module.
+from app.nlu.modifier_instructions import (
+    REMOVE_PREFIXES as _REMOVE_PREFIXES,
+    EXTRA_PREFIXES as _EXTRA_PREFIXES,
+    LESS_PREFIXES as _LESS_PREFIXES,
+    ON_SIDE_SUFFIXES as _ON_SIDE_SUFFIXES,
 )
-_EXTRA_PREFIXES: tuple[str, ...] = ("extra ", "more ", "double ")
-_LESS_PREFIXES: tuple[str, ...] = ("less ", "light ")
-_ON_SIDE_SUFFIXES: tuple[str, ...] = (" on the side", " on side")
 
 
 # ─── Public types ────────────────────────────────────────────────────────────
@@ -235,26 +240,60 @@ class MultiGroupPrefillEngine:
         slots: Sequence[SlotValue],
         pending: PendingAddItem,
     ) -> list[CandidatePhrase]:
-        seen: set[str] = set()
+        # Index by target text so we can UPGRADE an earlier-emitted bare
+        # candidate ("cheese") with a later instruction-bearing one
+        # ("extra cheese", "no cheese"). REMOVE wins over EXTRA wins over
+        # LESS wins over ON_SIDE wins over plain ADD — see
+        # `modifier_instructions.priority`.
+        target_to_index: dict[str, int] = {}
         phrases: list[CandidatePhrase] = []
+
+        def _phrase_priority(phrase: CandidatePhrase) -> int:
+            try:
+                action = _MIAction(phrase.action) if phrase.action else _MIAction.ADD
+            except ValueError:
+                action = _MIAction.ADD
+            try:
+                inst = (
+                    _MIInstruction(phrase.instruction)
+                    if phrase.instruction
+                    else _MIInstruction.NONE
+                )
+            except ValueError:
+                inst = _MIInstruction.NONE
+            return _modifier_priority(
+                ModifierIntent(
+                    action=action,
+                    instruction=inst,
+                    target=phrase.text,
+                    raw=phrase.raw,
+                )
+            )
 
         def add(raw: str, source: str) -> None:
             cleaned = self._clean_phrase(raw)
             if cleaned is None:
                 return
             target_text = cleaned["target"]
-            if not target_text or target_text in seen:
+            if not target_text:
                 return
-            seen.add(target_text)
-            phrases.append(
-                CandidatePhrase(
-                    text=target_text,
-                    raw=raw,
-                    action=cleaned["action"],
-                    instruction=cleaned["instruction"],
-                    source=source,
-                )
+            new_phrase = CandidatePhrase(
+                text=target_text,
+                raw=raw,
+                action=cleaned["action"],
+                instruction=cleaned["instruction"],
+                source=source,
             )
+            existing_idx = target_to_index.get(target_text)
+            if existing_idx is None:
+                target_to_index[target_text] = len(phrases)
+                phrases.append(new_phrase)
+                return
+            # Same target seen before — keep the higher-priority instruction
+            # so "extra cheese" beats a prior bare "cheese" slot mention,
+            # and a later "no cheese" beats an "extra cheese" emission.
+            if _phrase_priority(new_phrase) > _phrase_priority(phrases[existing_idx]):
+                phrases[existing_idx] = new_phrase
 
         # 2a. Slot values — labels are advisory only; we accept them all
         #     except the slot that anchors *this* item.
@@ -380,45 +419,26 @@ class MultiGroupPrefillEngine:
         """
         Parse a raw candidate into {action, instruction, target}.
 
+        Delegates instruction parsing (no/extra/less/on_side/add) to the
+        canonical module ``app.nlu.modifier_instructions`` so that every
+        resolver and response site uses the same lexicon and the same
+        precedence rules.
+
         Returns None for empty / pure-filler input.
         """
-        text = (raw or "").strip()
-        if not text:
+        intent = _parse_modifier_phrase(raw)
+        if intent is None:
             return None
 
-        action = "add"
-        instruction: str | None = None
-
-        for prefix in _REMOVE_PREFIXES:
-            if text.startswith(prefix):
-                text = text[len(prefix):].strip()
-                action = "remove"
-                break
-
-        if action == "add":
-            for prefix in _EXTRA_PREFIXES:
-                if text.startswith(prefix):
-                    text = text[len(prefix):].strip()
-                    instruction = "extra"
-                    break
-        if action == "add" and instruction is None:
-            for prefix in _LESS_PREFIXES:
-                if text.startswith(prefix):
-                    text = text[len(prefix):].strip()
-                    instruction = "less"
-                    break
-        if action == "add" and instruction is None:
-            for suffix in _ON_SIDE_SUFFIXES:
-                if text.endswith(suffix):
-                    text = text[: -len(suffix)].strip()
-                    instruction = "on_side"
-                    break
-
-        text = cls._strip_leading_filler(text)
-        if not text or all(t in _IGNORED_LEADING_WORDS for t in text.split()):
+        target = cls._strip_leading_filler(intent.target)
+        if not target or all(t in _IGNORED_LEADING_WORDS for t in target.split()):
             return None
 
-        return {"action": action, "instruction": instruction, "target": text}
+        return {
+            "action": intent.action.value,
+            "instruction": intent.instruction.value or None,
+            "target": target,
+        }
 
     # ── Step 3: best binding across all groups ─────────────────────────────
     def _best_binding_across_groups(

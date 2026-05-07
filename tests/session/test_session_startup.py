@@ -27,12 +27,10 @@ class SessionStartupStateTests(unittest.TestCase):
             ConversationState.WAITING_FOR_ORDER_TYPE,
         )
 
-    def test_session_default_state_is_not_device_type(self):
-        session = Session(session_id="s1", restaurant_id="demo")
-        self.assertNotEqual(
-            session.conversation_state,
-            ConversationState.WAITING_FOR_CALLER_DEVICE_TYPE,
-        )
+    def test_enum_does_not_contain_dead_device_type_states(self):
+        state_names = {s.name for s in ConversationState}
+        self.assertNotIn("WAITING_FOR_CALLER_DEVICE_TYPE", state_names)
+        self.assertNotIn("WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION", state_names)
 
     def test_new_order_type_session_starts_at_order_type(self):
         session = _new_order_type_session("call-abc", "demo")

@@ -185,7 +185,7 @@ def test_flow_sets_state_group_imports():
     assert len(ORDER_FLOW_STATES) == 2
     assert len(DELIVERY_GATING_STATES) == 2
     assert len(MID_ITEM_BLOCKING_STATES) == 8
-    assert len(ACTIVE_TASK_STATES) == 16
+    assert len(ACTIVE_TASK_STATES) == 14
 
 
 def test_flow_sets_intent_policy_imports():

@@ -93,7 +93,6 @@ _EXPECTED_HANDLER_NAMES = {
     "cancellation_confirmation_handler",
     "ask_menu_info_handler",
     "ask_price_handler",
-    "waiting_for_caller_device_type_handler",
     "waiting_for_order_type_handler",
     "waiting_for_delivery_eligibility_handler",
     "waiting_for_delivery_address_collection_handler",

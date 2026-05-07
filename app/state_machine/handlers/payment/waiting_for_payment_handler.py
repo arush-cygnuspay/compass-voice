@@ -22,9 +22,7 @@ from app.state_machine.handlers.payment.payment_flow_support import (
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.phase3_controls import is_live_agent_request
-from app.state_machine.handlers.system.waiting_for_caller_device_type_handler import (
-    HUMAN_AGENT_TRANSFER_NUMBER,
-)
+from app.config.voice_transfer import HUMAN_AGENT_TRANSFER_NUMBER
 
 
 class WaitingForPaymentHandler(BaseHandler):

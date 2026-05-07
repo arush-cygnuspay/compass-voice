@@ -78,3 +78,19 @@ class TurnEvent:
     route_ms: float | None = None
     handler_ms: float | None = None
     total_ms: float | None = None
+
+    # ── Extended diagnostics (additive — all optional) ────────────────────
+    # raw_slots mirrors `slots` for now; reserved for pre-coercion slot list.
+    raw_slots: tuple[Any, ...] | None = None
+    # Slots after any coercion / normalization applied by FlowGate.
+    effective_slots: tuple[Any, ...] | None = None
+    # The FSM state scope that was active when slot resolution ran
+    # (e.g. "idle", "waiting_for_side", "waiting_for_modifier").
+    active_resolution_scope: str | None = None
+    # Entity type/id resolved during this turn (e.g. "item" / item_id).
+    resolved_entity_type: str | None = None
+    resolved_entity_id: str | None = None
+    # Why StateRouter chose the route it did (stamped by FlowGate/StateRouter).
+    route_reason: str | None = None
+    # Why the effective intent was rewritten (stamped by IntentCoercionPolicy).
+    coercion_reason: str | None = None

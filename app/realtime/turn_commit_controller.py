@@ -11,6 +11,7 @@ from app.state_machine.flow_sets import looks_like_done_answer
 @dataclass(slots=True)
 class CommittedTurn:
     text: str
+    turn_id: int = 0
 
 
 @dataclass(slots=True)
@@ -19,9 +20,13 @@ class TurnCommitController:
     Aggregates streaming transcript events into a single committed user turn.
 
     Strategy:
-    - keep speech_final / utterance_end as the primary safe commit path
-    - allow early commit only for a very small whitelist of obviously complete replies
-    - avoid duplicate commits for the same utterance and repeated text
+    - speech_final / utterance_end are the primary commit signals
+    - early commit is limited to a small whitelist of obviously-complete
+      single-utterance replies (yes/no/ok/cancel/checkout)
+    - terminal punctuation alone does NOT trigger early commit — that was the
+      main cause of split utterances like "chicken burger … with cheese"
+    - a debounce timer (USER_TURN_COMMIT_DELAY_MS) is managed externally by
+      voice_stream_server.py to handle the gap between consecutive finals
 
     Important:
     This controller is intentionally conservative for voice ordering flows.
@@ -40,6 +45,7 @@ class TurnCommitController:
     utterance_active: bool = False
     committed_in_current_utterance: bool = False
     last_committed_text: str = ""
+    _turn_counter: int = field(default=0)
 
     def on_speech_started(self) -> None:
         # Duplicate suppression is only valid within a single utterance.
@@ -84,7 +90,8 @@ class TurnCommitController:
             return None
 
         self.last_committed_text = text
-        return CommittedTurn(text=text)
+        self._turn_counter += 1
+        return CommittedTurn(text=text, turn_id=self._turn_counter)
 
     def reset(self) -> None:
         self._clear_buffers()
@@ -108,16 +115,11 @@ class TurnCommitController:
 
     def _should_commit_early(self) -> bool:
         """
-        Early-commit only when the current final transcript is extremely likely
-        to be a fully complete reply.
+        Early-commit only for a narrow whitelist of obviously complete replies.
 
-        Conservative rules:
-        - terminal punctuation => safe
-        - exact whitelist of confirmation/control replies => safe
-        - otherwise wait for speech_final / utterance_end
-
-        This avoids cutting off users who are still speaking option answers
-        inside add-item flows.
+        Terminal punctuation alone is NOT sufficient — it caused premature
+        splits on multi-fragment utterances like "chicken burger. with cheese."
+        The debounce timer in voice_stream_server.py handles the general case.
         """
         if self.committed_in_current_utterance:
             return False
@@ -130,9 +132,6 @@ class TurnCommitController:
             return False
 
         normalized = normalize_text(built)
-
-        if built[-1:] in {".", "!", "?"}:
-            return True
 
         safe_exact_replies = {
             "yes",
