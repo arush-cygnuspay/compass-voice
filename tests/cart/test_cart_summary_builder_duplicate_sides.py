@@ -3,7 +3,8 @@
 
 Verifies that sides stored as repeated IDs in CartItem.sides are:
 1. Priced once per occurrence (not once per unique ID).
-2. Displayed with "x2" / "x3" multiplier labels.
+2. Displayed with "{count} {name}" labels (e.g. "2 Coke") — never "Coke x2"
+   so the TTS engine reads "two Coke" rather than "Coke ex two".
 3. Grouped correctly with other cart items that have the same duplicate pattern.
 """
 from types import SimpleNamespace
@@ -158,30 +159,39 @@ class TestDuplicateSideDisplayLabels:
 
         assert summary["items"][0]["sides"] == ["Coke"]
 
-    def test_two_same_sides_shows_x2(self):
+    def test_two_same_sides_shows_count_prefix(self):
+        """Duplicate sides render as '2 Coke', never 'Coke x2' (bad for TTS)."""
         menu_item = _make_menu_item()
         cart_item = _make_cart_item(sides={"drinks": ["coke", "coke"]})
         summary = CartSummaryBuilder(_FakeMenuRepo(menu_item)).build(_FakeCart([cart_item]))
 
-        assert summary["items"][0]["sides"] == ["Coke x2"]
+        sides = summary["items"][0]["sides"]
+        assert sides == ["2 Coke"]
+        # Regression guard: no "x" notation must appear
+        assert all("x" not in s for s in sides)
 
-    def test_three_same_sides_shows_x3(self):
+    def test_three_same_sides_shows_count_prefix(self):
+        """Three duplicate sides render as '3 Coke', never 'Coke x3'."""
         menu_item = _make_menu_item()
         cart_item = _make_cart_item(sides={"drinks": ["coke", "coke", "coke"]})
         summary = CartSummaryBuilder(_FakeMenuRepo(menu_item)).build(_FakeCart([cart_item]))
 
-        assert summary["items"][0]["sides"] == ["Coke x3"]
+        sides = summary["items"][0]["sides"]
+        assert sides == ["3 Coke"]
+        assert all("x" not in s for s in sides)
 
     def test_mixed_sides_correct_labels(self):
         menu_item = _make_menu_item()
         cart_item = _make_cart_item(sides={"drinks": ["coke", "coke", "sprite"]})
         summary = CartSummaryBuilder(_FakeMenuRepo(menu_item)).build(_FakeCart([cart_item]))
 
-        # Sprite appears once → no multiplier; Coke twice → "Coke x2"
+        # Sprite appears once → no prefix; Coke twice → "2 Coke"
         sides = summary["items"][0]["sides"]
-        assert "Coke x2" in sides
+        assert "2 Coke" in sides
         assert "Sprite" in sides
-        assert "Sprite x1" not in sides
+        # No "x" notation anywhere — regression guard
+        assert not any("x" in s for s in sides)
+        assert "1 Sprite" not in sides  # single items carry no count prefix
 
     def test_two_different_sides_no_multiplier(self):
         menu_item = _make_menu_item()

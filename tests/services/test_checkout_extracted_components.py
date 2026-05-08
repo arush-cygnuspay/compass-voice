@@ -293,6 +293,9 @@ class _FakeContext:
     def reset(self):
         self._reset_called = True
 
+    def reset_session_scope(self):
+        self._reset_called = True
+
 
 class _FakeCart:
     def __init__(self):

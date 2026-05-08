@@ -274,4 +274,6 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
         side_choice_by_item_id=side_choice_by_item_id,
         modifier_groups_by_id=modifier_groups_by_id,
         modifier_choice_by_id=modifier_choice_by_id,
+        item_aliases=tuple(getattr(item, "normalized_aliases", None) or ()),
+        item_voice_labels=tuple(getattr(item, "voice_labels", None) or ()),
     )

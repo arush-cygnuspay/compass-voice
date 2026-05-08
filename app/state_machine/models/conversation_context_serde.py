@@ -121,13 +121,22 @@ def _pending_modifier_group_to_dict(value: PendingModifierGroup) -> dict:
 
 
 def _pending_add_item_to_dict(value: PendingAddItem) -> dict:
-    return {
+    d: dict = {
         "item_id": value.item_id,
         "item_name": value.item_name,
         "item_variants": [_pending_variant_to_dict(v) for v in value.item_variants],
         "side_groups": [_pending_side_group_to_dict(g) for g in value.side_groups],
         "modifier_groups": [_pending_modifier_group_to_dict(g) for g in value.modifier_groups],
     }
+    # Persist alias/voice-label fields so resumed sessions still suppress
+    # resolved-item phrases from "I couldn't find" feedback.
+    item_aliases = getattr(value, "item_aliases", ())
+    item_voice_labels = getattr(value, "item_voice_labels", ())
+    if item_aliases:
+        d["item_aliases"] = list(item_aliases)
+    if item_voice_labels:
+        d["item_voice_labels"] = list(item_voice_labels)
+    return d
 
 
 def _modifier_selection_to_dict(value: ModifierSelection) -> dict:
@@ -294,6 +303,9 @@ def _pending_add_item_from_dict(data: dict) -> PendingAddItem:
         side_choice_by_item_id=side_choice_by_item_id,
         modifier_groups_by_id=modifier_groups_by_id,
         modifier_choice_by_id=modifier_choice_by_id,
+        # Legacy payloads default to empty tuples — safe for mid-session upgrades.
+        item_aliases=tuple(data.get("item_aliases") or ()),
+        item_voice_labels=tuple(data.get("item_voice_labels") or ()),
     )
 
 

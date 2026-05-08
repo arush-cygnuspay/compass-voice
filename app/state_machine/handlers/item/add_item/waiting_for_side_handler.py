@@ -50,6 +50,10 @@ from app.state_machine.flow_sets import (
 from app.utils.token_matcher import tokenize
 from app.nlu.control_phrase_classifier import DEFAULT_CLASSIFIER
 from app.nlu.utterance_filter import DEFAULT_FILTER
+from app.state_machine.handlers.item.add_item.waiting_state_interruption_policy import (
+    InterruptionDecision,
+    evaluate_waiting_side_interruption,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,7 +351,7 @@ class WaitingForSideHandler(GroupResolutionHandler):
         # Build raw slot counts (before deduplication) so the resolver can
         # repeat a matched ID when the same side slot appears multiple times
         # in one utterance (e.g. "Coke, Coke" → 2 SIDE=coke slots → 2 Cokes).
-        allow_dupes = getattr(group, "allow_duplicate_selections", True)
+        allow_dupes = bool(getattr(group, "allow_duplicate_selections", False))
         slot_value_counts: dict[str, int] | None = None
         if allow_dupes:
             raw_slot_values = [
@@ -441,6 +445,30 @@ class WaitingForSideHandler(GroupResolutionHandler):
                 unmatched_names=filtered_unmatched,
             )
 
+        # ── Waiting-state interruption policy ─────────────────────────────────
+        # Only reached when the resolver AND carry-prefill both found nothing.
+        # Detect new-item utterances ("I want X", "could I get a X", …) that
+        # should be blocked rather than echoed back as invalid side answers
+        # when the current group is required and the min is not yet met.
+        _intr = evaluate_waiting_side_interruption(
+            normalized_user_text=normalize_text(normalized_user_text),
+            pending_item_name=pending.item_name,
+            group=group,
+            selected_count=len(existing_ids),
+        )
+        if _intr.decision == InterruptionDecision.BLOCK:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_SIDE,
+                response_key="block_new_item_until_required_done",
+                response_payload={
+                    **self._choice_payload(context, group),
+                    "pending_item_name": _intr.pending_item_name,
+                    "group_prompt_noun": _intr.group_prompt_noun,
+                    "remaining_to_min": _intr.remaining_to_min,
+                },
+            )
+        # ── END interruption policy ────────────────────────────────────────────
+
         if resolution.unmatched_values:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
@@ -490,7 +518,7 @@ class WaitingForSideHandler(GroupResolutionHandler):
         normalized_user_text: str,
         match_debug: dict[str, object] | None = None,
     ) -> HandlerResult:
-        allow_dupes = getattr(group, "allow_duplicate_selections", True)
+        allow_dupes = bool(getattr(group, "allow_duplicate_selections", False))
         existing_ids = list(context.selected_side_groups.get(group.group_id, []))
         if allow_dupes:
             # Preserve duplicate IDs — don't collapse repeated selections.
@@ -610,7 +638,7 @@ class WaitingForSideHandler(GroupResolutionHandler):
         )
 
     def _choice_payload(self, context: ConversationContext, group: PendingSideGroup) -> dict:
-        allow_dupes = getattr(group, "allow_duplicate_selections", True)
+        allow_dupes = bool(getattr(group, "allow_duplicate_selections", False))
         selected_ids = list(context.selected_side_groups.get(group.group_id, []))
         # selected_names with duplicate preservation for display
         selected_names = [

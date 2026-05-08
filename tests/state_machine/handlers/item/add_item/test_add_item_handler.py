@@ -28,6 +28,9 @@ class FakeMenuRepo:
     def find_near_miss_item_normalized(self, normalized_text, *, threshold=None):
         return None
 
+    def resolve_category_query_normalized(self, normalized_text, *, limit=5):
+        return []
+
 
 def make_item() -> MenuItem:
     return MenuItem(

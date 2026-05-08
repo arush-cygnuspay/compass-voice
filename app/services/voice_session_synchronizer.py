@@ -140,7 +140,12 @@ class VoiceSessionSynchronizer:
 
         # ---- order completion --------------------------------------
         if mark_completed or checkout_session.payment_completed:
+            # reset_session_scope() replaces context.delivery_address with a fresh
+            # DeliveryAddress(), discarding all the fields we just synced above.
+            # Restore the synced object afterward so consumers still see order_number,
+            # form_completed, confirmation_link, etc.
             context.reset_session_scope()
+            context.delivery_address = delivery
             voice_session.cart.clear()
             voice_session.conversation_state = ConversationState.COMPLETED
             voice_session.last_response_key = "order_completed"

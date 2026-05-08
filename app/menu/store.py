@@ -408,6 +408,20 @@ class MenuStore:
         stripped_number = self._strip_leading_menu_number(base)
         add(stripped_number)
 
+        # Unicode separator normalization: em dash (—), en dash (–), and
+        # related Unicode dashes are not in string.punctuation so they survive
+        # normalize_text.  Strip them so "Korean Tacos — Spicy Chicken" →
+        # "korean tacos spicy chicken" is also a valid voice label.
+        _UNICODE_DASH_RE = re.compile(r"[‐-―−—–﹘﹣－]")
+        _sep_stripped = _UNICODE_DASH_RE.sub(" ", stripped_number)
+        _sep_stripped = re.sub(r"\s+", " ", _sep_stripped).strip()
+        if _sep_stripped and _sep_stripped != stripped_number:
+            add(_sep_stripped)
+            add(_sep_stripped.replace("bbq", "barbecue"))
+            add(_sep_stripped.replace("barbecue", "bbq"))
+        else:
+            _sep_stripped = stripped_number  # No dashes — use original for compact join
+
         menu_number = self._leading_menu_number(base)
         if menu_number and stripped_number:
             stripped_tokens = [token for token in stripped_number.split() if token]
@@ -433,7 +447,11 @@ class MenuStore:
         # "doublebaconburger" matches "Double Bacon Burger".
         # Only do this for labels with 2+ tokens and total length >= 7
         # to avoid spurious joins of very short tokens.
-        _base_tokens = [t for t in stripped_number.split() if t]
+        # Use the separator-stripped form as the base so dashes don't embed
+        # in the compact join (e.g. "Korean Tacos — Spicy Chicken" should
+        # yield "koreanTacosspicychicken", not "koreanTacos—spicychicken").
+        _join_base = _sep_stripped if _sep_stripped else stripped_number
+        _base_tokens = [t for t in _join_base.split() if t]
         if len(_base_tokens) >= 2:
             joined = "".join(_base_tokens)
             if len(joined) >= 7:

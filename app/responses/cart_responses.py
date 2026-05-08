@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from app.core.quantity_formatter import format_item_quantity, parse_item_quantity
+from app.responses.item.format_utils import spoken_quantity_label
 
 
 def render_cart_summary(payload: dict) -> str:
@@ -54,7 +55,9 @@ def render_checkout_review_summary(payload: dict, order_type: str | None = None)
         if modifiers:
             config_parts.append("add " + ", ".join(modifiers))
 
-        line = f"{quantity} {name}"
+        # spoken_quantity_label: qty=1 → "Burger", qty=2 → "2 Burger".
+        # Never emits "x" notation.
+        line = spoken_quantity_label(quantity, name)
         if config_parts:
             line = f"{line}, " + ", ".join(config_parts)
 

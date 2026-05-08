@@ -165,7 +165,11 @@ class MultiGroupPrefillEngine:
 
         # 1. Strip item name from the segment so its own tokens don't
         #    contaminate option matching.
-        text_after_item = self._strip_item_name(segment_text, pending.item_name)
+        text_after_item = self._strip_item_name(
+            segment_text,
+            pending.item_name,
+            getattr(pending, "item_voice_labels", ()),
+        )
         result.debug["segment_text"] = segment_text
         result.debug["segment_text_after_item"] = text_after_item
 
@@ -217,20 +221,55 @@ class MultiGroupPrefillEngine:
 
     # ── Step 1: item-name strip ────────────────────────────────────────────
     @staticmethod
-    def _strip_item_name(segment_text: str, item_name: str) -> str:
+    def _strip_item_name(
+        segment_text: str,
+        item_name: str,
+        item_voice_labels: tuple[str, ...] = (),
+    ) -> str:
+        """Strip the item name (or a matching voice-label alias) from segment_text.
+
+        Tries the canonical name first, then each voice label in order.
+        Returns the segment with the first matching label removed, or the
+        full normalized text if nothing matches.
+        """
         normalized_text = normalize_text(segment_text or "")
-        normalized_item = normalize_text(item_name or "")
-        if not normalized_text or not normalized_item:
+        if not normalized_text:
             return normalized_text
+        normalized_item = normalize_text(item_name or "")
 
-        # Prefer prefix strip; fall back to in-text removal so "...with chicken
-        # taco's drink..." also drops the item name.
-        if normalized_text.startswith(normalized_item):
-            tail = normalized_text[len(normalized_item):].strip()
-            return tail or ""
+        def _try_strip(label: str) -> str | None:
+            """Attempt to remove *label* from *normalized_text*.
 
-        pattern = re.compile(rf"\b{re.escape(normalized_item)}\b")
-        return pattern.sub(" ", normalized_text, count=1).strip()
+            Returns the stripped result if the label was found, or None.
+            """
+            if not label:
+                return None
+            if normalized_text.startswith(label):
+                tail = normalized_text[len(label):].strip()
+                return tail or ""
+            try:
+                pattern = re.compile(rf"\b{re.escape(label)}\b")
+            except re.error:
+                return None
+            result = pattern.sub(" ", normalized_text, count=1).strip()
+            return result if result != normalized_text else None
+
+        # Try canonical name first.
+        if normalized_item:
+            stripped = _try_strip(normalized_item)
+            if stripped is not None:
+                return stripped
+
+        # Try voice labels (skip duplicates of the canonical name).
+        for label in item_voice_labels:
+            norm_label = normalize_text(label)
+            if not norm_label or norm_label == normalized_item:
+                continue
+            stripped = _try_strip(norm_label)
+            if stripped is not None:
+                return stripped
+
+        return normalized_text
 
     # ── Step 2: candidate phrase mining ────────────────────────────────────
     def _build_candidate_phrases(
@@ -686,13 +725,39 @@ class MultiGroupPrefillEngine:
         for binding in bindings:
             bound_tokens.update(tokenize(normalize_text(binding.option_name)))
             bound_tokens.update(tokenize(binding.candidate.text))
-        bound_tokens.update(tokenize(normalize_text(pending.item_name)))
+        bound_tokens.update(tokenize(normalize_text(getattr(pending, "item_name", "") or "")))
+
+        # Build item label norms (canonical name + aliases + voice labels) for
+        # exact-match suppression.  Both spaced and compact forms are indexed so
+        # that "cheeseburger" (compact ASR form) is suppressed when the item
+        # name is "Cheese Burger" and "cheeseburger" is a voice label.
+        item_label_norms: set[str] = set()
+        _item_norm = normalize_text(getattr(pending, "item_name", "") or "")
+        if _item_norm:
+            item_label_norms.add(_item_norm)
+            item_label_norms.add(_item_norm.replace(" ", ""))
+        for alias in (getattr(pending, "item_aliases", ()) or ()):
+            norm = normalize_text(alias)
+            if norm:
+                item_label_norms.add(norm)
+                item_label_norms.add(norm.replace(" ", ""))
+        for vl in (getattr(pending, "item_voice_labels", ()) or ()):
+            norm = normalize_text(vl)
+            if norm:
+                item_label_norms.add(norm)
+                item_label_norms.add(norm.replace(" ", ""))
 
         cleaned: list[str] = []
         seen: set[str] = set()
         for value in unresolved:
             normalized = normalize_text(value).strip()
             if not normalized or normalized in seen:
+                continue
+            # Suppress if it exactly matches any item label form.
+            if normalized in item_label_norms:
+                continue
+            compact = normalized.replace(" ", "")
+            if compact and compact in item_label_norms:
                 continue
             value_tokens = set(tokenize(normalized))
             if value_tokens and value_tokens.issubset(bound_tokens):

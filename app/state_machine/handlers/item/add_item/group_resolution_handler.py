@@ -32,7 +32,7 @@ def _spoken_modifiers_for(context: ConversationContext) -> list[str]:
     if pending is None:
         return []
     spoken: list[str] = []
-    for group in pending.modifier_groups:
+    for group in (getattr(pending, "modifier_groups", None) or []):
         for selection in context.selected_modifier_groups.get(group.group_id, []):
             phrase = _speak_modifier(
                 selection.name,

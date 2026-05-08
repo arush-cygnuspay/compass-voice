@@ -138,6 +138,8 @@ class CartSummaryBuilder:
                         label = f"{label} {variant_label}"
 
                 if count > 1:
+                    # Use "{count} {label}" so the voice TTS reads "2 Coke"
+                    # rather than "Coke x two" / "Coke ex 2".
                     label = f"{count} {label}"
                 labels.append(label)
 

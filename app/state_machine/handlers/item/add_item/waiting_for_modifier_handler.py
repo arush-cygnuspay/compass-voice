@@ -46,6 +46,10 @@ from app.state_machine.flow_sets import (
 from app.nlu.control_phrase_classifier import DEFAULT_CLASSIFIER
 from app.nlu.utterance_filter import DEFAULT_FILTER
 from app.nlu.query_normalization.text_preprocessor import normalize_text as _normalize_text
+from app.state_machine.handlers.item.add_item.waiting_state_interruption_policy import (
+    InterruptionDecision,
+    evaluate_waiting_modifier_interruption,
+)
 
 
 def _looks_like_done_answer(normalized_user_text: str) -> bool:
@@ -438,6 +442,30 @@ class WaitingForModifierHandler(GroupResolutionHandler):
                 step,
                 matched_names=carried.matched_names,
             )
+
+        # ── Waiting-state interruption policy ─────────────────────────────────
+        # Only reached when the resolver AND carry-prefill both found nothing.
+        # Detect new-item utterances ("I want X", "could I get a X", …) that
+        # should be blocked rather than echoed back as invalid modifier answers
+        # when the current group is required and the min is not yet met.
+        _intr = evaluate_waiting_modifier_interruption(
+            normalized_user_text=_normalize_text(normalized_user_text),
+            pending_item_name=pending.item_name,
+            group=group,
+            selected_count=len(existing_selections),
+        )
+        if _intr.decision == InterruptionDecision.BLOCK:
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_MODIFIER,
+                response_key="block_new_item_until_required_done",
+                response_payload={
+                    **self._choice_payload(group, existing_selections),
+                    "pending_item_name": _intr.pending_item_name,
+                    "group_prompt_noun": _intr.group_prompt_noun,
+                    "remaining_to_min": _intr.remaining_to_min,
+                },
+            )
+        # ── END interruption policy ────────────────────────────────────────────
 
         if resolution.unmatched_values:
             _sanitized_unmatched = DEFAULT_FILTER.strip_unmatched(

@@ -142,20 +142,29 @@ class TestRenderCartSummaryQuantity:
 
 class TestRenderCheckoutReviewSummaryQuantity:
     def test_integer_quantity(self):
+        """spoken_quantity_label(1, name) omits the leading '1' — TTS says 'Burger'."""
         payload = {"items": [{"quantity": 1, "name": "Burger"}], "total": "$8.00"}
         text = render_checkout_review_summary(payload)
-        assert "1 Burger" in text
+        # qty=1 → spoken_quantity_label returns just the name (no leading "1")
+        assert "Burger" in text
+        # Must never contain x-notation
+        assert "1 x Burger" not in text
+        assert " x " not in text
 
     def test_float_0_1_does_not_produce_zero(self):
         payload = {"items": [{"quantity": 0.1, "name": "Coke"}], "total": "$5.00"}
         text = render_checkout_review_summary(payload)
-        # Old bare int() cast gives "0 Coke"; formatter must give "1 Coke"
+        # Old bare int() cast gives "0 Coke"; formatter must give "Coke" (qty=1, no prefix)
         assert "0 Coke" not in text
-        assert "1 Coke" in text
+        # spoken_quantity_label(1, "Coke") → "Coke" (no leading 1 for singular)
+        assert "Coke" in text
+        assert " x " not in text
 
     def test_float_0_01_bbq_chicken_pizza(self):
         payload = {"items": [{"quantity": 0.01, "name": "BBQ Chicken Pizza"}], "total": "$17.20"}
         text = render_checkout_review_summary(payload)
         assert "0 BBQ Chicken Pizza" not in text
-        assert "1 BBQ Chicken Pizza" in text
+        # qty decodes to 1 → spoken_quantity_label → name only (no leading 1)
+        assert "BBQ Chicken Pizza" in text
         assert "$17.20" in text
+        assert " x " not in text

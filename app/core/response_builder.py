@@ -25,6 +25,7 @@ from app.responses.item import (
     ask_for_side,
     ask_for_size,
     ask_item_quantity,
+    block_new_item_until_required_done,
     clarify_modifier_choice,
     clarify_side_choice,
     confirm_cancel_current_item,
@@ -153,6 +154,7 @@ class ResponseBuilder:
             "item_clarification_limit_reached": item_clarification_limit_reached,
             "repeat_item_request": repeat_item_request,
             "required_side_cannot_skip": required_side_cannot_skip,
+            "block_new_item_until_required_done": block_new_item_until_required_done,
             "required_modifier_cannot_skip": required_modifier_cannot_skip,
             "required_size_cannot_skip": lambda c, m, p: required_size_cannot_skip(c, m),
             "repeat_side_options": repeat_side_options,
@@ -225,13 +227,13 @@ class ResponseBuilder:
             "no_active_payment": lambda *_: "There’s no payment in progress.",
             "payment_not_started": lambda *_: "Payment has not started. Say checkout when ready.",
             "order_cancelled": lambda *_: "Okay, checkout cancelled. Your cart is still here.",
-            "confirm_side_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that side')}? Yes or no.",
-            "confirm_modifier_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that modifier')}? Yes or no.",
-            "confirm_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')}? Yes or no.",
-            "confirm_side_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')} for {p.get('side_item_name', 'that side')}? Yes or no.",
+            "confirm_side_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that side')}?",
+            "confirm_modifier_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that modifier')}?",
+            "confirm_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')}?",
+            "confirm_side_size_choice_guess": lambda c, m, p: f"Did you mean {p.get('choice_name', 'that size')} for {p.get('side_item_name', 'that side')}?",
 
             "repeat_landline_pickup_only": lambda *_: (
-                "Would you like to connect with a team member? Yes or no."
+                "Would you like to connect with a team member?"
             ),
             "transferring_to_human_agent": lambda c, m, p: (
                 "Connecting you now. One moment."
@@ -432,7 +434,7 @@ class ResponseBuilder:
             item = menu_repo.store.get_item(context.candidate_item_id)
             item_name = item.name
         item_name = item_name or "that item"
-        return f"{item_name}, right? Yes or no."
+        return f"{item_name}, is that right?"
 
     def _confirm_order_summary(
             self,

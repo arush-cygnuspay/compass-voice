@@ -245,3 +245,23 @@ def clarify_side_choice(
     if options:
         return f"Did you mean {options}?"
     return "Which side did you want?"
+
+
+def block_new_item_until_required_done(
+    context: ConversationContext,
+    menu_repo: MenuRepository,
+    payload: dict | None,
+) -> str:
+    """Tell the customer they must finish the current required group before
+    starting a new item.  Always offers an escape via 'cancel'."""
+    p = payload or {}
+    item_name = str(p.get("pending_item_name") or "").strip()
+    group_noun = str(p.get("group_prompt_noun") or "option").strip() or "option"
+    if item_name:
+        return (
+            f"I'm still finishing your {item_name}. "
+            f"Please choose a {group_noun} first, or say cancel to drop it."
+        )
+    return (
+        f"Please choose a {group_noun} first, or say cancel to drop the current item."
+    )

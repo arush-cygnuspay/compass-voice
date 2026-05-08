@@ -53,7 +53,9 @@ class PaymentFlowSupportTests(unittest.TestCase):
 
         self.assertEqual(result.next_state, ConversationState.CONFIRMING_ORDER)
         self.assertEqual(result.response_key, "payment_draft_saved_retry_later")
-        self.assertEqual(result.response_payload, {"order_number": "1234567"})
+        self.assertEqual(result.response_payload["order_number"], "1234567")
+        events = result.response_payload.get("_payment_events", [])
+        self.assertTrue(any(e["event_name"] == "payment_failed" for e in events))
 
 
 if __name__ == "__main__":

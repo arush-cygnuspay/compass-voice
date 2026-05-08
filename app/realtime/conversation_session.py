@@ -118,6 +118,11 @@ class ConversationSession:
         # maxlen enforced by config at first process call; pre-set here for safety.
         self._pending_queue: collections.deque[str] = collections.deque(maxlen=2)
 
+        # True only while the FSM is actively computing a response. Distinct from
+        # phase so that post-TTS-failure state (phase=PROCESSING, FSM idle) still
+        # allows the next turn to be processed rather than buffered.
+        self._turn_processing: bool = False
+
         async def _payment_probe() -> bool:
             if (
                 self.app_session is None
@@ -327,7 +332,7 @@ class ConversationSession:
                 await self.transport.interrupt_playback(reason="actionable_user_turn")
                 self.set_phase_listening()
 
-            if self.phase == RealtimePhase.PROCESSING:
+            if self.phase == RealtimePhase.PROCESSING and self._turn_processing:
                 # Buffer into the bounded pending queue.
                 if len(self._pending_queue) >= config.max_pending_interrupt_queue:
                     print(
@@ -377,6 +382,7 @@ class ConversationSession:
 
             # ── FSM processing ───────────────────────────────────────────────
             self.set_phase_processing()
+            self._turn_processing = True
 
             print(
                 "[turn_processing_started]",
@@ -448,12 +454,6 @@ class ConversationSession:
             if response_delay_s > 0:
                 await asyncio.sleep(response_delay_s)
 
-            # Transition to SPEAKING before handing off to the transport.
-            # The transport may also set SPEAKING itself (voice_stream_server
-            # does this), but setting it here ensures the phase is correct
-            # even in test environments where the transport stub is passive.
-            self.set_phase_speaking()
-
             print(
                 "[assistant_tts_started]",
                 {
@@ -463,6 +463,9 @@ class ConversationSession:
                 },
             )
 
+            # Phase stays PROCESSING until the transport confirms audio has
+            # started.  voice_stream_server calls set_phase_speaking() on its
+            # first Deepgram audio chunk, so we never pre-announce SPEAKING.
             try:
                 await self.transport.speak_response(
                     spoken_response_text,
@@ -480,9 +483,8 @@ class ConversationSession:
                         "error": str(exc),
                     },
                 )
-                # Reset phase so the session is not stuck in PROCESSING after
-                # the failure path completes.
-                self.set_phase_listening()
+                # No audio was delivered — keep phase as PROCESSING until
+                # call termination so callers never see a spurious LISTENING.
                 handled = await self.handle_playback_failure(
                     end_call_after_playback=self.should_end_call_after_playback,
                 )
@@ -502,6 +504,7 @@ class ConversationSession:
                 await self.schedule_payment_auto_check()
 
         finally:
+            self._turn_processing = False
             if lock_acquired:
                 self._processing_lock.release()
 

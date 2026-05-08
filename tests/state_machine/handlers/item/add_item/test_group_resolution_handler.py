@@ -36,10 +36,11 @@ class _ConcreteHandler(GroupResolutionHandler):
 def _make_context(*, has_pending: bool = True) -> types.SimpleNamespace:
     pending = None
     if has_pending:
-        pending = types.SimpleNamespace(item_name="Zinger Burger")
+        pending = types.SimpleNamespace(item_name="Zinger Burger", modifier_groups=[])
     return types.SimpleNamespace(
         pending_add_item=pending,
         quantity=1,
+        selected_modifier_groups={},
     )
 
 

@@ -125,6 +125,9 @@ class _FakeRepo:
     def find_near_miss_item_normalized(self, normalized_text, *, threshold=None):
         return None
 
+    def resolve_category_query_normalized(self, normalized_text, *, limit=5):
+        return []
+
     store = None
 
 
@@ -147,7 +150,7 @@ class TestNormalizeItemRequestText:
             ("Can I get the fries", "fries"),
             ("give me an apple pie", "apple pie"),
             ("bring a coffee", "coffee"),
-            ("i would like to order two tacos", "to order two tacos"),
+            ("i would like to order two tacos", "two tacos"),
             ("burger", "burger"),
             ("", ""),
         ],

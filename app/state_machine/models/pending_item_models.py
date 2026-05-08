@@ -113,6 +113,11 @@ class PendingAddItem:
     side_choice_by_item_id: dict[str, PendingSideChoice] = field(default_factory=dict)
     modifier_groups_by_id: dict[str, PendingModifierGroup] = field(default_factory=dict)
     modifier_choice_by_id: dict[str, PendingModifierChoice] = field(default_factory=dict)
+    # Normalized aliases and voice labels from the resolved MenuItem.
+    # Used by prefill and feedback logic to suppress the alias/compact forms
+    # that the user spoke (e.g. "cheeseburger") from "I couldn't find" output.
+    item_aliases: tuple[str, ...] = ()
+    item_voice_labels: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

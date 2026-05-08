@@ -35,6 +35,7 @@ from app.responses.item.not_found import (
 from app.responses.item.quantity import ask_item_quantity, invalid_quantity_option
 from app.responses.item.sides import (
     ask_for_side,
+    block_new_item_until_required_done,
     clarify_side_choice,
     list_side_options,
     repeat_side_options,
@@ -83,6 +84,7 @@ __all__ = [
     "invalid_quantity_option",
     # sides
     "ask_for_side",
+    "block_new_item_until_required_done",
     "clarify_side_choice",
     "list_side_options",
     "repeat_side_options",

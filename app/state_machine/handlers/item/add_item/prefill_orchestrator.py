@@ -882,9 +882,29 @@ class PrefillOrchestrator:
         if not unresolved_phrases:
             return []
 
+        # Build exact-match set of item label forms (canonical + aliases +
+        # voice labels) so that the compact ASR form ("cheeseburger") is
+        # suppressed from "I couldn't find" output when it resolved correctly.
+        item_label_exact: set[str] = set()
+        if pending is not None:
+            _item_norm = normalize_text(getattr(pending, "item_name", "") or "")
+            if _item_norm:
+                item_label_exact.add(_item_norm)
+                item_label_exact.add(_item_norm.replace(" ", ""))
+            for alias in (getattr(pending, "item_aliases", ()) or ()):
+                _a = normalize_text(alias)
+                if _a:
+                    item_label_exact.add(_a)
+                    item_label_exact.add(_a.replace(" ", ""))
+            for vl in (getattr(pending, "item_voice_labels", ()) or ()):
+                _v = normalize_text(vl)
+                if _v:
+                    item_label_exact.add(_v)
+                    item_label_exact.add(_v.replace(" ", ""))
+
         ignored_tokens: set[str] = set()
         if pending is not None:
-            ignored_tokens.update(tokenize(normalize_text(pending.item_name)))
+            ignored_tokens.update(tokenize(normalize_text(getattr(pending, "item_name", "") or "")))
             for group in pending.side_groups:
                 for choice in group.choices:
                     ignored_tokens.update(tokenize(choice.normalized_name))
@@ -918,6 +938,12 @@ class PrefillOrchestrator:
         for phrase in unresolved_phrases:
             normalized = normalize_text(phrase or "").strip()
             if not normalized or normalized in seen_phrases:
+                continue
+            # Suppress item label forms (canonical name / alias / voice label).
+            if normalized in item_label_exact:
+                continue
+            compact = normalized.replace(" ", "")
+            if compact and compact in item_label_exact:
                 continue
             canonical = " ".join(
                 t for t in tokenize(normalized) if t not in canonical_ignored
