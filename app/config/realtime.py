@@ -15,6 +15,7 @@ class RealtimeConfig:
     route_debug_enabled: bool
     turn_timing_enabled: bool
     nlu_json_log_path: Optional[str]
+    contextual_control_v2_enabled: bool
 
 
 @lru_cache(maxsize=1)
@@ -24,6 +25,7 @@ def get_realtime_config() -> RealtimeConfig:
         route_debug_enabled=os.getenv("COMPASS_ROUTE_DEBUG_ENABLED", "0") == "1",
         turn_timing_enabled=os.getenv("COMPASS_TURN_TIMING_ENABLED", "0") == "1",
         nlu_json_log_path=os.getenv("COMPASS_NLU_JSON_LOG_PATH") or None,
+        contextual_control_v2_enabled=os.getenv("COMPASS_CONTEXTUAL_CONTROL_V2", "1") == "1",
     )
 
 

@@ -278,6 +278,20 @@ _IDLE_CHECKOUT_EXACT: frozenset[str] = frozenset({
     "go ahead and check out",
     "ready to checkout",
     "ready to check out",
+    # "for now" variants — NLU fires UNKNOWN for these; coerce_idle_to_checkout
+    # will convert them to CHECKOUT via exact match.
+    "thats it for now",
+    "that is it for now",
+    "thats all for now",
+    "that is all for now",
+    "i think thats all",
+    "i think that is all",
+    "i think thats it",
+    "i think that is it",
+    "i think im good",
+    "i think i am good",
+    "i think were good",
+    "i think we are good",
     # Payment-specific — these must route to confirm_order_summary first,
     # never directly to WaitingForPayment.
     "continue to payment",

@@ -384,7 +384,13 @@ class ConfirmOrderHandler(BaseHandler):
             delivery.source = delivery.source or "voice"
             return self._build_pickup_checkout_result(session, context)
 
-        if intent == Intent.PAYMENT_STATUS:
+        # Explicit payment-status intent or low-confidence payment_status
+        # preserved in context.last_nlu (mirrors the checkout low-conf check above).
+        _nlu_payment_status_signal = (
+            context.last_nlu is not None
+            and context.last_nlu.effective_intent == Intent.PAYMENT_STATUS
+        )
+        if intent == Intent.PAYMENT_STATUS or _nlu_payment_status_signal:
             return HandlerResult(
                 next_state=ConversationState.CONFIRMING_ORDER,
                 response_key="payment_not_started",

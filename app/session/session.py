@@ -33,6 +33,7 @@ class Session:
     last_response_payload: Optional[Dict[str, Any]] = None
     last_response_at_epoch: Optional[float] = None
     last_normalized_user_text: Optional[str] = None
+    last_prompt_type: Optional[str] = None
     repeated_user_turn_count: int = 0
     fallback_count: int = 0
     reprompt_escalation_count: int = 0
@@ -53,6 +54,7 @@ class Session:
             "last_response_payload": self.last_response_payload,
             "last_response_at_epoch": self.last_response_at_epoch,
             "last_normalized_user_text": self.last_normalized_user_text,
+            "last_prompt_type": self.last_prompt_type,
             "repeated_user_turn_count": self.repeated_user_turn_count,
             "fallback_count": self.fallback_count,
             "reprompt_escalation_count": self.reprompt_escalation_count,
@@ -81,6 +83,7 @@ class Session:
         session.last_response_payload = data.get("last_response_payload")
         session.last_response_at_epoch = data.get("last_response_at_epoch")
         session.last_normalized_user_text = data.get("last_normalized_user_text")
+        session.last_prompt_type = data.get("last_prompt_type")
         session.repeated_user_turn_count = int(data.get("repeated_user_turn_count", 0) or 0)
         session.fallback_count = int(data.get("fallback_count", 0) or 0)
         session.reprompt_escalation_count = int(data.get("reprompt_escalation_count", 0) or 0)

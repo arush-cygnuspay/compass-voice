@@ -16,6 +16,7 @@ from app.core.payment_response_classifier import PaymentResponseClassifier
 from app.core.response_builder import ResponseBuilder
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.prompt_type import classify_response_key
 from app.session.session import Session
 from app.state_machine.models.conversation_state import ConversationState
 
@@ -51,6 +52,7 @@ class SessionResponseWriter:
         now = time.time()
         session.last_intent = intent
         session.last_response_key = response_key
+        session.last_prompt_type = classify_response_key(response_key).value
         session.last_response_payload = response_payload
         session.last_response_at_epoch = now
         session.turn_count += 1

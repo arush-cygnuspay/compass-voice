@@ -57,6 +57,10 @@ from app.state_machine.handlers.order.waiting_for_order_type_handler import (
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.resume_prompt_builder import ResumePromptBuilder
+from app.state_machine.policy.contextual_control_resolver import (
+    ContextualControlKind,
+    resolve_contextual_control,
+)
 from app.state_machine.policy.idle_checkout_coercion import coerce_idle_to_checkout
 from app.state_machine.policy.intent_coercion import IntentCoercionPolicy
 from app.state_machine.state_router import StateRouter
@@ -596,6 +600,32 @@ class TurnEngine:
         )
         intent_result = _coercion.intent_result
         _coercion_reason: str | None = _coercion.coercion_reason or _idle_checkout_reason
+
+        # Contextual control resolver: state-aware intent override that uses
+        # last_prompt_type to correctly interpret turns like "no that's it for
+        # now" (IDLE → CHECKOUT) and "you got your card" (CONFIRMING_ORDER →
+        # PAYMENT_STATUS).  Runs after all upstream coercions so it sees the
+        # final effective intent.
+        if get_realtime_config().contextual_control_v2_enabled:
+            _cc = resolve_contextual_control(
+                state=session.conversation_state,
+                last_prompt_type=session.last_prompt_type,
+                cart_has_items=not session.cart.is_empty(),
+                normalized_text=nlu.normalized_text or "",
+                intent=intent_result.intent,
+            )
+            if _cc.kind == ContextualControlKind.FINISH_ADDING:
+                intent_result = IntentResult(
+                    intent=Intent.CHECKOUT,
+                    raw_text=intent_result.raw_text,
+                )
+                _coercion_reason = f"contextual_control_v2:{_cc.reason}"
+            elif _cc.kind == ContextualControlKind.PAYMENT_STATUS_QUERY:
+                intent_result = IntentResult(
+                    intent=Intent.PAYMENT_STATUS,
+                    raw_text=intent_result.raw_text,
+                )
+                _coercion_reason = f"contextual_control_v2:{_cc.reason}"
 
         t0 = time.perf_counter()
         flow = self.flow_policy.evaluate(
