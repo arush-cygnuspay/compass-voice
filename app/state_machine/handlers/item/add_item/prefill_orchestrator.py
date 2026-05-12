@@ -26,6 +26,10 @@ from app.nlu.modifier_instructions import speak as _speak_modifier
 from app.nlu.nlu_result import SlotValue
 from app.nlu.order_scaffolding import ORDER_FILLER_PREFIXES, ORDER_FILLER_TOKENS
 from app.nlu.quantity_resolver import QuantityResolver
+from app.state_machine.handlers.item.add_item.item_quantity_policy import (
+    normalize_item_quantity,
+)
+from app.state_machine.models.conversation_state import ConversationState
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.nlu.slot_consumption import consume_slot_or_fallback
 from app.state_machine.handler_result import HandlerResult
@@ -640,16 +644,14 @@ class PrefillOrchestrator:
             user_text=prefill_user_text,
         )
 
-        # If prefill_quantity did not find an explicit quantity, resolve now:
-        # vague expressions ("some burgers") ask for clarification;
-        # everything else defaults to 1 so we never ask unnecessarily.
-        if not (isinstance(context.quantity, int) and context.quantity > 0):
-            resolution = _QUANTITY_RESOLVER.resolve(
-                extracted=None,
-                user_text=prefill_user_text,
-            )
-            if not resolution.needs_clarification:
-                context.quantity = resolution.quantity
+        # Apply centralized quantity policy using the item-name-stripped text so
+        # that vague expressions ("some burgers") are detected before sides/modifiers
+        # are captured.  Non-vague missing quantity defaults to 1 immediately so
+        # we never route to WAITING_FOR_QUANTITY unnecessarily.
+        _qty_policy = normalize_item_quantity(context, user_text=prefill_user_text)
+        if not _qty_policy.needs_clarification:
+            context.quantity = _qty_policy.quantity
+        # For ambiguous/vague: context.quantity stays None; handled after prefill below.
 
         # 1) Unified, segment-scoped prefill across variants + sides + modifiers.
         prefill_result: PrefillResult = self.prefill_engine.prefill(
@@ -682,6 +684,20 @@ class PrefillOrchestrator:
             engine_debug=prefill_result.debug,
         )
         logger.debug("pending_item_prefill %s", prefill_debug)
+
+        # Vague quantity ("some burgers", "a few cokes") — sides/modifiers are
+        # already captured above; now explicitly route to WAITING_FOR_QUANTITY
+        # so that determine_next_add_item_step() never sees a None quantity that
+        # it would silently default.
+        if not (isinstance(context.quantity, int) and context.quantity > 0):
+            context.current_prompt_field = "quantity"
+            context.available_choices_kind = None
+            context.available_choices_values = ()
+            return HandlerResult(
+                next_state=ConversationState.WAITING_FOR_QUANTITY,
+                response_key="ask_for_quantity",
+                response_payload={"item_name": item.name, "prefill_debug": prefill_debug},
+            )
 
         return self.confirmation_helper.build_handler_result(
             context=context,

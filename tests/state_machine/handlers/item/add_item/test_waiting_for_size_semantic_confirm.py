@@ -42,8 +42,8 @@ def test_waiting_for_size_accepts_semantic_affirm_for_pending_guess() -> None:
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
+    assert result.next_state == ConversationState.IDLE
+    assert result.response_key == "item_added_successfully"
     assert context.selected_variant_id == "large"
 
 
@@ -164,6 +164,6 @@ def test_waiting_for_size_accepts_direct_size_choice() -> None:
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
+    assert result.next_state == ConversationState.IDLE
+    assert result.response_key == "item_added_successfully"
     assert context.selected_variant_id == "small"

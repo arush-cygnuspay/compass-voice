@@ -256,8 +256,8 @@ class WaitingForSideOverflowTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertEqual(context.selected_side_groups, {"meat": ["beef"]})
 
     def test_contextual_bun_alias_resolves_plain_when_bun_is_expected(self):
@@ -294,8 +294,8 @@ class WaitingForSideOverflowTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertEqual(context.selected_side_groups, {"bun": ["plain"]})
 
     def test_multi_slot_side_capture_fills_remaining_required_groups(self):
@@ -309,8 +309,8 @@ class WaitingForSideOverflowTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertEqual(
             context.selected_side_groups,
             {
@@ -389,8 +389,8 @@ class WaitingForSideOverflowTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertIn("optional_side", context.skipped_side_groups)
 
     def test_what_sides_do_you_have_lists_current_side_options(self):
@@ -433,8 +433,8 @@ class WaitingForSideOverflowTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertEqual(context.selected_side_groups, {"bun": ["whole_wheat"]})
 
     def test_plain_pan_fuzzy_matches_plain_bun_when_bun_group_is_active(self):
@@ -449,8 +449,8 @@ class WaitingForSideOverflowTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertEqual(context.selected_side_groups, {"bun": ["plain"]})
 
     def test_invalid_side_feedback_prefers_slot_candidate_over_noisy_raw_utterance(self):

@@ -187,18 +187,9 @@ def test_required_multi_slot_burger_prefills_modifiers_and_negative_onion() -> N
         slots=(SlotValue(name="ITEM", value="Burger"),),
     )
 
-    assert out.response_key == "ask_for_quantity"
-    assert session.conversation_state == ConversationState.WAITING_FOR_QUANTITY
-
-    selected = {
-        selection.name: (selection.action, selection.instruction)
-        for selections in session.conversation_context.selected_modifier_groups.values()
-        for selection in selections
-    }
-    assert selected["Lettuce"] == ("add", None)
-    assert selected["Tomato"] == ("add", None)
-    assert selected["Cheese"] == ("add", "extra")
-    assert selected["Grilled Onions"] == ("remove", None)
+    # Missing quantity now defaults to 1 — item is added directly.
+    assert out.response_key == "item_added_successfully"
+    assert session.conversation_state == ConversationState.IDLE
 
     row = logger.rows[-1]
     assert set(row["normalized_values"]["modifiers"]["Sandwich Condiments"]) == {
@@ -236,7 +227,9 @@ def test_required_multi_slot_chicken_burger_prefills_required_sides_without_fals
     }
 
 
-def test_partial_input_only_asks_for_missing_field() -> None:
+def test_partial_modifier_input_adds_item_with_default_quantity() -> None:
+    """A burger ordered with a partial modifier list satisfies the required group
+    and is added directly — missing quantity defaults to 1 without prompting."""
     logger = CapturingLogger()
     menu_repo = _build_menu_repo()
     engine = _build_engine(menu_repo, logger)
@@ -251,11 +244,8 @@ def test_partial_input_only_asks_for_missing_field() -> None:
         slots=(SlotValue(name="ITEM", value="Burger"),),
     )
 
-    assert out.response_key == "ask_for_quantity"
-    assert session.conversation_state == ConversationState.WAITING_FOR_QUANTITY
-
-    row = logger.rows[-1]
-    assert row["missing_required_fields"] == ["quantity"]
+    assert out.response_key == "item_added_successfully"
+    assert session.conversation_state == ConversationState.IDLE
 
 
 def test_invalid_modifier_is_reported_without_losing_pending_state() -> None:
@@ -323,10 +313,12 @@ def test_quantity_reprompt_guardrail_changes_guidance_after_third_invalid_attemp
     session = _new_session(caller_device_type="phone")
 
     engine.process_turn(session=session, user_text="pickup")
+    # Vague ordering ("some") enters WAITING_FOR_QUANTITY — plain "Carrot Cake"
+    # now defaults to quantity=1 and adds the item directly.
     _turn(
         engine,
         session,
-        "Carrot Cake",
+        "some carrot cakes",
         intent=Intent.ADD_ITEM,
         slots=(SlotValue(name="ITEM", value="Carrot Cake"),),
     )

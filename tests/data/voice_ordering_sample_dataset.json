@@ -101,8 +101,8 @@
         {"utterance": "pickup", "scripted_intent": "unknown", "scripted_slots": []},
         {"utterance": "burger with lettuce", "scripted_intent": "add_item", "scripted_slots": [{"name": "ITEM", "value": "Burger"}]}
       ],
-      "expected_final_state": "waiting_for_quantity",
-      "expected_response_keys": ["ask_for_quantity"]
+      "expected_final_state": "idle",
+      "expected_response_keys": ["item_added_successfully"]
     },
     {
       "id": "delivery_checkout_after_call",

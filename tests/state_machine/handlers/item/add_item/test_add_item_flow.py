@@ -156,7 +156,8 @@ def test_determine_next_step_moves_to_modifier_after_side_selected():
     assert context.available_choices_values == ("Cheese", "Jalapeno")
 
 
-def test_determine_next_step_moves_to_quantity_after_modifier_phase_done():
+def test_determine_next_step_defaults_missing_quantity_and_finalizes():
+    """When no quantity is explicitly set, the policy defaults to 1 and finalizes."""
     context = ConversationContext()
     context.pending_add_item = build_pending_add_item(make_full_item())
     context.selected_variant_id = "regular"
@@ -165,9 +166,9 @@ def test_determine_next_step_moves_to_quantity_after_modifier_phase_done():
 
     step = determine_next_add_item_step(context)
 
-    assert step.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert step.response_key == "ask_for_quantity"
-    assert context.current_prompt_field == "quantity"
+    assert isinstance(step, ReadyToFinalize)
+    assert step.command.quantity == 1
+    assert context.quantity == 1
 
 
 def test_determine_next_step_returns_ready_to_finalize_when_all_required_fields_present():

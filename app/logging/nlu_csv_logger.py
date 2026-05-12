@@ -335,6 +335,7 @@ class NluCsvLogger:
         command: dict[str, Any] | None,
         slots: Iterable[Any] | None = None,
         notes: str = "",
+        **_extra: Any,
     ) -> None:
         if not self.enabled:
             return

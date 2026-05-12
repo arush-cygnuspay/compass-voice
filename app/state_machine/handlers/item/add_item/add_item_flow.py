@@ -15,6 +15,9 @@ from app.state_machine.handlers.item.add_item.group_classification import (
     speech_noun_for_side_group,
     speech_noun_for_modifier_group,
 )
+from app.state_machine.handlers.item.add_item.item_quantity_policy import (
+    normalize_item_quantity,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,16 +121,26 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
             },
         )
 
-    if not _has_valid_quantity(context):
+    # 7. Quantity — apply the centralized item quantity policy.
+    #    Missing quantity (None) → implicit default of 1; never ask unless vague/invalid.
+    #    Vague expressions ("some burgers") are caught upstream in PrefillOrchestrator
+    #    before reaching this gate, so None here always means implicit default.
+    qty_policy = normalize_item_quantity(context)
+    if qty_policy.needs_clarification:
         context.current_prompt_field = "quantity"
         context.available_choices_kind = None
         context.available_choices_values = ()
-
+        response_key = (
+            "invalid_quantity_option"
+            if qty_policy.source == "invalid"
+            else "ask_for_quantity"
+        )
         return AddItemNextStep(
             next_state=ConversationState.WAITING_FOR_QUANTITY,
-            response_key="ask_for_quantity",
+            response_key=response_key,
             response_payload={"item_name": pending.item_name},
         )
+    context.quantity = qty_policy.quantity
 
     return ReadyToFinalize(
         command=AddItemCommand(
@@ -152,7 +165,9 @@ def determine_next_add_item_step(context: ConversationContext) -> AddItemNextSte
     )
 
 
-def _has_valid_variant_selected(context: ConversationContext, pending: PendingAddItem) -> bool:
+def _has_valid_variant_selected(
+    context: ConversationContext, pending: PendingAddItem
+) -> bool:
     variant_id = context.selected_variant_id
     if not variant_id:
         return False
@@ -363,5 +378,3 @@ def _modifier_group_satisfied(group, selected_modifier_selections, skipped: bool
     return selected_count > 0 or skipped
 
 
-def _has_valid_quantity(context: ConversationContext) -> bool:
-    return isinstance(context.quantity, int) and context.quantity > 0

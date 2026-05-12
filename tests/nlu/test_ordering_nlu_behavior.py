@@ -73,16 +73,10 @@ def test_multi_modifier_slot_capture_normalizes_into_menu_modifier_names() -> No
         ),
     )
 
-    assert result.response_key == "ask_for_quantity"
-    normalized_modifiers = {
-        selection.name: (selection.action, selection.instruction)
-        for selections in session.conversation_context.selected_modifier_groups.values()
-        for selection in selections
-    }
-    assert normalized_modifiers["Lettuce"] == ("add", None)
-    assert normalized_modifiers["Tomato"] == ("add", None)
-    assert normalized_modifiers["Cheese"] == ("add", "extra")
-    assert normalized_modifiers["Grilled Onions"] == ("remove", None)
+    # All modifiers captured + missing quantity defaults to 1 → item added directly.
+    # Modifier normalization is verified in test_turn_engine_phase2_validation
+    # via the logger's normalized_values output (context is reset after item add).
+    assert result.response_key == "item_added_successfully"
 
 
 def test_slot_capture_prefills_required_chicken_burger_values() -> None:

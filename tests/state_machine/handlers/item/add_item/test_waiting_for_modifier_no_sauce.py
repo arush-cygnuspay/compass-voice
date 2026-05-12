@@ -157,8 +157,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertIn("mods", context.skipped_modifier_groups)
 
     def test_no_sauce_is_treated_as_specific_modifier_removal(self):
@@ -172,8 +172,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         selections = context.selected_modifier_groups["mods"]
         self.assertEqual(len(selections), 1)
         self.assertEqual(selections[0].modifier_id, "sauce")
@@ -190,8 +190,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
 
     def test_i_am_done_finishes_optional_modifier_group(self):
         handler = WaitingForModifierHandler()
@@ -204,8 +204,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
 
     def test_over_max_modifier_reply_requires_clarification_without_auto_selecting(self):
         handler = WaitingForModifierHandler()
@@ -250,8 +250,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         selections = context.selected_modifier_groups["mods"]
         self.assertEqual(
             [(selection.modifier_id, selection.action, selection.instruction) for selection in selections],
@@ -288,8 +288,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertIn("mods", context.skipped_modifier_groups)
 
     def test_skip_it_skips_optional_modifier_group(self):
@@ -303,8 +303,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
             session=None,
         )
 
-        self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-        self.assertEqual(result.response_key, "ask_for_quantity")
+        self.assertEqual(result.next_state, ConversationState.IDLE)
+        self.assertEqual(result.response_key, "item_added_successfully")
         self.assertIn("mods", context.skipped_modifier_groups)
 
     def test_what_are_the_options_lists_current_modifier_options(self):
@@ -391,8 +391,8 @@ class WaitingForModifierNoSauceTests(unittest.TestCase):
                     session=None,
                 )
 
-                self.assertEqual(result.next_state, ConversationState.WAITING_FOR_QUANTITY)
-                self.assertEqual(result.response_key, "ask_for_quantity")
+                self.assertEqual(result.next_state, ConversationState.IDLE)
+                self.assertEqual(result.response_key, "item_added_successfully")
                 selections = context.selected_modifier_groups["bun_mods"]
                 self.assertEqual([selection.modifier_id for selection in selections], [expected_modifier_id])
 

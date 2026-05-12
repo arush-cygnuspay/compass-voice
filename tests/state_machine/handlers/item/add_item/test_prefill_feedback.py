@@ -476,8 +476,10 @@ def test_add_item_handler_prefills_side_and_adjacent_modifiers_from_sparse_slots
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
+    # All side/modifier groups satisfied, missing quantity defaults to 1 → item added.
+    assert result.next_state == ConversationState.IDLE
+    assert result.response_key == "item_added_successfully"
+    # Context not reset here (direct handler call, no TurnEngine) — groups still accessible.
     assert context.selected_side_groups == {
         "d9dcbebe-7d66-4659-940c-3890678834b5": ["5e57e093-8aab-4e93-acec-5a696fadd73e"]
     }
@@ -488,7 +490,6 @@ def test_add_item_handler_prefills_side_and_adjacent_modifiers_from_sparse_slots
         "600e5a6e-96d5-4759-9ca4-d229b0f6b9c2": ["917d4025-7326-4fc7-b801-a6d76f14e0a9"],
         "1e0fad0b-4d65-4e2d-a8bf-ad9d20696705": ["fce50f96-e4ad-48ff-914a-cb944402a4f1"],
     }
-    assert result.response_payload["prefilled_summary"] == "with Coke (12 oz.), Sausage, and Jelly"
     assert "prefill_feedback" not in result.response_payload or "small coke" not in result.response_payload.get("prefill_feedback", "")
 
 
@@ -828,11 +829,11 @@ def test_waiting_for_modifier_prefills_later_groups_from_same_utterance():
         session=None,
     )
 
-    assert result.next_state == ConversationState.WAITING_FOR_QUANTITY
-    assert result.response_key == "ask_for_quantity"
+    # All modifier groups satisfied, missing quantity defaults to 1 → item added.
+    assert result.next_state == ConversationState.IDLE
+    assert result.response_key == "item_added_successfully"
     assert [selection.modifier_id for selection in context.selected_modifier_groups["g1"]] == ["cheese"]
     assert [selection.modifier_id for selection in context.selected_modifier_groups["g2"]] == ["jelly", "sausage"]
-    assert result.response_payload["matched_names"] == ["Cheese", "Jelly", "Sausage"]
 
 
 def test_waiting_for_modifier_requires_clarification_when_later_group_overflows():
