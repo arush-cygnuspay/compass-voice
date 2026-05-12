@@ -197,7 +197,9 @@ class TestItemAddedSuccessNoXNotation:
         payload = _success_payload(2, "Burger", spoken_modifiers=["no onions"])
         text = item_added_successfully(payload)
         assert " x " not in text
-        assert "with no onions" in text
+        # Voice response omits modifier detail — only item name + quantity
+        assert "with no onions" not in text
+        assert "2 Burger" in text
 
     # Queue-transition branch
     def test_queue_transition_same_item_no_x(self):
@@ -247,20 +249,22 @@ class TestCheckoutReviewNoXNotation:
         assert " x " not in text
         assert re.search(r"\b\d+\s*x\s+", text) is None
 
-    def test_single_side_no_x(self):
+    def test_single_side_omitted_from_voice(self):
+        # Sides are excluded from voice compact summary — only item name appears.
         text = render_checkout_review_summary(self._review_payload(sides=["Coke"]))
         assert " x " not in text
-        assert "Coke" in text
+        assert "Coke" not in text
+        assert "Burger" in text
 
-    def test_duplicate_side_count_prefix_no_x(self):
-        """If sides already use the new '2 Coke' label, voice must not gain ' x '."""
+    def test_duplicate_side_count_prefix_omitted_from_voice(self):
+        """Sides are excluded from voice compact summary regardless of their label format."""
         text = render_checkout_review_summary(self._review_payload(sides=["2 Coke"]))
         assert " x " not in text
-        assert "2 Coke" in text
+        assert "2 Coke" not in text
+        assert "Burger" in text
 
     def test_old_x2_side_label_absent_from_voice(self):
         """Regression: the old 'Coke x2' format must never appear in voice."""
-        # This test also catches if _get_side_labels is accidentally regressed.
         text = render_checkout_review_summary(self._review_payload(sides=["2 Coke"]))
         assert "x2" not in text.lower()
         assert "x 2" not in text.lower()
@@ -338,13 +342,12 @@ class TestCartBuilderToVoiceNoX:
         assert not any("x" in label for label in labels)
 
     def test_voice_summary_with_duplicate_sides_no_x(self):
-        """Full pipeline: 2 duplicate Coke sides → voice review text is x-free."""
-        # Simulate what CartSummaryBuilder produces after fix
+        """Full pipeline: sides are omitted from compact voice summary — x-notation impossible."""
         payload = {
             "items": [{
                 "quantity": 1,
                 "name": "Burger",
-                "sides": ["2 Coke"],   # builder now produces this
+                "sides": ["2 Coke"],   # builder produces this but voice omits sides
                 "modifiers": [],
             }],
             "total": "$11.00",
@@ -352,7 +355,9 @@ class TestCartBuilderToVoiceNoX:
         text = render_checkout_review_summary(payload)
         assert " x " not in text
         assert "x2" not in text
-        assert "2 Coke" in text
+        # Sides are omitted from voice compact format; only item name appears
+        assert "2 Coke" not in text
+        assert "Burger" in text
 
 
 # ---------------------------------------------------------------------------

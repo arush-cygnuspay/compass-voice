@@ -239,6 +239,7 @@ def test_confirm_order_summary_does_not_repeat_checkout_prompt():
         },
     )
 
-    assert text.lower().count("checkout") == 1
-    assert "should i place the order" in text.lower()
+    # "checkout" no longer appears — the confirmation question is now "Should I place the order?"
+    assert "checkout" not in text.lower()
+    assert "should i place the order?" in text.lower()
     assert "please say yes to confirm" not in text.lower()

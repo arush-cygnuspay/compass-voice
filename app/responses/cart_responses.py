@@ -29,6 +29,13 @@ def render_cart_summary(payload: dict) -> str:
     return f"You have {item_count} items. What would you like next?"
 
 
+def render_cart_line_voice_compact(item: dict) -> str:
+    """Render a single cart item for voice: quantity + name only, no modifiers or sides."""
+    quantity = parse_item_quantity(item.get("quantity", 1))
+    name = item.get("name", "item")
+    return spoken_quantity_label(quantity, name)
+
+
 def render_checkout_review_summary(payload: dict, order_type: str | None = None) -> str:
     items = payload.get("items", [])
     total = payload.get("total")
@@ -42,27 +49,7 @@ def render_checkout_review_summary(payload: dict, order_type: str | None = None)
     elif order_type == "delivery":
         intro = "This is a delivery order. "
 
-    item_parts = []
-    for item in items:
-        quantity = parse_item_quantity(item.get("quantity", 1))
-        name = item.get("name", "item")
-        sides = [str(x).strip() for x in item.get("sides", []) if str(x).strip()]
-        modifiers = [str(x).strip() for x in item.get("modifiers", []) if str(x).strip()]
-
-        config_parts = []
-        if sides:
-            config_parts.append("with " + ", ".join(sides))
-        if modifiers:
-            config_parts.append("add " + ", ".join(modifiers))
-
-        # spoken_quantity_label: qty=1 → "Burger", qty=2 → "2 Burger".
-        # Never emits "x" notation.
-        line = spoken_quantity_label(quantity, name)
-        if config_parts:
-            line = f"{line}, " + ", ".join(config_parts)
-
-        item_parts.append(line)
-
+    item_parts = [render_cart_line_voice_compact(item) for item in items]
     items_text = ". ".join(item_parts)
     total_text = f" Your total is {total}." if total else ""
 
@@ -70,8 +57,7 @@ def render_checkout_review_summary(payload: dict, order_type: str | None = None)
         f"{intro}Please review your order: "
         f"{items_text}."
         f"{total_text} "
-        f"Should I place the order" # and continue to checkout? "
-        #f"If you want to change something, just tell me what to update."
+        f"Should I place the order?"
     )
 
 

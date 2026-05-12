@@ -442,11 +442,10 @@ class ResponseBuilder:
             _: MenuRepository,
             payload: dict,
     ) -> str:
-        summary = render_checkout_review_summary(
+        return render_checkout_review_summary(
             payload=payload,
             order_type=context.order_type,
         )
-        return f"{summary} Would you like to checkout?"
 
     def _order_completed(
         self,
