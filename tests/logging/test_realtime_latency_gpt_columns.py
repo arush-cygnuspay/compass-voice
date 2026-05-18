@@ -25,6 +25,15 @@ _GPT_COLUMNS = [
     "gpt_timeout",
     "gpt_applied",
     "gpt_fallback_type",
+    "gpt_policy_mode",
+    "gpt_policy_reason",
+    "gpt_prompt_bucket",
+    "gpt_used_inline",
+    "gpt_used_shadow",
+    "gpt_timeout_ms",
+    "gpt_result_applied",
+    "gpt_result_rejected",
+    "gpt_execution_policy_ms",
 ]
 
 _LEGACY_ANCHOR_COLUMNS = [
@@ -97,6 +106,18 @@ class TestRealtimeTurnTraceNewFields:
         t = RealtimeTurnTrace()
         assert t.gpt_fallback_type == ""
 
+    def test_gpt_policy_fields_default_empty_or_false(self):
+        t = RealtimeTurnTrace()
+        assert t.gpt_policy_mode == ""
+        assert t.gpt_policy_reason == ""
+        assert t.gpt_prompt_bucket == ""
+        assert t.gpt_used_inline is False
+        assert t.gpt_used_shadow is False
+        assert t.gpt_timeout_ms is None
+        assert t.gpt_result_applied is False
+        assert t.gpt_result_rejected is False
+        assert t.gpt_execution_policy_ms is None
+
     def test_gpt_fields_can_be_set(self):
         t = RealtimeTurnTrace()
         t.gpt_called = True
@@ -125,7 +146,7 @@ class TestCsvColumnsDefinition:
     def test_exactly_8_gpt_columns(self):
         cols = RealtimeLatencyLogger.CSV_COLUMNS
         found = [c for c in cols if c.startswith("gpt_")]
-        assert len(found) == 8
+        assert len(found) == 17
 
     def test_gpt_columns_at_end(self):
         cols = RealtimeLatencyLogger.CSV_COLUMNS

@@ -93,7 +93,8 @@ class TestSanitizeRecord:
 
 class TestHeaders:
     def test_headers_count(self):
-        assert len(HEADERS) == 57
+        # Phase 2 schema: 57 base + 6 ADD_ITEM validator columns = 63 total.
+        assert len(HEADERS) == 63
 
     def test_required_columns_present(self):
         for col in (
@@ -102,6 +103,9 @@ class TestHeaders:
             "gpt_repair_eligible", "gpt_called", "gpt_decision",
             "gpt_selected_intent", "training_candidate",
             "gpt_fallback_type", "fallback_response_key",
+            # ADD_ITEM validator Phase 2 columns
+            "add_item_validated_items_json", "add_item_validated_items_count",
+            "add_item_has_blocking_warnings",
         ):
             assert col in HEADERS, f"Missing header: {col}"
 
@@ -271,3 +275,105 @@ class TestShutdown:
 
         rows = _read_rows(tmp_path / "gpt_repair_turns.csv")
         assert len(rows) == 20
+
+
+# ---------------------------------------------------------------------------
+# CSV robustness — special characters in field values
+# ---------------------------------------------------------------------------
+
+
+class TestCsvRobustness:
+    """Prove csv.DictReader can round-trip rows that contain commas, quotes, newlines.
+
+    These tests guard against column corruption caused by unescaped special
+    characters in user utterances and JSON fields.  csv.writer with quoting=QUOTE_ALL
+    (or the equivalent) must handle all these cases without splitting a single
+    logical row into multiple rows or shifting column alignment.
+    """
+
+    def _write_and_read(self, tmp_path: Path, **field_overrides) -> dict[str, str]:
+        """Helper: log one row then read it back via csv.DictReader."""
+        logger = _make_logger(tmp_path)
+        logger.log_turn(_minimal_row(**field_overrides))
+        logger.flush()
+        logger.shutdown()
+        rows = _read_rows(tmp_path / "gpt_repair_turns.csv")
+        assert len(rows) == 1, f"Expected 1 data row, got {len(rows)}"
+        return rows[0]
+
+    def test_comma_in_user_text_does_not_shift_columns(self, tmp_path):
+        """A comma inside user_text must not be treated as a column separator."""
+        row = self._write_and_read(tmp_path, user_text="I want a burger, fries, and coke")
+        assert row["user_text"] == "I want a burger, fries, and coke", (
+            f"Column corruption — user_text was split: {row['user_text']!r}"
+        )
+        # Verify adjacent columns are still intact (not consumed by the comma split)
+        assert "normalized_text" in row
+        assert "local_intent" in row
+
+    def test_double_quote_in_user_text_does_not_corrupt_csv(self, tmp_path):
+        """A double-quote inside a field must be properly escaped by the CSV writer."""
+        row = self._write_and_read(tmp_path, user_text='He said "extra cheese please"')
+        assert row["user_text"] == 'He said "extra cheese please"', (
+            f"Quote corruption — got: {row['user_text']!r}"
+        )
+
+    def test_newline_in_user_text_does_not_split_row(self, tmp_path):
+        """A newline inside a field must not create a phantom second row."""
+        row = self._write_and_read(tmp_path, user_text="burger\nand fries")
+        assert row["user_text"] == "burger\nand fries", (
+            f"Newline caused row split — got user_text: {row['user_text']!r}"
+        )
+
+    def test_comma_and_quote_in_gpt_reason(self, tmp_path):
+        """gpt_reason with both commas and quotes round-trips correctly."""
+        value = 'intent="add_item", confidence=0.95, text="I want, yes"'
+        row = self._write_and_read(tmp_path, gpt_reason=value)
+        assert row["gpt_reason"] == value, (
+            f"gpt_reason corrupt after CSV round-trip: {row['gpt_reason']!r}"
+        )
+
+    def test_json_field_with_nested_commas_and_quotes(self, tmp_path):
+        """A JSON string in local_candidates_json with inner commas and quotes parses correctly."""
+        import json as _json
+        candidates = [{"intent": "add_item,remove", "confidence": 0.9}, {"intent": 'ask "menu"', "confidence": 0.1}]
+        json_value = _json.dumps(candidates)
+        row = self._write_and_read(tmp_path, local_candidates_json=json_value)
+        assert row["local_candidates_json"] == json_value, (
+            f"JSON field corrupt after CSV round-trip: {row['local_candidates_json']!r}"
+        )
+        # Confirm it's still valid JSON after round-trip
+        parsed = _json.loads(row["local_candidates_json"])
+        assert len(parsed) == 2
+        assert parsed[0]["intent"] == "add_item,remove"
+
+    def test_all_headers_present_after_special_char_row(self, tmp_path):
+        """A row with a comma-heavy user_text must still produce all expected column keys."""
+        row = self._write_and_read(tmp_path, user_text="one, two, three, four, five")
+        assert set(row.keys()) == set(HEADERS), (
+            f"Column set mismatch after special-char row.\n"
+            f"Missing: {set(HEADERS) - set(row.keys())}\n"
+            f"Extra: {set(row.keys()) - set(HEADERS)}"
+        )
+
+    def test_mixed_special_chars_single_row_correct_column_count(self, tmp_path):
+        """A row with comma+quote+newline produces exactly len(HEADERS) columns."""
+        logger = _make_logger(tmp_path)
+        logger.log_turn(_minimal_row(
+            user_text='He said "get me,\nsome fries"',
+            gpt_reason='score=0.9, label="food,drink"',
+            normalized_text="get me fries",
+        ))
+        logger.flush()
+        logger.shutdown()
+
+        path = tmp_path / "gpt_repair_turns.csv"
+        rows = _read_rows(path)
+        assert len(rows) == 1, (
+            f"Expected exactly 1 data row, got {len(rows)} — "
+            "special characters likely caused a phantom row split"
+        )
+        assert len(rows[0]) == len(HEADERS), (
+            f"Expected {len(HEADERS)} columns, got {len(rows[0])} — "
+            "column corruption due to unescaped special characters"
+        )

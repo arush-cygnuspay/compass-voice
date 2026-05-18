@@ -81,6 +81,14 @@ class GptAddItemPlan:
     skipped_reason: str | None = None
     parse_notes: tuple[str, ...] = ()
 
+    # ── Phase 2: local menu validator result (shadow-only, never applied) ──
+    # validated_plan holds a ValidatedAddItemPlan instance; typed as object
+    # to avoid a circular import at module level (import happens in service).
+    validated_plan: object | None = None
+    validator_ms: float | None = None
+    validation_warnings: tuple[Any, ...] = ()
+    has_blocking_warnings: bool = False
+
 
 # Sentinel returned when the extractor was not called at all.
 ADD_ITEM_NOT_CALLED = GptAddItemPlan(

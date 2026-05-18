@@ -16,7 +16,7 @@ import os
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
@@ -47,6 +47,7 @@ from app.menu.repository import MenuRepository
 from app.ml.intent.inference_intent import IntentBundle
 from app.ml.slot.inference_slot import SlotBundle
 from app.nlu.intent_resolution.intent import Intent
+from app.nlu.intent_resolution.intent_mapping import SUB_INTENT_TO_INTENT
 from app.nlu.nlu_result import NLUResult
 from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
 from app.services.checkout_service import CheckoutService
@@ -66,6 +67,7 @@ from app.state_machine.policy.contextual_control_resolver import (
 from app.state_machine.policy.idle_checkout_coercion import coerce_idle_to_checkout
 from app.state_machine.policy.intent_coercion import IntentCoercionPolicy
 from app.state_machine.state_router import StateRouter
+from app.nlu.semantic_repair.gpt_execution_policy import GptExecutionMode, GptExecutionPolicy
 from app.nlu.semantic_repair.repair_service import (
     GptRepairService,
     LocalTurnAnalysis,
@@ -216,6 +218,27 @@ class TurnEngine:
     @staticmethod
     def _normalize_response_text(text: str | None) -> str:
         return " ".join((text or "").split()).strip()
+
+    @staticmethod
+    def _map_gpt_intent_name(intent_name: str | None) -> Intent | None:
+        if not intent_name:
+            return None
+        mapped = SUB_INTENT_TO_INTENT.get(intent_name)
+        if mapped is not None:
+            return mapped
+        control_map = {
+            "confirm": Intent.CONFIRM,
+            "deny": Intent.DENY,
+            "cancel": Intent.CANCEL,
+            "unknown": Intent.UNKNOWN,
+            "show_menu": Intent.SHOW_MENU,
+        }
+        if intent_name in control_map:
+            return control_map[intent_name]
+        try:
+            return Intent(intent_name)
+        except Exception:
+            return None
 
     # ------------------------------------------------------------------
     # all_shadow background GPT helpers
@@ -405,6 +428,117 @@ class TurnEngine:
         except Exception:
             return None
 
+    @staticmethod
+    def _serialize_validated_items(validated_plan: Any) -> str | None:
+        """Serialize ValidatedAddItemPlan.items to a capped JSON string (max 4000 chars).
+
+        Shadow-only — never applied to cart or response.
+        """
+        if validated_plan is None:
+            return None
+        items = getattr(validated_plan, "items", None)
+        if not items:
+            return None
+        import json as _j
+        try:
+            out = []
+            for vi in items:
+                out.append({
+                    "item_id": getattr(vi, "item_id", ""),
+                    "item_name": getattr(vi, "item_name", ""),
+                    "quantity": getattr(vi, "quantity", 1),
+                    "variant_id": getattr(vi, "variant_id", None),
+                    "variant_label": getattr(vi, "variant_label", None),
+                    "sides": [
+                        {
+                            "group_id": getattr(s, "group_id", ""),
+                            "side_item_id": getattr(s, "side_item_id", ""),
+                            "name": getattr(s, "name", ""),
+                            "quantity": getattr(s, "quantity", 1),
+                            "variant_id": getattr(s, "variant_id", None),
+                            "variant_label": getattr(s, "variant_label", None),
+                        }
+                        for s in (getattr(vi, "sides", ()) or ())
+                    ],
+                    "modifiers": [
+                        {
+                            "group_id": getattr(m, "group_id", ""),
+                            "modifier_id": getattr(m, "modifier_id", ""),
+                            "name": getattr(m, "name", ""),
+                            "operation": getattr(m, "operation", "add"),
+                            "quantity": getattr(m, "quantity", 1),
+                        }
+                        for m in (getattr(vi, "modifiers", ()) or ())
+                    ],
+                    "missing_required_groups": list(getattr(vi, "missing_required_groups", ())),
+                    "warnings": [
+                        {
+                            "code": getattr(w, "code", ""),
+                            "entity_kind": getattr(w, "entity_kind", ""),
+                            "entity_name": getattr(w, "entity_name", ""),
+                            "detail": getattr(w, "detail", ""),
+                        }
+                        for w in (getattr(vi, "warnings", ()) or ())
+                    ],
+                })
+            raw = _j.dumps(out, ensure_ascii=False)
+            return raw[:4000] if len(raw) > 4000 else raw
+        except Exception:
+            return None
+
+    @staticmethod
+    def _validated_items_count(validated_plan: Any) -> int | None:
+        if validated_plan is None:
+            return None
+        items = getattr(validated_plan, "items", None)
+        return len(items) if items else None
+
+    @staticmethod
+    def _serialize_rejected_items(validated_plan: Any) -> str | None:
+        if validated_plan is None:
+            return None
+        rejected = getattr(validated_plan, "rejected_items", None)
+        if not rejected:
+            return None
+        import json as _j
+        try:
+            return _j.dumps(list(rejected), ensure_ascii=False)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _serialize_validation_warnings(validated_plan: Any) -> str | None:
+        """Serialize plan-level + all item-level warnings to a capped JSON string (max 4000 chars)."""
+        if validated_plan is None:
+            return None
+        import json as _j
+        try:
+            all_warnings = []
+            plan_warnings = getattr(validated_plan, "warnings", ()) or ()
+            for w in plan_warnings:
+                all_warnings.append({
+                    "code": getattr(w, "code", ""),
+                    "entity_kind": getattr(w, "entity_kind", ""),
+                    "entity_name": getattr(w, "entity_name", ""),
+                    "detail": getattr(w, "detail", ""),
+                })
+            items = getattr(validated_plan, "items", ()) or ()
+            for vi in items:
+                for w in (getattr(vi, "warnings", ()) or ()):
+                    all_warnings.append({
+                        "code": getattr(w, "code", ""),
+                        "entity_kind": getattr(w, "entity_kind", ""),
+                        "entity_name": getattr(w, "entity_name", ""),
+                        "detail": getattr(w, "detail", ""),
+                        "item_name": getattr(vi, "item_name", ""),
+                    })
+            if not all_warnings:
+                return None
+            raw = _j.dumps(all_warnings, ensure_ascii=False)
+            return raw[:4000] if len(raw) > 4000 else raw
+        except Exception:
+            return None
+
     def _record_turn_event(
         self,
         *,
@@ -447,9 +581,50 @@ class TurnEngine:
             import json as _json
             _analysis: LocalTurnAnalysis | None = gpt_shadow[0] if gpt_shadow else None
             _gpt: GptRepairResult | None = gpt_shadow[1] if gpt_shadow else None
+            _decision = getattr(_analysis, "execution_decision", None) if _analysis else None
+            if _decision is None:
+                _ctx = getattr(session, "conversation_context", None)
+                _current_field = getattr(_ctx, "current_prompt_field", "") or "" if _ctx is not None else ""
+                _history = ()
+                if _ctx is not None:
+                    _history_getter = getattr(_ctx, "get_turn_memory", None)
+                    if callable(_history_getter):
+                        _history = _history_getter(3)
+                _session_reprompts = getattr(session, "reprompt_count_by_field", {}) or {}
+                _ctx_reprompt_count = 0
+                if _ctx is not None:
+                    _reprompt_count_fn = getattr(_ctx, "reprompt_count", None)
+                    if callable(_reprompt_count_fn):
+                        _ctx_reprompt_count = int(_reprompt_count_fn(_current_field))
+                _effective_intent = getattr(nlu, "effective_intent", Intent.UNKNOWN)
+                if not isinstance(_effective_intent, Intent):
+                    try:
+                        _effective_intent = Intent(getattr(_effective_intent, "value", Intent.UNKNOWN.value))
+                    except Exception:
+                        _effective_intent = Intent.UNKNOWN
+                _decision = GptExecutionPolicy().decide(
+                    state=state_before,
+                    normalized_user_text=getattr(nlu, "normalized_text", "") or "",
+                    raw_stt_final_text=getattr(nlu, "raw_text", "") or "",
+                    local_intent_top_n=tuple(getattr(nlu, "intent_candidates", ()) or ()),
+                    selected_local_intent=_effective_intent,
+                    local_intent_confidence=getattr(nlu, "intent_confidence", 0.0) or 0.0,
+                    local_slots=tuple(getattr(nlu, "slots", ()) or ()),
+                    active_pending_item_context=getattr(_ctx, "pending_add_item", None),
+                    available_options_context=tuple(getattr(_ctx, "available_choices_values", ()) or ()) if _ctx is not None else (),
+                    fallback_count=getattr(session, "fallback_count", 0),
+                    repeated_prompt_count=max(int(_session_reprompts.get(_current_field, 0) or 0), _ctx_reprompt_count),
+                    previous_turns_summary=_history,
+                    last_response_key=getattr(session, "last_response_key", None),
+                    duplicate_transcript=(
+                        bool(getattr(session, "last_normalized_user_text", None))
+                        and (getattr(session, "last_normalized_user_text", "") or "") == (getattr(nlu, "normalized_text", "") or "")
+                    ),
+                )
             # _gpt_called: True only when the GPT API was actually invoked.
             # GPT_NOT_CALLED sentinel (model=None) is returned when skipped.
             _gpt_called = _gpt is not None and _gpt is not GPT_NOT_CALLED
+            _gpt_applied = bool((getattr(_gpt, "applied", False) if _gpt else False) or gpt_fallback_applied)
             _local_intent = getattr(getattr(nlu, "effective_intent", None), "value", None)
 
             # Serialize top-K candidates to JSON string for logging
@@ -477,6 +652,7 @@ class TurnEngine:
                     ])
                 except Exception:
                     pass
+
 
             from app.config.semantic_repair import get_semantic_repair_config as _get_src_cfg
             _src_phase: int | None = None
@@ -579,12 +755,15 @@ class TurnEngine:
                 gpt_timeout=_gpt.timeout if _gpt else False,
                 gpt_parse_error=_gpt.parse_error if _gpt else None,
                 # Final block
-                gpt_applied=gpt_fallback_applied,
+                gpt_applied=_gpt_applied,
                 gpt_apply_reason=(
                     "fallback_applied" if gpt_fallback_applied
-                    else ("shadow_mode" if _gpt_called else None)
+                    else ("intent_repair_applied" if _gpt_applied else ("shadow_mode" if _gpt_called else None))
                 ),
-                final_intent_after_gpt=_local_intent if _analysis else None,
+                final_intent_after_gpt=(
+                    _gpt.repaired_intent if _gpt_applied and _gpt and _gpt.repaired_intent
+                    else (_local_intent if _analysis else None)
+                ),
                 final_slots_after_gpt=_slots_json,
                 final_response_key=response_key,
                 training_candidate=False,
@@ -648,6 +827,25 @@ class TurnEngine:
                 ),
                 add_item_model=(
                     add_item_plan.model if add_item_plan else None
+                ),
+                # Phase 2: local menu validator results (shadow-only, never applied)
+                add_item_validated_items_json=self._serialize_validated_items(
+                    add_item_plan.validated_plan if add_item_plan else None
+                ),
+                add_item_validated_items_count=self._validated_items_count(
+                    add_item_plan.validated_plan if add_item_plan else None
+                ),
+                add_item_rejected_items_json=self._serialize_rejected_items(
+                    add_item_plan.validated_plan if add_item_plan else None
+                ),
+                add_item_validation_warnings_json=self._serialize_validation_warnings(
+                    add_item_plan.validated_plan if add_item_plan else None
+                ),
+                add_item_validator_ms=(
+                    add_item_plan.validator_ms if add_item_plan else None
+                ),
+                add_item_has_blocking_warnings=(
+                    add_item_plan.has_blocking_warnings if add_item_plan else False
                 ),
             )
             self.diagnostics.record(event)
@@ -850,6 +1048,7 @@ class TurnEngine:
 
         # Initialised to None; populated after all coercions complete below.
         _gpt_shadow: tuple[LocalTurnAnalysis, GptRepairResult] | None = None
+
         # Populated by ADD_ITEM extractor (shadow-only); never applied.
         _add_item_plan: GptAddItemPlan | None = None
 
@@ -902,6 +1101,7 @@ class TurnEngine:
                     handler_ms=0.0,
                     total_ms=total_ms,
                     gpt_shadow=_gpt_shadow,
+
                 )
                 self.diagnostics._finalize_trace_and_timing(
                     trace=trace,
@@ -958,6 +1158,7 @@ class TurnEngine:
                 handler_ms=0.0,
                 total_ms=total_ms,
                 gpt_shadow=_gpt_shadow,
+
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -1039,7 +1240,7 @@ class TurnEngine:
         # add-item, contextual control v2), BEFORE StateRouter.route().
         _engine_elapsed_ms = (time.perf_counter() - t_total_start) * 1000.0
         _gpt_cfg_now = _get_gpt_cfg()
-        _is_all_shadow = _gpt_cfg_now.effective_call_mode == "all_shadow"
+        _actual_shadow_mode = False
         try:
             _gpt_shadow = self.gpt_repair.run(
                 nlu=nlu,
@@ -1051,14 +1252,14 @@ class TurnEngine:
         except Exception as _gpt_err:
             print(f"[GPT_SHADOW_ERROR] {type(_gpt_err).__name__}: {_gpt_err}")
 
-        # all_shadow: dispatch background GPT task now (non-blocking).
-        # Analysis is already captured in _gpt_shadow[0] from the eligibility check.
-        # Prompt_field / item_name are captured from session before state mutations.
-        if _is_all_shadow and _gpt_shadow is not None:
+        _gpt_analysis = _gpt_shadow[0] if _gpt_shadow is not None else None
+        _actual_shadow_mode = (_gpt_cfg_now.effective_call_mode == "all_shadow")
+
+        # Shadow mode: dispatch background GPT now (non-blocking).
+        if _actual_shadow_mode and _gpt_shadow is not None:
             _shadow_analysis = _gpt_shadow[0]
             _shadow_state = session.conversation_state
             _shadow_text = (getattr(nlu, "normalized_text", "") or "").strip()
-            # Skip noisy/empty turns or terminal states
             if (
                 len(_shadow_text) >= 2
                 and _shadow_state.value not in _ALL_SHADOW_SKIP_STATE_VALUES
@@ -1077,7 +1278,6 @@ class TurnEngine:
                     turn_index=session.turn_count,
                     response_key=session.last_response_key or "",
                 )
-                # Stamp realtime trace with pending_async status
                 if trace is not None:
                     for _attr, _val in (
                         ("gpt_called", True),
@@ -1087,9 +1287,9 @@ class TurnEngine:
                         if hasattr(trace, _attr):
                             setattr(trace, _attr, _val)
 
-        # For eligible_only inline GPT: stamp realtime trace with actual GPT values
+        # Inline / repair-only GPT: stamp realtime trace with actual GPT values.
         if (
-            not _is_all_shadow
+            not _actual_shadow_mode
             and trace is not None
             and _gpt_shadow is not None
         ):
@@ -1109,6 +1309,7 @@ class TurnEngine:
                         setattr(trace, _attr, _val)
 
         # GPT fallback application gate.
+
         # Fallback may ONLY be applied when:
         #   config.apply_fallbacks == True
         #   AND call_mode is not all_shadow (shadow mode never applies)
@@ -1116,7 +1317,7 @@ class TurnEngine:
         # explicitly enabled.  In all_shadow mode the gate is always closed.
         _gpt_fallback_allowed = (
             _gpt_cfg_now.apply_fallbacks
-            and not _is_all_shadow
+            and not _actual_shadow_mode
         )
         if _gpt_shadow is not None:
             _fb_analysis, _fb_gpt = _gpt_shadow
@@ -1184,7 +1385,6 @@ class TurnEngine:
                     ),
                 )
 
-        # ── ADD_ITEM extractor (shadow-only) ─────────────────────────────────
         # Runs AFTER GPT shadow repair/fallback gate, BEFORE FlowControlPolicy.
         # Never mutates cart, state, intent_result, slots, or response.
         if _get_gpt_cfg().add_item_mode == "shadow":
@@ -1204,6 +1404,7 @@ class TurnEngine:
                     intent_candidates=getattr(nlu, "intent_candidates", None),
                     gpt_shadow_decision=_ai_shadow_decision,
                     gpt_shadow_repaired_intent=_ai_shadow_intent,
+                    menu_repo=self.menu_repo,
                 )
             except Exception as _ai_err:
                 print(f"[ADD_ITEM_EXTRACTOR_ERROR] {type(_ai_err).__name__}: {_ai_err}")
@@ -1212,12 +1413,19 @@ class TurnEngine:
         if trace is not None and _add_item_plan is not None:
             _ai_trace_notes = getattr(trace, "notes", None)
             if isinstance(_ai_trace_notes, dict):
+                _vp = _add_item_plan.validated_plan
                 _ai_trace_notes["add_item"] = {
                     "add_item_extractor_called": _add_item_plan.total_ms is not None,
                     "add_item_decision": _add_item_plan.decision or "",
                     "add_item_items_count": len(_add_item_plan.items) if _add_item_plan.items else None,
                     "add_item_confidence": _add_item_plan.confidence,
                     "add_item_total_ms": _add_item_plan.total_ms,
+                    # Phase 2 validator summary
+                    "add_item_validated_items_count": (
+                        len(getattr(_vp, "items", ()) or ()) if _vp is not None else None
+                    ),
+                    "add_item_has_blocking_warnings": _add_item_plan.has_blocking_warnings,
+                    "add_item_validator_ms": _add_item_plan.validator_ms,
                 }
 
         t0 = time.perf_counter()
@@ -1263,6 +1471,7 @@ class TurnEngine:
                 total_ms=total_ms,
                 coercion_reason=_coercion_reason,
                 gpt_shadow=_gpt_shadow,
+
                 add_item_plan=_add_item_plan,
             )
             self.diagnostics._finalize_trace_and_timing(
@@ -1325,6 +1534,7 @@ class TurnEngine:
                 total_ms=total_ms,
                 coercion_reason=_coercion_reason,
                 gpt_shadow=_gpt_shadow,
+
                 add_item_plan=_add_item_plan,
             )
             self.diagnostics._finalize_trace_and_timing(
@@ -1380,6 +1590,7 @@ class TurnEngine:
                     total_ms=total_ms,
                     coercion_reason=_coercion_reason,
                     gpt_shadow=_gpt_shadow,
+
                     add_item_plan=_add_item_plan,
                 )
                 self.diagnostics._finalize_trace_and_timing(
@@ -1468,6 +1679,7 @@ class TurnEngine:
                     coercion_reason=_coercion_reason,
                     route_reason=route.reason,
                     gpt_shadow=_gpt_shadow,
+
                     add_item_plan=_add_item_plan,
                 )
                 self.diagnostics._finalize_trace_and_timing(
@@ -1531,6 +1743,7 @@ class TurnEngine:
                 coercion_reason=_coercion_reason,
                 route_reason=route.reason,
                 gpt_shadow=_gpt_shadow,
+
                 add_item_plan=_add_item_plan,
             )
             self.diagnostics._finalize_trace_and_timing(

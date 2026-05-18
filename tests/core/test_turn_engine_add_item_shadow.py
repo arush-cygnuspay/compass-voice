@@ -516,3 +516,142 @@ class TestSerializationHelpers:
         assert result is not None
         parsed = json.loads(result)
         assert parsed[0]["n"] == "SIZE"
+
+
+# ---------------------------------------------------------------------------
+# Tests: validator menu_repo wiring (Part A)
+# ---------------------------------------------------------------------------
+
+
+class TestValidatorMenuRepoWiring:
+    """Prove that TurnEngine passes live menu context into AddItemExtractorService.run().
+
+    Root cause being tested: before the Phase 2 wiring fix, add_item_extractor.run()
+    was called without `menu_repo`, causing AddItemPlanValidator._resolve_store() to
+    always return None — silently short-circuiting every production validation to
+    ValidatedAddItemPlan.empty().
+
+    These tests confirm the fix at app/core/turn_engine.py where
+    `menu_repo=self.menu_repo` was added to the add_item_extractor.run() call.
+    """
+
+    def test_run_receives_menu_repo_kwarg(self, menu_repo):
+        """TurnEngine must pass menu_repo= when calling add_item_extractor.run()."""
+        backend = CapturingBackend()
+        engine = _build_engine(menu_repo, backend)
+
+        fake_nlu = _make_nlu(
+            "bourbon chicken",
+            Intent.ADD_ITEM,
+            (SlotValue(name="ITEM", value="Bourbon Chicken"),),
+        )
+
+        captured_kwargs: dict = {}
+
+        def _capture_run(**kwargs):
+            captured_kwargs.update(kwargs)
+            return GptAddItemPlan(decision="no_repair", eligible=False, skipped_reason="missing_api_key")
+
+        with patch("app.core.turn_engine._get_gpt_cfg", return_value=_shadow_config("shadow")):
+            with patch.object(engine.add_item_extractor, "run", side_effect=_capture_run):
+                with patch("app.core.nlu_orchestrator.resolve_nlu", return_value=fake_nlu):
+                    session = _new_session()
+                    engine.process_turn(session, "bourbon chicken")
+
+        assert "menu_repo" in captured_kwargs, (
+            "add_item_extractor.run() must receive menu_repo kwarg — "
+            f"actual kwargs: {list(captured_kwargs)}"
+        )
+        assert captured_kwargs["menu_repo"] is menu_repo, (
+            "menu_repo kwarg must be TurnEngine's own menu_repo instance"
+        )
+
+    def test_run_menu_repo_is_not_none(self, menu_repo):
+        """menu_repo passed to run() must be a non-None MenuRepository instance."""
+        backend = CapturingBackend()
+        engine = _build_engine(menu_repo, backend)
+
+        fake_nlu = _make_nlu(
+            "bourbon chicken",
+            Intent.ADD_ITEM,
+            (SlotValue(name="ITEM", value="Bourbon Chicken"),),
+        )
+
+        received: list = []
+
+        def _capture_run(**kwargs):
+            received.append(kwargs.get("menu_repo"))
+            return GptAddItemPlan(decision="no_repair", eligible=False, skipped_reason="missing_api_key")
+
+        with patch("app.core.turn_engine._get_gpt_cfg", return_value=_shadow_config("shadow")):
+            with patch.object(engine.add_item_extractor, "run", side_effect=_capture_run):
+                with patch("app.core.nlu_orchestrator.resolve_nlu", return_value=fake_nlu):
+                    session = _new_session()
+                    engine.process_turn(session, "bourbon chicken")
+
+        assert received, "add_item_extractor.run must have been called"
+        assert received[0] is not None, (
+            "menu_repo passed to AddItemExtractorService.run() must not be None"
+        )
+        assert isinstance(received[0], MenuRepository), (
+            f"Expected MenuRepository, got {type(received[0])}"
+        )
+
+    def test_validator_receives_menu_context_and_can_validate(self, menu_repo):
+        """End-to-end: when menu_repo is wired, AddItemPlanValidator can resolve items.
+
+        This test calls AddItemExtractorService.run() directly (not via TurnEngine)
+        to verify the validator path works when given real menu context.
+        It also confirms that a hallucinated item name produces a rejected_item /
+        blocking warning instead of a silently-empty validated_plan.
+        """
+        from app.nlu.semantic_repair.add_item_extractor import (
+            GptAddItem,
+            GptAddItemPlan,
+        )
+        from app.nlu.semantic_repair.add_item_plan_validator import AddItemPlanValidator
+
+        validator = AddItemPlanValidator()
+
+        # A plan with a real item that exists in demo menu.
+        real_plan = GptAddItemPlan(
+            decision="ok",
+            eligible=True,
+            items=(GptAddItem(item="Bourbon Chicken", quantity=1),),
+        )
+        validated_real = validator.validate(plan=real_plan, menu_repo=menu_repo)
+        # With a real menu, validation produces a non-empty result (not .empty()).
+        assert validated_real is not None, "validate() must return a ValidatedAddItemPlan"
+        # The plan had a real item; validated items OR warnings should be non-empty.
+        # An entirely empty result (no items, no warnings, no rejections) means the
+        # validator never resolved the menu — the pre-fix regression symptom.
+        has_any_result = (
+            len(validated_real.items) > 0
+            or len(validated_real.warnings) > 0
+            or len(validated_real.rejected_items) > 0
+        )
+        assert has_any_result, (
+            "A known real item should produce a non-empty ValidatedAddItemPlan "
+            "(items or warnings or rejections); got all-empty — likely menu_repo "
+            "was not passed (pre-fix regression: AddItemPlanValidator silently "
+            "returned ValidatedAddItemPlan.empty() when _resolve_store() returned None)"
+        )
+
+        # A plan with a completely hallucinated item.
+        fake_plan = GptAddItemPlan(
+            decision="ok",
+            eligible=True,
+            items=(GptAddItem(item="Unicorn Burger Supreme XL", quantity=1),),
+        )
+        validated_fake = validator.validate(plan=fake_plan, menu_repo=menu_repo)
+        assert validated_fake is not None
+        # A hallucinated item should produce warnings or empty validated items.
+        has_warning_or_rejection = (
+            len(validated_fake.warnings) > 0
+            or len(validated_fake.rejected_items) > 0
+            or validated_fake.has_blocking_warnings
+        )
+        assert has_warning_or_rejection, (
+            "A hallucinated item must produce warnings or rejected_items — "
+            "validator must not silently accept unknown items"
+        )

@@ -26,6 +26,7 @@ from app.nlu.semantic_repair.add_item_extractor import (
     GptAddItemPlan,
 )
 from app.nlu.semantic_repair.add_item_output_parser import parse_add_item_output
+from app.nlu.semantic_repair.add_item_plan_validator import AddItemPlanValidator
 from app.nlu.semantic_repair.daily_budget import GptDailyBudget
 
 if TYPE_CHECKING:
@@ -53,6 +54,7 @@ class AddItemExtractorService:
         self._config: SemanticRepairConfig = config or get_semantic_repair_config()
         self._eligibility_gate = AddItemEligibilityGate()
         self._payload_builder = AddItemPayloadBuilder()
+        self._validator = AddItemPlanValidator()
         self._client: Any = None  # lazy-initialised OpenAI client
         self._daily_budget = GptDailyBudget(limit=self._config.daily_budget)
 
@@ -70,6 +72,8 @@ class AddItemExtractorService:
         intent_candidates: Any = None,
         gpt_shadow_decision: str | None = None,
         gpt_shadow_repaired_intent: str | None = None,
+        menu_store: Any = None,
+        menu_repo: Any = None,
     ) -> GptAddItemPlan:
         """Run the ADD_ITEM extractor for the current turn.
 
@@ -276,6 +280,25 @@ class AddItemExtractorService:
             max_items=cfg.add_item_max_items_per_turn,
         )
 
+        # ── 7. Local menu validation (shadow-only — never applied) ────────
+        validated_plan = None
+        validator_ms: float | None = None
+        validation_warnings: tuple = ()
+        has_blocking_warnings: bool = False
+
+        if plan.items:
+            try:
+                validated_plan = self._validator.validate(
+                    plan=plan,
+                    menu_store=menu_store,
+                    menu_repo=menu_repo,
+                )
+                validator_ms = validated_plan.validator_ms
+                validation_warnings = validated_plan.warnings
+                has_blocking_warnings = validated_plan.has_blocking_warnings
+            except Exception:
+                pass  # validator failure must never stop local flow
+
         # Overlay timing / metadata not available inside the parser
         return GptAddItemPlan(
             decision=plan.decision,
@@ -296,6 +319,10 @@ class AddItemExtractorService:
             eligible=True,
             skipped_reason=plan.skipped_reason,
             parse_notes=plan.parse_notes,
+            validated_plan=validated_plan,
+            validator_ms=validator_ms,
+            validation_warnings=validation_warnings,
+            has_blocking_warnings=has_blocking_warnings,
         )
 
     # ------------------------------------------------------------------

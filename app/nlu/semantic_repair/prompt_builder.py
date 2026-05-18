@@ -119,6 +119,7 @@ def build_messages(
     choices: tuple[str, ...] = (),
     required_missing: tuple[str, ...] = (),
     previous_turns: tuple[tuple[str, str], ...] = (),
+    prompt_bucket: str | None = None,
 ) -> list[dict]:
     """Return the messages list for openai.chat.completions.create().
 
@@ -130,6 +131,8 @@ def build_messages(
         "state": state_name,
         "text": utterance,
     }
+    if prompt_bucket:
+        payload["bucket"] = prompt_bucket
 
     if current_prompt_field:
         payload["prompt"] = current_prompt_field

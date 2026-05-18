@@ -128,6 +128,13 @@ def build_gpt_repair_csv_row(event: "TurnEvent") -> dict[str, Any]:
         "add_item_parse_notes_json": event.add_item_parse_notes_json,
         "add_item_reason": event.add_item_reason,
         "add_item_model": event.add_item_model,
+        # ADD_ITEM validator (Phase 2 shadow)
+        "add_item_validated_items_json": event.add_item_validated_items_json,
+        "add_item_validated_items_count": event.add_item_validated_items_count,
+        "add_item_rejected_items_json": event.add_item_rejected_items_json,
+        "add_item_validation_warnings_json": event.add_item_validation_warnings_json,
+        "add_item_validator_ms": event.add_item_validator_ms,
+        "add_item_has_blocking_warnings": event.add_item_has_blocking_warnings,
     }
 
 
@@ -206,6 +213,13 @@ def build_gpt_repair_log_record(event: "TurnEvent") -> dict[str, Any]:
             "parse_notes_json": event.add_item_parse_notes_json,
             "reason": event.add_item_reason,
             "model": event.add_item_model,
+            # Phase 2: local menu validator results (shadow only)
+            "validated_items_json": event.add_item_validated_items_json,
+            "validated_items_count": event.add_item_validated_items_count,
+            "rejected_items_json": event.add_item_rejected_items_json,
+            "validation_warnings_json": event.add_item_validation_warnings_json,
+            "validator_ms": event.add_item_validator_ms,
+            "has_blocking_warnings": event.add_item_has_blocking_warnings,
         },
     }
 
@@ -290,7 +304,6 @@ def build_gpt_shadow_jsonl_record(
     # Allowed intents / control / slots from candidates
     allowed_intents = sorted(getattr(analysis, "candidate_repair_intents", ()) or ())
     allowed_control = sorted(getattr(analysis, "candidate_control_kinds", ()) or ())
-
     # Slot corrections as list
     sc_list: list[dict[str, Any]] = []
     if result and result.slot_corrections_list:

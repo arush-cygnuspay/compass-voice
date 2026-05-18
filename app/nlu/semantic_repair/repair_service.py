@@ -137,6 +137,7 @@ class LocalTurnAnalysis:
     previous_turns: tuple[tuple[str, str], ...] = ()
 
 
+
 class RepairPolicy:
     """Decides whether a turn is a GPT repair candidate.
 
@@ -189,6 +190,7 @@ class RepairPolicy:
         # Extract choices and conversation history from session context
         choices: tuple[str, ...] = ()
         previous_turns: tuple[tuple[str, str], ...] = ()
+
         if session is not None:
             _ctx = getattr(session, "conversation_context", None)
             if _ctx is not None:
@@ -316,16 +318,7 @@ class GptRepairService:
         session: "Session | None" = None,
         engine_elapsed_ms: float = 0.0,
     ) -> tuple[LocalTurnAnalysis, GptRepairResult]:
-        """Run eligibility check + optional GPT call.
-
-        Returns ``(analysis, result)`` where:
-        - ``analysis`` always describes eligibility (logged even in phase 0).
-        - ``result`` is GPT_NOT_CALLED when GPT is not called.
-
-        call_mode=all_shadow:
-            Returns (analysis, GPT_NOT_CALLED) immediately.
-            The caller (TurnEngine) is responsible for dispatching the actual
-            GPT call to a background thread after the response is built.
+        """Run policy evaluation + optional GPT call.
 
         This method NEVER mutates intent_result, nlu, state, cart, or response.
         """
@@ -336,34 +329,36 @@ class GptRepairService:
             session=session,
         )
 
+        # Phase 2 call-mode routing — no Phase 3 execution policy.
         effective_mode = self._config.effective_call_mode
-
-        # all_shadow: return immediately — TurnEngine dispatches background GPT
         if effective_mode == "all_shadow":
+            # TurnEngine dispatches the GPT call to a background thread.
             return analysis, GPT_NOT_CALLED
 
-        # disabled / all_apply_safe (not implemented) / unknown: no GPT call
         if effective_mode not in ("eligible_only",):
-            # Also handles legacy call_mode=None where effective_mode is already
-            # resolved to "disabled" or "eligible_only" by effective_call_mode property
             return analysis, GPT_NOT_CALLED
 
-        # eligible_only path (includes legacy phase >= 2 behavior)
         if not analysis.gpt_repair_eligible:
             return analysis, GPT_NOT_CALLED
 
-        # SLO budget: skip GPT if the engine has already consumed too much time.
+        # SLO budget (Phase 2 feature — skip if engine already used its budget).
         slo_ms = self._config.slo_budget_ms
         if slo_ms > 0 and engine_elapsed_ms > slo_ms:
             return replace(analysis, skipped_reason="slo_budget_exceeded"), GPT_NOT_CALLED
 
-        # Daily budget check
         if not self._daily_budget.try_consume():
             return replace(analysis, skipped_reason="daily_budget_exceeded"), GPT_NOT_CALLED
 
-        return analysis, self._call_gpt(nlu=nlu, analysis=analysis, state=state, session=session)
+        return analysis, self._call_gpt(
+            nlu=nlu,
+            analysis=analysis,
+            state=state,
+            session=session,
+        )
 
     def call_gpt_for_shadow(
+
+
         self,
         *,
         nlu: NLUResult,
@@ -433,7 +428,7 @@ class GptRepairService:
                 current_prompt_field = getattr(ctx, "current_prompt_field", "") or ""
                 current_item_name = getattr(ctx, "current_item_name", "") or ""
 
-        # Ensure candidates are populated (for all_shadow with ineligible analysis)
+        # Use candidates from RepairPolicy (Phase 2 only — no Phase 3 routing override)
         candidates = analysis.candidates
         if not candidates:
             candidates = get_candidates(state.value)
@@ -453,6 +448,7 @@ class GptRepairService:
             choices=analysis.choices,
             required_missing=analysis.required_missing,
             previous_turns=analysis.previous_turns,
+            prompt_bucket=None,
         )
         payload_build_ms = (time.perf_counter() - t0) * 1000.0
         prompt_chars = sum(len(m.get("content", "")) for m in messages)

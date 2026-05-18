@@ -97,6 +97,10 @@ _SANITIZE_SKIP_FIELDS: frozenset[str] = frozenset({
     "add_item_reason",
     "add_item_model",
     "add_item_skipped_reason",
+    # ADD_ITEM validator numeric / bool fields
+    "add_item_validated_items_count",
+    "add_item_validator_ms",
+    "add_item_has_blocking_warnings",
 })
 
 
@@ -251,7 +255,6 @@ HEADERS: list[str] = [
     # Fallback classification
     "gpt_fallback_type",
     "fallback_response_key",
-    # ── ADD_ITEM extractor (Phase 1 shadow) ──────────────────────────────
     "add_item_extractor_called",
     "add_item_eligible",
     "add_item_skipped_reason",
@@ -269,6 +272,13 @@ HEADERS: list[str] = [
     "add_item_parse_notes_json",
     "add_item_reason",
     "add_item_model",
+    # ── ADD_ITEM validator (Phase 2 shadow) ───────────────────────────────
+    "add_item_validated_items_json",
+    "add_item_validated_items_count",
+    "add_item_rejected_items_json",
+    "add_item_validation_warnings_json",
+    "add_item_validator_ms",
+    "add_item_has_blocking_warnings",
 ]
 
 
