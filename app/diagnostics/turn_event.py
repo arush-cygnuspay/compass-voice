@@ -88,19 +88,6 @@ class TurnEvent:
     gpt_candidate_count: int | None = None
     gpt_skipped_reason: str | None = None
     gpt_phase: int = 0
-    gpt_policy_mode: str | None = None
-    gpt_policy_reason: str | None = None
-    gpt_prompt_bucket: str | None = None
-    gpt_allowed_intents_json: str | None = None
-    gpt_top_intents_json: str | None = None
-    gpt_used_inline: bool = False
-    gpt_used_shadow: bool = False
-    gpt_timeout_ms: int | None = None
-    gpt_fallback_used: bool = False
-    gpt_result_applied: bool = False
-    gpt_result_rejected: bool = False
-    gpt_execution_policy_ms: float | None = None
-
     gpt_called: bool = False
     gpt_payload_build_ms: float | None = None
     gpt_request_ms: float | None = None

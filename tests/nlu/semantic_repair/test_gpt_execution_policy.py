@@ -204,20 +204,22 @@ def test_multi_item_utterance_returns_inline_add_item_plan() -> None:
     assert decision.prompt_bucket == GptPromptBucket.ADD_ITEM_PLAN
 
 
-def test_jsonl_record_includes_policy_block() -> None:
-    decision = _decide(
-        state=ConversationState.WAITING_FOR_MODIFIER,
-        normalized_user_text="macarola cheese",
-        raw_stt_final_text="macarola cheese",
-        selected_local_intent=Intent.UNKNOWN,
-        local_intent_confidence=0.18,
-        available_options_context=("Mozzarella Cheese",),
-    )
+def test_jsonl_record_does_not_include_removed_policy_block() -> None:
+    """The 'policy' block was removed from the JSONL record in Phase 2 cleanup.
+
+    GptExecutionPolicy is a Phase 3 untracked file.  The old 'policy' stanza
+    was removed from build_gpt_shadow_jsonl_record() as part of Phase 2 audit
+    remediation.  This test guards against it being re-introduced.
+
+    The JSONL record MUST contain the canonical Phase 2 sections:
+    local, allowed, gpt, final.  It must NOT contain 'policy'.
+    """
+    # Build analysis without the removed execution_decision / execution_policy_ms fields.
     analysis = LocalTurnAnalysis(
         gpt_repair_eligible=True,
-        reason=decision.reason_summary,
-        candidate_count=len(decision.allowed_intents),
-        candidates=frozenset(decision.allowed_intents),
+        reason="top1_top2_close",
+        candidate_count=1,
+        candidates=frozenset({"add_item"}),
         intent_effective=Intent.UNKNOWN.value,
         intent_confidence=0.18,
         intent_candidates=(_candidate("unknown", 0.18),),
@@ -225,12 +227,10 @@ def test_jsonl_record_includes_policy_block() -> None:
         customer_text="macarola cheese",
         normalized_text="macarola cheese",
         slots=(),
-        candidate_repair_intents=frozenset(decision.allowed_intents),
+        candidate_repair_intents=frozenset({"add_item"}),
         candidate_control_kinds=frozenset({"cancel", "confirm", "deny"}),
         choices=("Mozzarella Cheese",),
         previous_turns=(("bot", "Which cheese would you like?"),),
-        execution_decision=decision,
-        execution_policy_ms=1.5,
     )
     record = build_gpt_shadow_jsonl_record(
         analysis=analysis,
@@ -241,6 +241,15 @@ def test_jsonl_record_includes_policy_block() -> None:
         turn_index=1,
         response_key="ask_for_modifier",
     )
-    assert record["policy"]["mode"] == "inline_with_timeout"
-    assert record["policy"]["prompt_bucket"] == "modifier_selection"
-    assert record["policy"]["allowed_intents"]
+    # 'policy' block must be ABSENT — it was removed in Phase 2 cleanup.
+    assert "policy" not in record, (
+        "The 'policy' block was removed from JSONL records in Phase 2 audit "
+        "remediation and must not be re-introduced."
+    )
+    # Canonical Phase 2 sections must still be present.
+    assert "local" in record
+    assert "allowed" in record
+    assert "gpt" in record
+    assert "final" in record
+    assert record["session_id"] == "s1"
+    assert record["turn_index"] == 1

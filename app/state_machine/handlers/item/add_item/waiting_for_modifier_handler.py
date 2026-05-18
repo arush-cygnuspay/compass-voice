@@ -1,7 +1,10 @@
 # app/state_machine/handlers/item/add_item/waiting_for_modifier_handler.py
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+
+_logger = logging.getLogger(__name__)
 
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
@@ -49,6 +52,13 @@ from app.nlu.query_normalization.text_preprocessor import normalize_text as _nor
 from app.state_machine.handlers.item.add_item.waiting_state_interruption_policy import (
     InterruptionDecision,
     evaluate_waiting_modifier_interruption,
+)
+from app.nlu.semantic_repair.option_resolver_result import (
+    OPTION_RESOLVER_NOT_CALLED,
+    OptionResolverResult,
+)
+from app.nlu.semantic_repair.option_selection_validator import (
+    build_modifier_selections_from_names,
 )
 
 
@@ -106,6 +116,9 @@ class WaitingForModifierHandler(GroupResolutionHandler):
         self.capture_helper = PendingItemCaptureHelper(
             modifier_resolver=self.modifier_resolver,
         )
+        # Phase 3: GPT Option Resolver — lazy-initialized on first call.
+        # This is None until _ensure_option_resolver() is invoked.
+        self._option_resolver: object | None = None
 
     def handle(
         self,
@@ -466,6 +479,41 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             )
         # ── END interruption policy ────────────────────────────────────────────
 
+        # ── Phase 3: GPT Option Resolver ─────────────────────────────────────
+        # Attempt GPT resolution when local deterministic matching failed.
+        # In "shadow" mode the result is logged only (safe_to_apply=False).
+        # In "inline" mode the result is applied when the validator approves.
+        # This runs before the repeat_modifier_options fallback so GPT can
+        # recover misspellings, phonetic variants, and paraphrases.
+        if not resolution.selections:
+            _gpt_opt = self._try_gpt_option_resolve(
+                user_text=normalized_user_text,
+                item_name=pending.item_name,
+                group=group,
+                existing_selections=existing_selections,
+                local_resolved=False,
+                session=session,
+            )
+            if (
+                _gpt_opt.safe_to_apply
+                and _gpt_opt.decision == "select_option"
+                and _gpt_opt.selected_names
+            ):
+                _gpt_selections = build_modifier_selections_from_names(
+                    selected_names=_gpt_opt.selected_names,
+                    group=group,
+                    existing_ids={sel.modifier_id for sel in existing_selections},
+                )
+                if _gpt_selections:
+                    return self._apply_modifier_selection(
+                        context=context,
+                        pending=pending,
+                        group=group,
+                        matched_selections=_gpt_selections,
+                        normalized_user_text=normalized_user_text,
+                    )
+        # ── END Phase 3 ───────────────────────────────────────────────────────
+
         if resolution.unmatched_values:
             _sanitized_unmatched = DEFAULT_FILTER.strip_unmatched(
                 v for v in resolution.unmatched_values if v
@@ -611,6 +659,138 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             unmatched_names=_unmatched,
             match_debug=match_debug,
         )
+
+    # ------------------------------------------------------------------
+    # Phase 3: GPT Option Resolver helpers
+    # ------------------------------------------------------------------
+
+    def _ensure_option_resolver(self) -> object:
+        """Lazily initialize the GptOptionResolverService and return it."""
+        if self._option_resolver is None:
+            from app.nlu.semantic_repair.option_resolver_service import (
+                GptOptionResolverService,
+            )
+            self._option_resolver = GptOptionResolverService()
+        return self._option_resolver
+
+    def _try_gpt_option_resolve(
+        self,
+        *,
+        user_text: str,
+        item_name: str,
+        group: PendingModifierGroup,
+        existing_selections: list[ModifierSelection],
+        local_resolved: bool,
+        session: "Session | None",
+        last_response_key: str | None = None,
+    ) -> "OptionResolverResult":
+        """Attempt GPT option resolution. Never raises — returns sentinel on error.
+
+        Parameters
+        ----------
+        user_text:
+            Normalized customer utterance for this turn.
+        item_name:
+            Name of the item currently being assembled (e.g. "Cheeseburger").
+        group:
+            The PendingModifierGroup whose choices are the allowed options.
+        existing_selections:
+            Modifier selections already applied to this group.
+        local_resolved:
+            True when ModifierGroupResolver already found at least one selection.
+        session:
+            Current Session (may be None in tests without session injection).
+        last_response_key:
+            Last bot response key for context (e.g. "ask_for_modifier").
+        """
+        try:
+            from app.nlu.semantic_repair.option_routing_policy import has_correction_signal
+
+            service = self._ensure_option_resolver()
+
+            # Reprompt count for "modifier" field — used for repeat-loop detection.
+            repeat_count = 0
+            if session is not None:
+                counts = getattr(session, "reprompt_count_by_field", {}) or {}
+                repeat_count = int(counts.get("modifier", 0) or 0)
+
+            # Detect self-correction phrases ("actually X", "I mean X", …).
+            _has_correction = has_correction_signal(user_text)
+
+            # Recent bot/user turn pairs for context (optional).
+            previous_turns = self._get_previous_turns(session)
+
+            result = service.run(  # type: ignore[attr-defined]
+                user_text=user_text,
+                item_name=item_name,
+                group=group,
+                existing_selections=existing_selections,
+                local_resolved=local_resolved,
+                repeat_count=repeat_count,
+                previous_turns=previous_turns,
+                last_response_key=last_response_key,
+                has_correction_signal=_has_correction,
+            )
+
+            # ── Structured logging for Phase 3 option resolver ────────────
+            _logger.info(
+                "option_resolver_result",
+                extra={
+                    "event": "option_resolver_result",
+                    "group_id": group.group_id,
+                    "group_name": group.name,
+                    "item_name": item_name,
+                    "option_resolver_mode": result.route_mode,
+                    "option_resolver_route_reason": result.reason_code,
+                    "option_resolver_called": result.gpt_called,
+                    "option_resolver_decision": result.decision,
+                    "option_resolver_selected_names": list(result.selected_names),
+                    "option_resolver_confidence": result.confidence,
+                    "option_resolver_safe_to_apply": result.safe_to_apply,
+                    "option_resolver_applied": (
+                        result.safe_to_apply
+                        and result.decision == "select_option"
+                        and bool(result.selected_names)
+                    ),
+                    "option_resolver_error": result.parse_error,
+                    "option_resolver_skipped_reason": result.skipped_reason,
+                    "option_resolver_latency_ms": result.latency_ms,
+                    "repeat_loop_detected": repeat_count >= int(getattr(
+                        getattr(service, "_config", None),
+                        "option_resolver_repeat_threshold", 2
+                    ) or 2),
+                    "has_correction_signal": _has_correction,
+                },
+            )
+
+            return result
+        except Exception:
+            return OPTION_RESOLVER_NOT_CALLED
+
+    @staticmethod
+    def _get_previous_turns(
+        session: "Session | None",
+    ) -> list[tuple[str, str]]:
+        """Extract recent bot/user turn pairs from the session context."""
+        try:
+            if session is None:
+                return []
+            ctx = getattr(session, "conversation_context", None)
+            if ctx is None:
+                return []
+            get_mem = getattr(ctx, "get_turn_memory", None)
+            if not callable(get_mem):
+                return []
+            history = list(get_mem(3))
+            result: list[tuple[str, str]] = []
+            for turn in history:
+                if isinstance(turn, (list, tuple)) and len(turn) == 2:
+                    result.append((str(turn[0]), str(turn[1])))
+            return result
+        except Exception:
+            return []
+
+    # ------------------------------------------------------------------
 
     def _choice_payload(
         self,

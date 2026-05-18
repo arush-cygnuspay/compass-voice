@@ -62,6 +62,18 @@ class SemanticRepairConfig:
     # Maximum items[] entries the extractor may return per turn
     add_item_max_items_per_turn: int = 8
 
+    # ── Phase 3: GPT Option Resolver (inline modifier/option matching) ───────
+    # "disabled" → option resolver never runs (default — safe)
+    # "shadow"   → GPT called, result logged only, never applied to cart
+    # "inline"   → GPT called, result applied when validator says safe_to_apply=True
+    option_resolver_mode: str = "disabled"
+    # Per-call timeout for the option resolver (ms)
+    option_resolver_timeout_ms: int = 1200
+    # Minimum GPT confidence for safe_to_apply=True (0.0–1.0)
+    option_resolver_min_confidence: float = 0.75
+    # How many consecutive failed reprompts trigger INLINE_GPT (repeat-loop recovery)
+    option_resolver_repeat_threshold: int = 2
+
     def __post_init__(self) -> None:
         if self.call_mode is not None and self.call_mode not in VALID_CALL_MODES:
             raise ValueError(
@@ -72,6 +84,11 @@ class SemanticRepairConfig:
             raise ValueError(
                 f"Invalid add_item_mode {self.add_item_mode!r}. "
                 "Allowed: ['disabled', 'shadow']"
+            )
+        if self.option_resolver_mode not in {"disabled", "shadow", "inline"}:
+            raise ValueError(
+                f"Invalid option_resolver_mode {self.option_resolver_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
             )
 
     @property
@@ -117,5 +134,16 @@ def get_semantic_repair_config() -> SemanticRepairConfig:
         add_item_min_text_len=int(os.getenv("COMPASS_GPT_ADD_ITEM_MIN_TEXT_LEN", "3")),
         add_item_max_items_per_turn=int(
             os.getenv("COMPASS_GPT_ADD_ITEM_MAX_ITEMS_PER_TURN", "8")
+        ),
+        # Phase 3: Option Resolver
+        option_resolver_mode=os.getenv("COMPASS_GPT_OPTION_RESOLVER_MODE", "disabled"),
+        option_resolver_timeout_ms=int(
+            os.getenv("COMPASS_GPT_OPTION_RESOLVER_TIMEOUT_MS", "1200")
+        ),
+        option_resolver_min_confidence=float(
+            os.getenv("COMPASS_GPT_OPTION_RESOLVER_MIN_CONFIDENCE", "0.75")
+        ),
+        option_resolver_repeat_threshold=int(
+            os.getenv("COMPASS_GPT_OPTION_RESOLVER_REPEAT_THRESHOLD", "2")
         ),
     )

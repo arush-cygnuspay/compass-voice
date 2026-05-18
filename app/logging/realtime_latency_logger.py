@@ -119,15 +119,6 @@ class RealtimeTurnTrace:
     gpt_timeout: bool = False
     gpt_applied: bool = False
     gpt_fallback_type: str = ""
-    gpt_policy_mode: str = ""
-    gpt_policy_reason: str = ""
-    gpt_prompt_bucket: str = ""
-    gpt_used_inline: bool = False
-    gpt_used_shadow: bool = False
-    gpt_timeout_ms: int | None = None
-    gpt_result_applied: bool = False
-    gpt_result_rejected: bool = False
-    gpt_execution_policy_ms: float | None = None
 
     # ── ADD_ITEM extractor summary (read from notes["add_item"] after turn) ─
     # Populated only when mode=shadow and the extractor ran.
@@ -399,15 +390,6 @@ class RealtimeLatencyLogger:
         "gpt_timeout",
         "gpt_applied",
         "gpt_fallback_type",
-        "gpt_policy_mode",
-        "gpt_policy_reason",
-        "gpt_prompt_bucket",
-        "gpt_used_inline",
-        "gpt_used_shadow",
-        "gpt_timeout_ms",
-        "gpt_result_applied",
-        "gpt_result_rejected",
-        "gpt_execution_policy_ms",
         # ADD_ITEM extractor summary columns (appended after GPT columns)
         "add_item_extractor_called",
         "add_item_decision",
@@ -645,15 +627,6 @@ class RealtimeLatencyLogger:
             "gpt_timeout": payload.get("gpt_timeout", ""),
             "gpt_applied": payload.get("gpt_applied", ""),
             "gpt_fallback_type": payload.get("gpt_fallback_type", ""),
-            "gpt_policy_mode": payload.get("gpt_policy_mode", ""),
-            "gpt_policy_reason": payload.get("gpt_policy_reason", ""),
-            "gpt_prompt_bucket": payload.get("gpt_prompt_bucket", ""),
-            "gpt_used_inline": payload.get("gpt_used_inline", ""),
-            "gpt_used_shadow": payload.get("gpt_used_shadow", ""),
-            "gpt_timeout_ms": payload.get("gpt_timeout_ms", ""),
-            "gpt_result_applied": payload.get("gpt_result_applied", ""),
-            "gpt_result_rejected": payload.get("gpt_result_rejected", ""),
-            "gpt_execution_policy_ms": payload.get("gpt_execution_policy_ms", ""),
             # ADD_ITEM extractor summary (read from notes["add_item"])
             "add_item_extractor_called": (
                 payload.get("notes", {}).get("add_item", {}).get("add_item_extractor_called", "")
