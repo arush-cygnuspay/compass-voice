@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
+
+_log = logging.getLogger(__name__)
 
 from app.menu.exceptions import MenuLoadError
 from app.menu.models import (
@@ -224,18 +227,30 @@ class MenuStore:
             prompt_noun = raw_prompt_noun or _derive_prompt_noun(group["name"]) or None
             prompt_verb = str(group.get("prompt_verb") or "").strip() or "would you like"
 
+            is_required = bool(group["is_required"])
+            min_selector = int(group["min_selector"])
+            if not is_required and min_selector > 0:
+                _log.warning(
+                    "menu_group_min_normalized group_id=%s min_selector=%d->0 (optional group must have min=0)",
+                    group["group_id"],
+                    min_selector,
+                )
+                min_selector = 0
+
             parsed.append(
                 SideGroup(
                     group_id=group["group_id"],
                     name=group["name"],
                     normalized_name=normalize_text(group["name"]),
-                    is_required=group["is_required"],
-                    min_selector=group["min_selector"],
-                    max_selector=group["max_selector"],
+                    is_required=is_required,
+                    min_selector=min_selector,
+                    max_selector=int(group["max_selector"]),
                     choices=choices,
                     prompt_noun=prompt_noun,
                     prompt_verb=prompt_verb,
                     allow_duplicate_selections=bool(group.get("allow_duplicate_selections", True)),
+                    is_suggested_addon=bool(group.get("is_suggested_addon", False)),
+                    default_item_ids=tuple(group.get("default_item_ids") or ()),
                 )
             )
 

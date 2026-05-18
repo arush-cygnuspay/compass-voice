@@ -30,6 +30,7 @@ from app.api.health_routes import router as health_router
 from app.api.payment_links_webhook import router as payment_links_webhook_router
 from app.config.realtime import get_realtime_turn_config
 from app.config.required_env import assert_required_env_or_die
+from app.config.restaurant import DEFAULT_RESTAURANT_ID
 
 # Fail fast at import time if any required secret/config is missing.
 # With gunicorn --preload, this runs in the master process before workers
@@ -322,7 +323,7 @@ def _finalize_active_trace(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    runtime = build_runtime(restaurant_id="demo")
+    runtime = build_runtime(restaurant_id=DEFAULT_RESTAURANT_ID)
 
     app.state.runtime = runtime
     app.state.engine = runtime.engine
@@ -448,7 +449,7 @@ async def stream_ended(request: Request):
         print("[STREAM-ENDED] No CallSid in request — returning empty TwiML (hang up)")
         return Response(content=str(vr), media_type="application/xml")
 
-    session = load_existing_session(call_sid, "demo")
+    session = load_existing_session(call_sid, DEFAULT_RESTAURANT_ID)
 
     if session is None:
         print(
@@ -517,7 +518,7 @@ async def voice(request: Request):
     )
 
     if call_sid:
-        session = load_session(call_sid, "demo")
+        session = load_session(call_sid, DEFAULT_RESTAURANT_ID)
         session.conversation_context.delivery_address.customer_phone_number = (
             from_number or None
         )
@@ -556,7 +557,7 @@ async def twilio_media_ws(websocket: WebSocket):
     dg_stt_started = False
     dg_tts_client = DeepgramTTSClient()
 
-    restaurant_id = "demo"
+    restaurant_id = DEFAULT_RESTAURANT_ID
 
     controller = TurnCommitController()
 

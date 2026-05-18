@@ -115,13 +115,13 @@ class CheckoutServicePaymentSyncTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = _configure_checkout_dirs(Path(temp_dir))
 
-            voice_session = Session(session_id="call-123", restaurant_id="demo")
+            voice_session = Session(session_id="call-123", restaurant_id="steves_grill")
             voice_session.conversation_state = ConversationState.WAITING_FOR_PAYMENT
             saved_voice_session: dict[str, Session] = {}
 
             def fake_load_existing_session(session_id: str, restaurant_id: str):
                 self.assertEqual(session_id, "call-123")
-                self.assertEqual(restaurant_id, "demo")
+                self.assertEqual(restaurant_id, "steves_grill")
                 return voice_session
 
             def fake_save_session(session: Session):
@@ -184,7 +184,7 @@ class CheckoutServicePaymentSyncTests(unittest.TestCase):
                 service.live_call_service = DummyLiveCallService()
 
                 checkout_session = service.create_session(
-                    restaurant_id="demo",
+                    restaurant_id="steves_grill",
                     call_sid="call-123",
                     order_number="1234567",
                     customer_phone_number="+15555550123",

@@ -79,7 +79,7 @@ class _StubTransport:
 
 
 def _session(state: ConversationState = ConversationState.WAITING_FOR_ORDER_TYPE) -> Session:
-    s = Session(session_id="lifecycle-test", restaurant_id="demo")
+    s = Session(session_id="lifecycle-test", restaurant_id="steves_grill")
     s.conversation_state = state
     return s
 

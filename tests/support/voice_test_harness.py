@@ -169,7 +169,7 @@ class CapturingNluLogger:
 
 
 def build_menu_repo() -> MenuRepository:
-    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
     store = MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",
@@ -216,7 +216,7 @@ def new_session(
     caller_device_type: str = "phone",
     order_type: str | None = None,
 ) -> Session:
-    session = Session(session_id="voice-test-session", restaurant_id="demo")
+    session = Session(session_id="voice-test-session", restaurant_id="steves_grill")
     session.conversation_state = state
     session.conversation_context.caller_device_type = caller_device_type
     session.conversation_context.order_type = order_type

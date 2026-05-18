@@ -53,7 +53,7 @@ class StubCheckoutService:
 
 
 def _make_session() -> Session:
-    session = Session(session_id="call-1", restaurant_id="demo")
+    session = Session(session_id="call-1", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
     return session
 

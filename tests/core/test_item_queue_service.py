@@ -19,7 +19,7 @@ class _StubExecutor:
 class ItemQueueServiceSmokeTests(unittest.TestCase):
     def test_try_drain_returns_none_when_response_key_is_not_item_added(self):
         service = ItemQueueService(handlers={}, command_executor=_StubExecutor())
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.IDLE
 
         result = HandlerResult(
@@ -31,7 +31,7 @@ class ItemQueueServiceSmokeTests(unittest.TestCase):
 
     def test_try_drain_returns_none_when_state_is_not_idle(self):
         service = ItemQueueService(handlers={}, command_executor=_StubExecutor())
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.WAITING_FOR_MODIFIER
 
         result = HandlerResult(
@@ -43,7 +43,7 @@ class ItemQueueServiceSmokeTests(unittest.TestCase):
 
     def test_try_drain_returns_none_when_queue_is_empty(self):
         service = ItemQueueService(handlers={}, command_executor=_StubExecutor())
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.IDLE
         # pending_item_queue is empty by default
 

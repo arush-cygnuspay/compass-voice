@@ -27,7 +27,7 @@ from app.state_machine.models.conversation_state import ConversationState
 # ---------------------------------------------------------------------------
 
 def _build_session(state: ConversationState) -> Session:
-    session = Session(session_id="barge-in-test", restaurant_id="demo")
+    session = Session(session_id="barge-in-test", restaurant_id="steves_grill")
     session.conversation_state = state
     return session
 

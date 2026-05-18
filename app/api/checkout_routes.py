@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
+from app.config.restaurant import DEFAULT_RESTAURANT_ID
 from app.services.checkout_service import (
     CheckoutExpiredError,
     CheckoutNotFoundError,
@@ -22,7 +23,7 @@ CHECKOUT_HTML_PATH = Path("app/static/checkout/index.html")
 
 
 class CreateCheckoutSessionPayload(BaseModel):
-    restaurant_id: str = "demo"
+    restaurant_id: str = DEFAULT_RESTAURANT_ID
     call_sid: str | None = None
     order_number: str | None = None
     customer_phone_number: str | None = None

@@ -95,7 +95,7 @@ class StubSmsService:
 
 
 def _build_menu_repo() -> MenuRepository:
-    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
     store = MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",
@@ -125,7 +125,7 @@ def _build_engine(menu_repo: MenuRepository) -> TurnEngine:
 
 def test_auto_payment_check_suppresses_repeated_pending_prompt_inside_cooldown() -> None:
     engine = _build_engine(_build_menu_repo())
-    session = Session(session_id="payment-cooldown", restaurant_id="demo")
+    session = Session(session_id="payment-cooldown", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
     session.last_response_key = "waiting_for_checkout_completion"
     session.last_response_payload = None
@@ -148,7 +148,7 @@ def test_auto_payment_check_suppresses_repeated_pending_prompt_inside_cooldown()
 
 def test_auto_payment_check_replays_checkout_pending_prompt_after_interval() -> None:
     engine = _build_engine(_build_menu_repo())
-    session = Session(session_id="payment-cooldown-expired", restaurant_id="demo")
+    session = Session(session_id="payment-cooldown-expired", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
     session.last_response_key = "waiting_for_checkout_completion"
     session.last_response_payload = None
@@ -170,7 +170,7 @@ def test_auto_payment_check_replays_checkout_pending_prompt_after_interval() -> 
 
 def test_auto_payment_check_is_noop_after_payment_is_already_completed() -> None:
     engine = _build_engine(_build_menu_repo())
-    session = Session(session_id="payment-complete", restaurant_id="demo")
+    session = Session(session_id="payment-complete", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.COMPLETED
     session.last_response_key = "order_completed"
     session.last_response_payload = {"order_number": "ord-789"}

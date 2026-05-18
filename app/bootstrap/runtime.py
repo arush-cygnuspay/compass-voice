@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.config.restaurant import DEFAULT_RESTAURANT_ID
 from app.core.response_builder import ResponseBuilder
 from app.core.turn_engine import TurnEngine
 from app.logging.nlu_csv_logger import NluCsvLogger
@@ -104,7 +105,7 @@ def _validate_model_paths(
     print(f"[runtime] slot_model_dir={slot_model_dir}")
 
 
-def build_runtime(restaurant_id: str = "demo") -> AppRuntime:
+def build_runtime(restaurant_id: str = DEFAULT_RESTAURANT_ID) -> AppRuntime:
     data_root = _restaurant_data_root(restaurant_id)
 
     menu_path = data_root / "menu.json"

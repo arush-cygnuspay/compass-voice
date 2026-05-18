@@ -85,7 +85,7 @@ class StubSmsService:
 
 
 def _build_menu_repo() -> MenuRepository:
-    data_root = Path(__file__).resolve().parents[4] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[4] / "app" / "data" / "restaurants" / "steves_grill"
     store = MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",
@@ -210,7 +210,7 @@ class WaitingForDeliveryEligibilityHandlerTests(TestCase):
 
     def test_turn_engine_does_not_repeat_delivery_confirmation_after_first_affirm(self) -> None:
         engine = _build_engine(_build_menu_repo())
-        session = Session(session_id="delivery-confirm-loop", restaurant_id="demo")
+        session = Session(session_id="delivery-confirm-loop", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
         self.assertEqual(_turn(engine, session, "delivery", effective_intent=Intent.UNKNOWN).response_key, "ask_for_delivery_area")

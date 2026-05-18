@@ -2,13 +2,13 @@
   "lang":"en",
   "name":"pipeline",
   "version":"0.0.0",
-  "spacy_version":">=3.8.11,<3.9.0",
+  "spacy_version":">=3.8.14,<3.9.0",
   "description":"",
   "author":"",
   "email":"",
   "url":"",
   "license":"",
-  "spacy_git_version":"e7a662a",
+  "spacy_git_version":"0069cf9",
   "vectors":{
     "width":0,
     "vectors":0,
@@ -25,7 +25,7 @@
       "ITEM",
       "MODIFIER",
       "QUANTITY",
-      "SIDE_ITEM",
+      "SIDE",
       "VARIANT"
     ]
   },
@@ -41,42 +41,42 @@
 
   ],
   "performance":{
-    "ents_f":0.9928315412,
-    "ents_p":0.9946140036,
-    "ents_r":0.9910554562,
+    "ents_f":0.9969093407,
+    "ents_p":0.9969093407,
+    "ents_r":0.9969093407,
     "ents_per_type":{
       "ITEM":{
-        "p":0.9956140351,
-        "r":0.9956140351,
-        "f":0.9956140351
+        "p":0.9978308026,
+        "r":0.9989142237,
+        "f":0.9983722192
       },
       "MODIFIER":{
-        "p":0.9615384615,
-        "r":0.9259259259,
-        "f":0.9433962264
-      },
-      "CATEGORY":{
         "p":1.0,
         "r":1.0,
         "f":1.0
+      },
+      "QUANTITY":{
+        "p":0.9867109635,
+        "r":0.9867109635,
+        "f":0.9867109635
+      },
+      "CATEGORY":{
+        "p":0.9887640449,
+        "r":0.967032967,
+        "f":0.9777777778
       },
       "VARIANT":{
         "p":1.0,
         "r":1.0,
         "f":1.0
       },
-      "SIDE_ITEM":{
-        "p":1.0,
-        "r":0.9230769231,
-        "f":0.96
-      },
-      "QUANTITY":{
+      "SIDE":{
         "p":1.0,
         "r":1.0,
         "f":1.0
       }
     },
-    "transformer_loss":22.3608390476,
-    "ner_loss":385.3503112793
+    "transformer_loss":27.7124427906,
+    "ner_loss":71.6661682129
   }
 }

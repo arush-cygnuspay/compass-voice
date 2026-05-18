@@ -94,3 +94,74 @@ class TurnEvent:
     route_reason: str | None = None
     # Why the effective intent was rewritten (stamped by IntentCoercionPolicy).
     coercion_reason: str | None = None
+
+    # ── GPT shadow-mode repair (phase 2) — never applied, always logged ──
+
+    # Local model snapshot (before GPT)
+    local_intent_before_gpt: str | None = None
+    local_sub_intent_before_gpt: str | None = None
+    local_intent_confidence_before_gpt: float | None = None
+    local_intent_candidates_json: str | None = None  # JSON array of top-K candidates
+    local_slots_before_gpt: str | None = None  # JSON array of slot name/value pairs
+    local_route_allowed: bool | None = None
+    local_route_reject_reason: str | None = None
+
+    # GPT eligibility block
+    gpt_repair_eligible: bool = False
+    gpt_repair_eligible_reason: str | None = None
+    gpt_repair_reason: str | None = None
+    gpt_candidate_count: int | None = None
+    gpt_skipped_reason: str | None = None
+    gpt_phase: int = 0
+
+    # GPT call block
+    gpt_called: bool = False
+    gpt_payload_build_ms: float | None = None
+    gpt_request_ms: float | None = None
+    gpt_parse_ms: float | None = None
+    gpt_total_ms: float | None = None
+    gpt_prompt_chars: int | None = None
+    gpt_completion_chars: int | None = None
+    gpt_model: str | None = None
+
+    # GPT suggestion block
+    gpt_decision: str | None = None
+    gpt_selected_intent: str | None = None
+    gpt_selected_control_intent: str | None = None
+    gpt_slot_corrections_json: str | None = None
+    gpt_confidence: float | None = None
+    gpt_reason: str | None = None
+    gpt_latency_ms: float | None = None
+    gpt_timeout: bool = False
+    gpt_parse_error: str | None = None
+
+    # Final block (invariant: final == local in phase 2)
+    gpt_applied: bool = False
+    gpt_apply_reason: str | None = None  # "shadow_mode" in phase 2 when GPT was called
+    final_intent_after_gpt: str | None = None
+    final_slots_after_gpt: str | None = None
+    final_response_key: str | None = None
+    training_candidate: bool = False
+
+    # GPT fallback classification (decision="fallback" only)
+    gpt_fallback_type: str = "none"
+    fallback_response_key: str | None = None
+
+    # ── GPT ADD_ITEM extractor (Phase 1 shadow — never applied to cart) ──
+    add_item_extractor_called: bool = False
+    add_item_eligible: bool = False
+    add_item_skipped_reason: str | None = None
+    add_item_decision: str | None = None
+    add_item_confidence: float | None = None
+    add_item_items_json: str | None = None      # JSON-serialised items[], capped 4000 chars
+    add_item_items_count: int | None = None
+    add_item_global_slots_json: str | None = None
+    add_item_latency_ms: float | None = None
+    add_item_total_ms: float | None = None
+    add_item_prompt_chars: int | None = None
+    add_item_completion_chars: int | None = None
+    add_item_timeout: bool = False
+    add_item_parse_error: str | None = None
+    add_item_parse_notes_json: str | None = None
+    add_item_reason: str | None = None
+    add_item_model: str | None = None

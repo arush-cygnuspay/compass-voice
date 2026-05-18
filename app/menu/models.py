@@ -45,6 +45,10 @@ class SideGroup:
     # Allows the same choice to be selected more than once (e.g. 3× Coke).
     # Defaults to True; set to False in menu JSON to disallow.
     allow_duplicate_selections: bool = True
+    # When True the group is treated as always-satisfied (add-on suggestion).
+    is_suggested_addon: bool = False
+    # Silent defaults applied at finalization when customer skips the group.
+    default_item_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

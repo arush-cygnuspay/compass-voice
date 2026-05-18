@@ -36,7 +36,7 @@ class NluOrchestratorSmokeTests(unittest.TestCase):
             slot_bundle=None,
             diagnostics=None,
         )
-        session = Session(session_id="nlu-1", restaurant_id="demo")
+        session = Session(session_id="nlu-1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.IDLE
 
         resolution = orchestrator.resolve(session=session, user_text="hello world")
@@ -55,7 +55,7 @@ class NluOrchestratorSmokeTests(unittest.TestCase):
             slot_bundle=None,
             diagnostics=None,
         )
-        session = Session(session_id="nlu-2", restaurant_id="demo")
+        session = Session(session_id="nlu-2", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.IDLE
 
         orchestrator.resolve(session=session, user_text="anything")

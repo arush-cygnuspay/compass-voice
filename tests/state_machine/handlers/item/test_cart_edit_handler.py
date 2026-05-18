@@ -13,7 +13,7 @@ from app.state_machine.models.conversation_state import ConversationState
 
 
 def _build_repo() -> MenuRepository:
-    data_root = Path(__file__).resolve().parents[4] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[4] / "app" / "data" / "restaurants" / "steves_grill"
     store = MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",
@@ -22,7 +22,7 @@ def _build_repo() -> MenuRepository:
 
 
 def _build_session(repo: MenuRepository) -> Session:
-    session = Session(session_id="edit-1", restaurant_id="demo")
+    session = Session(session_id="edit-1", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.IDLE
     item = repo.resolve_menu_query("bourbon chicken", limit=5).item
     session.cart.add_item(

@@ -10,7 +10,7 @@ from app.nlu.query_normalization.text_preprocessor import normalize_text
 
 
 def _build_demo_store() -> MenuStore:
-    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
     return MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",

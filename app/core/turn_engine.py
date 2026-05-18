@@ -12,8 +12,10 @@ Composes six focused modules under ``app/core/``:
 """
 from __future__ import annotations
 
+import os
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any
 
@@ -64,6 +66,22 @@ from app.state_machine.policy.contextual_control_resolver import (
 from app.state_machine.policy.idle_checkout_coercion import coerce_idle_to_checkout
 from app.state_machine.policy.intent_coercion import IntentCoercionPolicy
 from app.state_machine.state_router import StateRouter
+from app.nlu.semantic_repair.repair_service import (
+    GptRepairService,
+    LocalTurnAnalysis,
+    _ALL_SHADOW_SKIP_STATE_VALUES,
+)
+from app.nlu.semantic_repair.gpt_repair_result import GptRepairResult, GPT_NOT_CALLED
+from app.nlu.semantic_repair.add_item_service import AddItemExtractorService
+from app.nlu.semantic_repair.add_item_extractor import GptAddItemPlan
+from app.nlu.semantic_repair.gpt_log_record_builder import (
+    build_gpt_repair_csv_row,
+    build_gpt_shadow_jsonl_record,
+)
+from app.logging.gpt_repair_csv_logger import GptRepairCsvLogger
+from app.logging.gpt_repair_jsonl_logger import GptRepairJsonlLogger
+from app.config.logging import get_logging_config
+from app.config.semantic_repair import get_semantic_repair_config as _get_gpt_cfg
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +194,20 @@ class TurnEngine:
             diagnostics=self.diagnostics,
         )
         self.intent_coercion = IntentCoercionPolicy(menu_repo=menu_repo)
+        self.gpt_repair = GptRepairService()
+        self.add_item_extractor = AddItemExtractorService()
+
+        _log_cfg = get_logging_config()
+        self.gpt_csv_logger = GptRepairCsvLogger(
+            log_path=_log_cfg.gpt_csv_log_path,
+            rotate_on_start=_log_cfg.rotate_gpt_logs_on_start,
+        )
+        self.gpt_jsonl_logger = GptRepairJsonlLogger(
+            log_path=_log_cfg.gpt_jsonl_log_path,
+            rotate_on_start=_log_cfg.rotate_gpt_logs_on_start,
+        )
+        # Background executor for all_shadow GPT calls (fire-and-forget)
+        self._shadow_executor: ThreadPoolExecutor | None = None
 
     # ------------------------------------------------------------------
     # Private helpers
@@ -184,6 +216,115 @@ class TurnEngine:
     @staticmethod
     def _normalize_response_text(text: str | None) -> str:
         return " ".join((text or "").split()).strip()
+
+    # ------------------------------------------------------------------
+    # all_shadow background GPT helpers
+    # ------------------------------------------------------------------
+
+    def _get_shadow_executor(self) -> ThreadPoolExecutor:
+        """Return (lazily creating) the background executor for shadow GPT calls."""
+        if self._shadow_executor is None:
+            self._shadow_executor = ThreadPoolExecutor(
+                max_workers=4,
+                thread_name_prefix="gpt-shadow",
+            )
+        return self._shadow_executor
+
+    def _dispatch_shadow_gpt(
+        self,
+        *,
+        nlu: Any,
+        analysis: LocalTurnAnalysis,
+        state_before: "ConversationState",
+        prompt_field: str,
+        item_name: str,
+        session_id: str,
+        turn_index: int,
+        response_key: str,
+    ) -> None:
+        """Submit an all_shadow GPT task to the background thread pool.
+
+        Returns immediately — never blocks the caller.  The background task
+        calls GPT, writes JSONL, and discards the result (gpt_applied=False).
+        """
+        try:
+            self._get_shadow_executor().submit(
+                self._run_shadow_gpt,
+                nlu=nlu,
+                analysis=analysis,
+                state_before=state_before,
+                prompt_field=prompt_field,
+                item_name=item_name,
+                session_id=session_id,
+                turn_index=turn_index,
+                response_key=response_key,
+            )
+        except Exception as exc:
+            print(f"[GPT_SHADOW_DISPATCH_ERROR] {type(exc).__name__}: {exc}")
+
+    def _run_shadow_gpt(
+        self,
+        *,
+        nlu: Any,
+        analysis: LocalTurnAnalysis,
+        state_before: "ConversationState",
+        prompt_field: str,
+        item_name: str,
+        session_id: str,
+        turn_index: int,
+        response_key: str,
+    ) -> None:
+        """Background: call GPT, write JSONL. Never mutates live state."""
+        try:
+            _cfg = _get_gpt_cfg()
+            timeout_sec = _cfg.shadow_timeout_ms / 1000.0
+
+            result = self.gpt_repair.call_gpt_for_shadow(
+                nlu=nlu,
+                analysis=analysis,
+                state=state_before,
+                prompt_field=prompt_field,
+                item_name=item_name,
+                timeout_seconds=timeout_sec,
+            )
+
+            record = build_gpt_shadow_jsonl_record(
+                analysis=analysis,
+                result=result,
+                nlu=nlu,
+                state_before=state_before.value,
+                session_id=session_id,
+                turn_index=turn_index,
+                response_key=response_key,
+                final_response_key=response_key,
+                call_mode="all_shadow",
+                phase=_cfg.phase,
+            )
+            self.gpt_jsonl_logger.log_turn(record)
+        except Exception as exc:
+            print(f"[GPT_SHADOW_RUN_ERROR] {type(exc).__name__}: {exc}")
+
+    def _record_turn_memory(
+        self,
+        session: Session,
+        normalized_text: str,
+        response_key: str,
+        response_payload: dict[str, Any] | None,
+    ) -> None:
+        """Append current user utterance + bot response to the session turn memory buffer."""
+        ctx = getattr(session, "conversation_context", None)
+        if ctx is None:
+            return
+        append = getattr(ctx, "append_turn_memory", None)
+        if not callable(append):
+            return
+        try:
+            ctx.append_turn_memory("user", normalized_text)
+            bot_text = self._build_response_text(session, response_key, response_payload)
+            if bot_text:
+                ctx.append_turn_memory("bot", bot_text)
+        except Exception:
+            pass
 
     def _build_response_text(
         self,
@@ -201,6 +342,68 @@ class TurnEngine:
             )
         except Exception:
             return ""
+
+    @staticmethod
+    def _serialize_add_item_items(items: Any) -> str | None:
+        """Serialize GptAddItem tuple to a capped JSON string (max 4000 chars)."""
+        if not items:
+            return None
+        import json as _j
+        try:
+            out = []
+            for it in items:
+                out.append({
+                    "item": getattr(it, "item", ""),
+                    "quantity": getattr(it, "quantity", None),
+                    "size": getattr(it, "size", None),
+                    "variant": getattr(it, "variant", None),
+                    "sides": [
+                        {
+                            "name": getattr(s, "name", ""),
+                            "operation": getattr(s, "operation", "add"),
+                            "quantity": getattr(s, "quantity", None),
+                            "size": getattr(s, "size", None),
+                            "variant": getattr(s, "variant", None),
+                            "modifiers": list(getattr(s, "modifiers", ())),
+                        }
+                        for s in (getattr(it, "sides", ()) or ())
+                    ],
+                    "modifiers": [
+                        {
+                            "name": getattr(m, "name", ""),
+                            "operation": getattr(m, "operation", "add"),
+                            "quantity": getattr(m, "quantity", None),
+                            "size": getattr(m, "size", None),
+                            "variant": getattr(m, "variant", None),
+                        }
+                        for m in (getattr(it, "modifiers", ()) or ())
+                    ],
+                    "missing": list(getattr(it, "missing", ())),
+                })
+            raw = _j.dumps(out, ensure_ascii=False)
+            return raw[:4000] if len(raw) > 4000 else raw
+        except Exception:
+            return None
+
+    @staticmethod
+    def _serialize_add_item_global_slots(slots: Any) -> str | None:
+        """Serialize global_slots tuple to a JSON string."""
+        if not slots:
+            return None
+        import json as _j
+        try:
+            out = []
+            for s in slots:
+                if isinstance(s, dict):
+                    out.append(s)
+                else:
+                    out.append({
+                        "name": getattr(s, "name", str(s)),
+                        "value": str(getattr(s, "value", s)),
+                    })
+            return _j.dumps(out, ensure_ascii=False)
+        except Exception:
+            return None
 
     def _record_turn_event(
         self,
@@ -224,6 +427,12 @@ class TurnEngine:
         route_reason: str | None = None,
         resolved_entity_type: str | None = None,
         resolved_entity_id: str | None = None,
+        # GPT shadow-mode repair fields (phase 2).
+        gpt_shadow: tuple[LocalTurnAnalysis, GptRepairResult] | None = None,
+        # True when GPT fallback was actually applied (response overridden).
+        gpt_fallback_applied: bool = False,
+        # ADD_ITEM extractor result (shadow-only, never applied).
+        add_item_plan: GptAddItemPlan | None = None,
     ) -> None:
         if not self.diagnostics.enabled:
             return
@@ -233,6 +442,48 @@ class TurnEngine:
             normalized_values = build_normalized_values(session, self.menu_repo, result)
             missing_fields = build_missing_required_fields(session)
             slots = tuple(getattr(nlu, "slots", ()) or ())
+
+            # GPT shadow-mode fields
+            import json as _json
+            _analysis: LocalTurnAnalysis | None = gpt_shadow[0] if gpt_shadow else None
+            _gpt: GptRepairResult | None = gpt_shadow[1] if gpt_shadow else None
+            # _gpt_called: True only when the GPT API was actually invoked.
+            # GPT_NOT_CALLED sentinel (model=None) is returned when skipped.
+            _gpt_called = _gpt is not None and _gpt is not GPT_NOT_CALLED
+            _local_intent = getattr(getattr(nlu, "effective_intent", None), "value", None)
+
+            # Serialize top-K candidates to JSON string for logging
+            _candidates_json: str | None = None
+            if _analysis and _analysis.intent_candidates:
+                try:
+                    _candidates_json = _json.dumps([
+                        {
+                            "intent": c.canonical_intent,
+                            "confidence": round(c.confidence, 4),
+                        }
+                        for c in _analysis.intent_candidates
+                    ])
+                except Exception:
+                    pass
+
+            # Serialize slots to JSON string
+            _slots_json: str | None = None
+            if slots:
+                try:
+                    _slots_json = _json.dumps([
+                        {"name": s.name, "value": str(s.value)}
+                        for s in slots
+                        if hasattr(s, "name")
+                    ])
+                except Exception:
+                    pass
+
+            from app.config.semantic_repair import get_semantic_repair_config as _get_src_cfg
+            _src_phase: int | None = None
+            try:
+                _src_phase = _get_src_cfg().phase
+            except Exception:
+                pass
 
             event = TurnEvent(
                 session_id=self.diagnostics._safe_session_id(session),
@@ -289,8 +540,158 @@ class TurnEngine:
                 resolved_entity_id=resolved_entity_id,
                 route_reason=route_reason,
                 coercion_reason=coercion_reason,
+                # GPT local model snapshot
+                local_intent_before_gpt=_local_intent if _analysis else None,
+                local_sub_intent_before_gpt=(
+                    getattr(nlu, "model_sub_intent", None) if _analysis else None
+                ),
+                local_intent_confidence_before_gpt=(
+                    _analysis.intent_confidence if _analysis else None
+                ),
+                local_intent_candidates_json=_candidates_json,
+                local_slots_before_gpt=_slots_json,
+                # GPT eligibility block
+                gpt_repair_eligible=_analysis.gpt_repair_eligible if _analysis else False,
+                gpt_repair_eligible_reason=_analysis.reason if _analysis else None,
+                gpt_repair_reason=_analysis.reason if _analysis else None,
+                gpt_candidate_count=_analysis.candidate_count if _analysis else None,
+                gpt_skipped_reason=_analysis.skipped_reason if _analysis else None,
+                gpt_phase=_src_phase if _src_phase is not None else 0,
+                # GPT call block
+                gpt_called=bool(_gpt_called),
+                gpt_payload_build_ms=_gpt.payload_build_ms if _gpt_called and _gpt else None,
+                gpt_request_ms=_gpt.request_ms if _gpt_called and _gpt else None,
+                gpt_parse_ms=_gpt.parse_ms if _gpt_called and _gpt else None,
+                gpt_total_ms=_gpt.total_ms if _gpt_called and _gpt else None,
+                gpt_prompt_chars=_gpt.prompt_chars if _gpt_called and _gpt else None,
+                gpt_completion_chars=_gpt.completion_chars if _gpt_called and _gpt else None,
+                gpt_model=_gpt.model if _gpt else None,
+                # GPT suggestion block
+                gpt_decision=_gpt.decision if _gpt else None,
+                gpt_selected_intent=_gpt.repaired_intent if _gpt else None,
+                gpt_selected_control_intent=_gpt.repaired_control_intent if _gpt else None,
+                gpt_slot_corrections_json=(
+                    _json.dumps(_gpt.slot_corrections) if _gpt and _gpt.slot_corrections else None
+                ),
+                gpt_confidence=_gpt.confidence if _gpt else None,
+                gpt_reason=_gpt.reason if _gpt else None,
+                gpt_latency_ms=_gpt.latency_ms if _gpt else None,
+                gpt_timeout=_gpt.timeout if _gpt else False,
+                gpt_parse_error=_gpt.parse_error if _gpt else None,
+                # Final block
+                gpt_applied=gpt_fallback_applied,
+                gpt_apply_reason=(
+                    "fallback_applied" if gpt_fallback_applied
+                    else ("shadow_mode" if _gpt_called else None)
+                ),
+                final_intent_after_gpt=_local_intent if _analysis else None,
+                final_slots_after_gpt=_slots_json,
+                final_response_key=response_key,
+                training_candidate=False,
+                # Fallback classification (phase 2: logged only, never applied)
+                gpt_fallback_type=_gpt.fallback_type if _gpt else "none",
+                fallback_response_key=(
+                    f"fallback_{_gpt.fallback_type}"
+                    if _gpt and _gpt.fallback_type != "none"
+                    else None
+                ),
+                # ADD_ITEM extractor (shadow-only — never applied to cart/state/response)
+                add_item_extractor_called=(
+                    add_item_plan.total_ms is not None if add_item_plan else False
+                ),
+                add_item_eligible=(
+                    add_item_plan.eligible if add_item_plan else False
+                ),
+                add_item_skipped_reason=(
+                    add_item_plan.skipped_reason if add_item_plan else None
+                ),
+                add_item_decision=(
+                    add_item_plan.decision if add_item_plan else None
+                ),
+                add_item_confidence=(
+                    add_item_plan.confidence if add_item_plan else None
+                ),
+                add_item_items_json=self._serialize_add_item_items(
+                    add_item_plan.items if add_item_plan else ()
+                ),
+                add_item_items_count=(
+                    len(add_item_plan.items) if add_item_plan and add_item_plan.items else None
+                ),
+                add_item_global_slots_json=self._serialize_add_item_global_slots(
+                    add_item_plan.global_slots if add_item_plan else ()
+                ),
+                add_item_latency_ms=(
+                    add_item_plan.latency_ms if add_item_plan else None
+                ),
+                add_item_total_ms=(
+                    add_item_plan.total_ms if add_item_plan else None
+                ),
+                add_item_prompt_chars=(
+                    add_item_plan.prompt_chars if add_item_plan else None
+                ),
+                add_item_completion_chars=(
+                    add_item_plan.completion_chars if add_item_plan else None
+                ),
+                add_item_timeout=(
+                    add_item_plan.timeout if add_item_plan else False
+                ),
+                add_item_parse_error=(
+                    add_item_plan.parse_error if add_item_plan else None
+                ),
+                add_item_parse_notes_json=(
+                    _json.dumps(list(add_item_plan.parse_notes))
+                    if add_item_plan and add_item_plan.parse_notes
+                    else None
+                ),
+                add_item_reason=(
+                    add_item_plan.reason if add_item_plan else None
+                ),
+                add_item_model=(
+                    add_item_plan.model if add_item_plan else None
+                ),
             )
             self.diagnostics.record(event)
+
+            # Stamp realtime trace with GPT summary (eligible_only inline path)
+            # For all_shadow the trace is stamped earlier with pending_async values.
+            _trace_ref = None
+            # trace is not directly accessible here; it's stamped in process_turn.
+
+            # Write GPT repair CSV + JSONL for eligible/called/training_candidate/add_item turns.
+            if (event.gpt_repair_eligible or event.gpt_called or event.training_candidate
+                    or event.add_item_extractor_called):
+                try:
+                    self.gpt_csv_logger.log_turn(build_gpt_repair_csv_row(event))
+                except Exception as _csv_exc:
+                    print(f"[GPT_CSV_LOG_ERROR] {type(_csv_exc).__name__}: {_csv_exc}")
+                # JSONL is source of truth for nested GPT training data
+                if _analysis is not None and _gpt is not None:
+                    try:
+                        _gpt_cfg = _get_gpt_cfg()
+                        _jsonl_record = build_gpt_shadow_jsonl_record(
+                            analysis=_analysis,
+                            result=_gpt,
+                            nlu=nlu,
+                            state_before=state_before.value,
+                            session_id=event.session_id,
+                            turn_index=event.turn_index,
+                            response_key=event.response_key,
+                            final_response_key=event.final_response_key,
+                            call_mode=_gpt_cfg.call_mode or "",
+                            phase=_gpt_cfg.phase,
+                        )
+                        self.gpt_jsonl_logger.log_turn(_jsonl_record)
+                    except Exception as _jsonl_exc:
+                        print(f"[GPT_JSONL_LOG_ERROR] {type(_jsonl_exc).__name__}: {_jsonl_exc}")
+                # Write JSONL for add_item extractor turns (shadow-only logging)
+                if event.add_item_extractor_called:
+                    try:
+                        from app.nlu.semantic_repair.gpt_log_record_builder import (
+                            build_gpt_repair_log_record,
+                        )
+                        self.gpt_jsonl_logger.log_turn(build_gpt_repair_log_record(event))
+                    except Exception as _ai_jsonl_exc:
+                        print(f"[ADD_ITEM_JSONL_LOG_ERROR] {type(_ai_jsonl_exc).__name__}: {_ai_jsonl_exc}")
         except Exception as exc:
             print(f"[TURN_EVENT_BUILD_ERROR] {type(exc).__name__}: {exc}")
 
@@ -447,6 +848,11 @@ class TurnEngine:
         self.diagnostics._trace_set_attr(trace, "normalized_text", normalized_text)
         self.diagnostics._trace_set_nlu_fields(trace=trace, nlu=nlu)
 
+        # Initialised to None; populated after all coercions complete below.
+        _gpt_shadow: tuple[LocalTurnAnalysis, GptRepairResult] | None = None
+        # Populated by ADD_ITEM extractor (shadow-only); never applied.
+        _add_item_plan: GptAddItemPlan | None = None
+
         phase3_decision = self.flow_gate._handle_phase3_control_shortcuts(
             session=session,
             state_before=state_before,
@@ -495,6 +901,7 @@ class TurnEngine:
                     route_ms=0.0,
                     handler_ms=0.0,
                     total_ms=total_ms,
+                    gpt_shadow=_gpt_shadow,
                 )
                 self.diagnostics._finalize_trace_and_timing(
                     trace=trace,
@@ -550,6 +957,7 @@ class TurnEngine:
                 route_ms=0.0,
                 handler_ms=0.0,
                 total_ms=total_ms,
+                gpt_shadow=_gpt_shadow,
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -627,6 +1035,191 @@ class TurnEngine:
                 )
                 _coercion_reason = f"contextual_control_v2:{_cc.reason}"
 
+        # GPT shadow-mode repair — runs AFTER all coercions (idle-checkout,
+        # add-item, contextual control v2), BEFORE StateRouter.route().
+        _engine_elapsed_ms = (time.perf_counter() - t_total_start) * 1000.0
+        _gpt_cfg_now = _get_gpt_cfg()
+        _is_all_shadow = _gpt_cfg_now.effective_call_mode == "all_shadow"
+        try:
+            _gpt_shadow = self.gpt_repair.run(
+                nlu=nlu,
+                intent_result=intent_result,
+                state=session.conversation_state,
+                session=session,
+                engine_elapsed_ms=_engine_elapsed_ms,
+            )
+        except Exception as _gpt_err:
+            print(f"[GPT_SHADOW_ERROR] {type(_gpt_err).__name__}: {_gpt_err}")
+
+        # all_shadow: dispatch background GPT task now (non-blocking).
+        # Analysis is already captured in _gpt_shadow[0] from the eligibility check.
+        # Prompt_field / item_name are captured from session before state mutations.
+        if _is_all_shadow and _gpt_shadow is not None:
+            _shadow_analysis = _gpt_shadow[0]
+            _shadow_state = session.conversation_state
+            _shadow_text = (getattr(nlu, "normalized_text", "") or "").strip()
+            # Skip noisy/empty turns or terminal states
+            if (
+                len(_shadow_text) >= 2
+                and _shadow_state.value not in _ALL_SHADOW_SKIP_STATE_VALUES
+                and os.getenv("OPENAI_API_KEY")
+            ):
+                _shadow_ctx = getattr(session, "conversation_context", None)
+                _shadow_pf = getattr(_shadow_ctx, "current_prompt_field", "") or "" if _shadow_ctx else ""
+                _shadow_in = getattr(_shadow_ctx, "current_item_name", "") or "" if _shadow_ctx else ""
+                self._dispatch_shadow_gpt(
+                    nlu=nlu,
+                    analysis=_shadow_analysis,
+                    state_before=_shadow_state,
+                    prompt_field=_shadow_pf,
+                    item_name=_shadow_in,
+                    session_id=self.diagnostics._safe_session_id(session),
+                    turn_index=session.turn_count,
+                    response_key=session.last_response_key or "",
+                )
+                # Stamp realtime trace with pending_async status
+                if trace is not None:
+                    for _attr, _val in (
+                        ("gpt_called", True),
+                        ("gpt_decision", "pending_async"),
+                        ("gpt_applied", False),
+                    ):
+                        if hasattr(trace, _attr):
+                            setattr(trace, _attr, _val)
+
+        # For eligible_only inline GPT: stamp realtime trace with actual GPT values
+        if (
+            not _is_all_shadow
+            and trace is not None
+            and _gpt_shadow is not None
+        ):
+            _, _inline_gpt = _gpt_shadow
+            if _inline_gpt is not None and _inline_gpt is not GPT_NOT_CALLED:
+                for _attr, _val in (
+                    ("gpt_called", True),
+                    ("gpt_decision", _inline_gpt.decision or ""),
+                    ("gpt_selected_intent", _inline_gpt.repaired_intent or ""),
+                    ("gpt_confidence", _inline_gpt.confidence),
+                    ("gpt_total_ms", _inline_gpt.total_ms),
+                    ("gpt_timeout", _inline_gpt.timeout),
+                    ("gpt_applied", _inline_gpt.applied),
+                    ("gpt_fallback_type", _inline_gpt.fallback_type),
+                ):
+                    if hasattr(trace, _attr):
+                        setattr(trace, _attr, _val)
+
+        # GPT fallback application gate.
+        # Fallback may ONLY be applied when:
+        #   config.apply_fallbacks == True
+        #   AND call_mode is not all_shadow (shadow mode never applies)
+        # With apply_fallbacks defaulting to False, fallbacks are logged-only unless
+        # explicitly enabled.  In all_shadow mode the gate is always closed.
+        _gpt_fallback_allowed = (
+            _gpt_cfg_now.apply_fallbacks
+            and not _is_all_shadow
+        )
+        if _gpt_shadow is not None:
+            _fb_analysis, _fb_gpt = _gpt_shadow
+            if (
+                _fb_gpt.decision == "fallback"
+                and _fb_gpt.fallback_type != "none"
+                and _gpt_fallback_allowed
+            ):
+                _fb_key = f"fallback_{_fb_gpt.fallback_type}"
+                self.response_writer._apply_session_response(
+                    session=session,
+                    intent=intent_result.intent,
+                    response_key=_fb_key,
+                    response_payload={},
+                )
+                total_ms = (time.perf_counter() - t_total_start) * 1000.0
+                _diag = self.diagnostics._update_session_diagnostics(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    response_key=_fb_key,
+                    response_payload={},
+                )
+                self._record_turn_event(
+                    session=session,
+                    state_before=state_before,
+                    nlu=nlu,
+                    result=None,
+                    response_key=_fb_key,
+                    response_payload={},
+                    diag=_diag,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=0.0,
+                    route_ms=0.0,
+                    handler_ms=0.0,
+                    total_ms=total_ms,
+                    coercion_reason=_coercion_reason,
+                    gpt_shadow=_gpt_shadow,
+                    gpt_fallback_applied=True,
+                )
+                self.diagnostics._finalize_trace_and_timing(
+                    trace=trace,
+                    session=session,
+                    response_key=_fb_key,
+                    total_start_monotonic=t_total_start,
+                    total_ms=total_ms,
+                    preprocess_ms=t_preprocess * 1000.0,
+                    nlu_ms=t_nlu * 1000.0,
+                    flow_ms=0.0,
+                    route_ms=0.0,
+                    handler_ms=0.0,
+                )
+                self._record_turn_memory(
+                    session=session,
+                    normalized_text=nlu.normalized_text or "",
+                    response_key=_fb_key,
+                    response_payload={},
+                )
+                return self.response_writer._hydrate_output(
+                    session=session,
+                    output=TurnOutput(
+                        response_key=_fb_key,
+                        response_payload={},
+                    ),
+                )
+
+        # ── ADD_ITEM extractor (shadow-only) ─────────────────────────────────
+        # Runs AFTER GPT shadow repair/fallback gate, BEFORE FlowControlPolicy.
+        # Never mutates cart, state, intent_result, slots, or response.
+        if _get_gpt_cfg().add_item_mode == "shadow":
+            _ai_shadow_decision: str | None = None
+            _ai_shadow_intent: str | None = None
+            if _gpt_shadow is not None:
+                _, _ai_gpt_ref = _gpt_shadow
+                if _ai_gpt_ref is not None and _ai_gpt_ref is not GPT_NOT_CALLED:
+                    _ai_shadow_decision = _ai_gpt_ref.decision
+                    _ai_shadow_intent = _ai_gpt_ref.repaired_intent
+            try:
+                _add_item_plan = self.add_item_extractor.run(
+                    session=session,
+                    nlu=nlu,
+                    intent_result=intent_result,
+                    state=session.conversation_state,
+                    intent_candidates=getattr(nlu, "intent_candidates", None),
+                    gpt_shadow_decision=_ai_shadow_decision,
+                    gpt_shadow_repaired_intent=_ai_shadow_intent,
+                )
+            except Exception as _ai_err:
+                print(f"[ADD_ITEM_EXTRACTOR_ERROR] {type(_ai_err).__name__}: {_ai_err}")
+
+        # Stamp realtime trace notes with ADD_ITEM summary (for realtime_turn_latency.csv)
+        if trace is not None and _add_item_plan is not None:
+            _ai_trace_notes = getattr(trace, "notes", None)
+            if isinstance(_ai_trace_notes, dict):
+                _ai_trace_notes["add_item"] = {
+                    "add_item_extractor_called": _add_item_plan.total_ms is not None,
+                    "add_item_decision": _add_item_plan.decision or "",
+                    "add_item_items_count": len(_add_item_plan.items) if _add_item_plan.items else None,
+                    "add_item_confidence": _add_item_plan.confidence,
+                    "add_item_total_ms": _add_item_plan.total_ms,
+                }
+
         t0 = time.perf_counter()
         flow = self.flow_policy.evaluate(
             state=session.conversation_state,
@@ -669,6 +1262,8 @@ class TurnEngine:
                 handler_ms=0.0,
                 total_ms=total_ms,
                 coercion_reason=_coercion_reason,
+                gpt_shadow=_gpt_shadow,
+                add_item_plan=_add_item_plan,
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -729,6 +1324,8 @@ class TurnEngine:
                 handler_ms=0.0,
                 total_ms=total_ms,
                 coercion_reason=_coercion_reason,
+                gpt_shadow=_gpt_shadow,
+                add_item_plan=_add_item_plan,
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -782,6 +1379,8 @@ class TurnEngine:
                     handler_ms=0.0,
                     total_ms=total_ms,
                     coercion_reason=_coercion_reason,
+                    gpt_shadow=_gpt_shadow,
+                    add_item_plan=_add_item_plan,
                 )
                 self.diagnostics._finalize_trace_and_timing(
                     trace=trace,
@@ -868,6 +1467,8 @@ class TurnEngine:
                     total_ms=total_ms,
                     coercion_reason=_coercion_reason,
                     route_reason=route.reason,
+                    gpt_shadow=_gpt_shadow,
+                    add_item_plan=_add_item_plan,
                 )
                 self.diagnostics._finalize_trace_and_timing(
                     trace=trace,
@@ -929,6 +1530,8 @@ class TurnEngine:
                 total_ms=total_ms,
                 coercion_reason=_coercion_reason,
                 route_reason=route.reason,
+                gpt_shadow=_gpt_shadow,
+                add_item_plan=_add_item_plan,
             )
             self.diagnostics._finalize_trace_and_timing(
                 trace=trace,
@@ -1096,6 +1699,8 @@ class TurnEngine:
             route_reason=route.reason if route else None,
             resolved_entity_type=_resolved_entity_type,
             resolved_entity_id=_resolved_entity_id,
+            gpt_shadow=_gpt_shadow,
+            add_item_plan=_add_item_plan,
         )
         self.diagnostics._finalize_trace_and_timing(
             trace=trace,
@@ -1122,6 +1727,14 @@ class TurnEngine:
             ),
             transfer_call_to_number=transfer_number,
         )
+
+        self._record_turn_memory(
+            session=session,
+            normalized_text=nlu.normalized_text or "",
+            response_key=result.response_key,
+            response_payload=result.response_payload,
+        )
+
         if suppress_payment_replay:
             return self.response_writer._build_silent_output(
                 response_key=output.response_key,

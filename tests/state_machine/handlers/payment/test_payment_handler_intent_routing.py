@@ -32,13 +32,13 @@ class _StubCartSummaryBuilder:
 
 
 def _payment_session() -> Session:
-    session = Session(session_id="pay-1", restaurant_id="demo")
+    session = Session(session_id="pay-1", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_PAYMENT
     return session
 
 
 def _checkout_session() -> Session:
-    session = Session(session_id="chk-1", restaurant_id="demo")
+    session = Session(session_id="chk-1", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
     return session
 

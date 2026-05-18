@@ -107,6 +107,27 @@ class RealtimeTurnTrace:
     command: dict[str, Any] | None = None
     notes: dict[str, Any] = field(default_factory=dict)
 
+    # ── GPT shadow summary (flat; populated after GPT result is known) ────
+    # In all_shadow mode these are set to partial values (pending_async) since
+    # GPT runs in a background thread after the turn returns.
+    # In eligible_only mode these reflect the actual GPT call outcome.
+    gpt_called: bool = False
+    gpt_decision: str = ""
+    gpt_selected_intent: str = ""
+    gpt_confidence: float | None = None
+    gpt_total_ms: float | None = None
+    gpt_timeout: bool = False
+    gpt_applied: bool = False
+    gpt_fallback_type: str = ""
+
+    # ── ADD_ITEM extractor summary (read from notes["add_item"] after turn) ─
+    # Populated only when mode=shadow and the extractor ran.
+    add_item_extractor_called: bool = False
+    add_item_decision: str = ""
+    add_item_items_count: int | None = None
+    add_item_confidence: float | None = None
+    add_item_total_ms: float | None = None
+
     def finalize_metrics(self) -> dict[str, Any]:
         # Speech / commit
         latency_user_speech_start_to_stt_final_ms = ms_between(
@@ -355,6 +376,21 @@ class RealtimeLatencyLogger:
         "stt_final_text_chars",
         "command",
         "notes",
+        # GPT shadow summary columns (appended; existing columns order unchanged)
+        "gpt_called",
+        "gpt_decision",
+        "gpt_selected_intent",
+        "gpt_confidence",
+        "gpt_total_ms",
+        "gpt_timeout",
+        "gpt_applied",
+        "gpt_fallback_type",
+        # ADD_ITEM extractor summary columns (appended after GPT columns)
+        "add_item_extractor_called",
+        "add_item_decision",
+        "add_item_items_count",
+        "add_item_confidence",
+        "add_item_total_ms",
     ]
 
     def __init__(
@@ -573,6 +609,31 @@ class RealtimeLatencyLogger:
             "stt_final_text_chars": payload.get("stt_final_text_chars", ""),
             "command": _safe_json(payload.get("command")),
             "notes": _safe_json(payload.get("notes")),
+            # GPT shadow summary
+            "gpt_called": payload.get("gpt_called", ""),
+            "gpt_decision": payload.get("gpt_decision", ""),
+            "gpt_selected_intent": payload.get("gpt_selected_intent", ""),
+            "gpt_confidence": payload.get("gpt_confidence", ""),
+            "gpt_total_ms": payload.get("gpt_total_ms", ""),
+            "gpt_timeout": payload.get("gpt_timeout", ""),
+            "gpt_applied": payload.get("gpt_applied", ""),
+            "gpt_fallback_type": payload.get("gpt_fallback_type", ""),
+            # ADD_ITEM extractor summary (read from notes["add_item"])
+            "add_item_extractor_called": (
+                payload.get("notes", {}).get("add_item", {}).get("add_item_extractor_called", "")
+            ),
+            "add_item_decision": (
+                payload.get("notes", {}).get("add_item", {}).get("add_item_decision", "")
+            ),
+            "add_item_items_count": (
+                payload.get("notes", {}).get("add_item", {}).get("add_item_items_count", "")
+            ),
+            "add_item_confidence": (
+                payload.get("notes", {}).get("add_item", {}).get("add_item_confidence", "")
+            ),
+            "add_item_total_ms": (
+                payload.get("notes", {}).get("add_item", {}).get("add_item_total_ms", "")
+            ),
         }
 
     def _ensure_csv_header(self) -> None:

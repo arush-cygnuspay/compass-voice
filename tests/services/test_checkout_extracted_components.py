@@ -84,7 +84,7 @@ def _repo(tmp: Path) -> CheckoutSessionRepository:
 
 def _session(**kw) -> CheckoutSession:
     defaults = dict(
-        restaurant_id="demo",
+        restaurant_id="steves_grill",
         call_sid=None,
         order_number="1234567",
         customer_phone_number=None,

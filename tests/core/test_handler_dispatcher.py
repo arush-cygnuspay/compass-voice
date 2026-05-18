@@ -55,7 +55,7 @@ class _StubSmsService:
 
 
 def _build_dispatcher() -> HandlerDispatcher:
-    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
     menu_repo = MenuRepository(
         MenuStore(
             menu_path=data_root / "menu.json",

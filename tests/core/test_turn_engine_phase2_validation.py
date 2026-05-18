@@ -282,9 +282,9 @@ def test_reprompt_guardrail_lists_options_after_third_invalid_side_attempt() -> 
     _turn(
         engine,
         session,
-        "Chicken Taco",
+        "chopped salad",
         intent=Intent.ADD_ITEM,
-        slots=(SlotValue(name="ITEM", value="Chicken Taco"),),
+        slots=(SlotValue(name="ITEM", value="chopped salad"),),
     )
 
     first = _turn(engine, session, "maybe", intent=Intent.UNKNOWN)

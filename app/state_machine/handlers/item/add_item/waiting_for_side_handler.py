@@ -619,10 +619,9 @@ class WaitingForSideHandler(GroupResolutionHandler):
         if len(proposed_ids) < min_selector:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
-                response_key="repeat_side_options",
+                response_key="ask_for_side",
                 response_payload={
                     **self._choice_payload(context, group),
-                    "repeat_reason": "need_more",
                     "matched_names": all_matched_names,
                     "unmatched_names": _unmatched,
                     **self._match_debug_payload(match_debug),

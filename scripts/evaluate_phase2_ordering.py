@@ -93,7 +93,7 @@ class CapturingLogger:
 
 
 def _build_menu_repo(repo_root: Path) -> MenuRepository:
-    data_root = repo_root / "app" / "data" / "restaurants" / "demo"
+    data_root = repo_root / "app" / "data" / "restaurants" / "steves_grill"
     store = MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",
@@ -146,7 +146,7 @@ def _intent_from_name(name: str | None) -> Intent:
 
 
 def _new_session(*, caller_device_type: str) -> Session:
-    session = Session(session_id="phase2-eval", restaurant_id="demo")
+    session = Session(session_id="phase2-eval", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
     session.conversation_context.caller_device_type = caller_device_type
     return session

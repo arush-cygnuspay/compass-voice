@@ -276,9 +276,10 @@ def resolve_nlu(
             slot_model_ran=False,
         )
 
-    model_main_label, model_sub_label, confidence_main, confidence_sub = predict_intent_labels(
+    model_main_label, model_sub_label, confidence_main, confidence_sub, intent_candidates = predict_intent_labels(
         normalized_text,
         intent_bundle,
+        top_k=4,
     )
 
     if not model_sub_label:
@@ -331,5 +332,6 @@ def resolve_nlu(
         model_sub_intent=model_sub_label,
         slots=slots,
         slot_model_ran=slot_model_ran,
+        intent_candidates=intent_candidates,
     )
         

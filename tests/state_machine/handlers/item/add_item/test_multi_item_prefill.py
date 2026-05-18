@@ -44,7 +44,7 @@ def _demo_repo() -> MenuRepository:
         / "app"
         / "data"
         / "restaurants"
-        / "demo"
+        / "steves_grill"
     )
     store = MenuStore(
         menu_path=data_root / "menu.json",

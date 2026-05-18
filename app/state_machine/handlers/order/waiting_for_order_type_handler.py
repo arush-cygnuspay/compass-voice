@@ -1,36 +1,17 @@
-# app/state_machine/handlers/common/waiting_for_order_type_handler.py
+# app/state_machine/handlers/order/waiting_for_order_type_handler.py
 from __future__ import annotations
 
 from app.nlu.intent_resolution.intent import Intent
 from app.session.session import Session
-from app.state_machine.models.conversation_context import ConversationContext
-from app.state_machine.models.conversation_state import ConversationState
+from app.state_machine.common.order_type_resolver import OrderTypeResolver
+from app.state_machine.flow_sets import ORDERING_INTENTS as _ORDER_TYPE_ORDERING_INTENTS
 from app.state_machine.handler_result import HandlerResult
 from app.state_machine.handlers.base_handler import BaseHandler
 from app.state_machine.handlers.common.preorder_redirect_utils import (
     looks_like_ordering_request,
 )
-
-PICKUP_WORDS = {
-    "pickup",
-    "pick up",
-    "carryout",
-    "carry out",
-    "takeout",
-    "take out",
-    "collection",
-}
-
-DELIVERY_WORDS = {
-    "delivery",
-    "deliver",
-    "drop off",
-    "dropoff",
-    "send it",
-}
-
-
-from app.state_machine.flow_sets import ORDERING_INTENTS as _ORDER_TYPE_ORDERING_INTENTS
+from app.state_machine.models.conversation_context import ConversationContext
+from app.state_machine.models.conversation_state import ConversationState
 
 
 class WaitingForOrderTypeHandler(BaseHandler):
@@ -53,7 +34,9 @@ class WaitingForOrderTypeHandler(BaseHandler):
                 response_key="ordering_blocked_need_order_type",
             )
 
-        order_type = self._resolve_order_type(normalized)
+        order_match = OrderTypeResolver.resolve(user_text)
+        order_type = order_match.order_type if order_match is not None else None
+
         if order_type is None:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_ORDER_TYPE,
@@ -85,17 +68,3 @@ class WaitingForOrderTypeHandler(BaseHandler):
             response_payload={"order_type": "delivery"},
             prompt_field="delivery_area",
         )
-
-    def _resolve_order_type(self, text: str) -> str | None:
-        if not text:
-            return None
-
-        for phrase in DELIVERY_WORDS:
-            if phrase in text:
-                return "delivery"
-
-        for phrase in PICKUP_WORDS:
-            if phrase in text:
-                return "pickup"
-
-        return None

@@ -22,6 +22,7 @@ from app.nlu.nlu_result import NLUResult
 from app.nlu.nlu_resolver import resolve_nlu
 from app.nlu.query_normalization.text_preprocessor import preprocess_turn_text
 from app.session.session import Session
+from app.state_machine.common.order_type_resolver import OrderTypeResolver
 from app.state_machine.flow_sets import (
     DELIVERY_GATING_ALLOWED_CONTROL_INTENTS,
     WAITING_STATE_ALLOWED_CONTROL_INTENTS,
@@ -77,6 +78,35 @@ class NluOrchestrator:
         cleaned_text = preprocessed.cleaned_text
         normalized_text = preprocessed.normalized_text
         preprocess_ms = (time.perf_counter() - t0) * 1000.0
+
+        # Fast-path: WAITING_FOR_ORDER_TYPE has a closed answer set (pickup /
+        # delivery).  Run the deterministic resolver before the full ML stack.
+        # If it matches, skip intent classification and slot extraction entirely.
+        if session.conversation_state == ConversationState.WAITING_FOR_ORDER_TYPE:
+            order_match = OrderTypeResolver.resolve(normalized_text)
+            if order_match is not None:
+                nlu = NLUResult(
+                    effective_intent=Intent.UNKNOWN,
+                    intent_confidence=0.0,
+                    raw_text=cleaned_text,
+                    normalized_text=normalized_text,
+                    slots=(),
+                    slot_model_ran=False,
+                    nlu_skipped=True,
+                    nlu_skip_reason="order_type_lexical_match",
+                )
+                ctx.set_last_nlu(user_text=cleaned_text, nlu=nlu)
+                return NluResolution(
+                    cleaned_text=cleaned_text,
+                    normalized_text=normalized_text,
+                    nlu=nlu,
+                    intent_result=IntentResult(
+                        intent=Intent.UNKNOWN,
+                        raw_text=normalized_text,
+                    ),
+                    preprocess_ms=preprocess_ms,
+                    nlu_ms=0.0,
+                )
 
         t0 = time.perf_counter()
         nlu = resolve_nlu(

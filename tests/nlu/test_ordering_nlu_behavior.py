@@ -38,7 +38,7 @@ def test_intent_detection_maps_model_labels_to_canonical_intents(
     with (
         patch(
             "app.nlu.nlu_resolver.predict_intent_labels",
-            return_value=("ordering", sub_intent, 0.99, 0.99),
+            return_value=("ordering", sub_intent, 0.99, 0.99, ()),
         ),
         patch(
             "app.nlu.nlu_resolver.predict_slots",

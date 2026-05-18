@@ -4,6 +4,7 @@ from __future__ import annotations
 import uuid
 
 from app.bootstrap.runtime import build_runtime
+from app.config.restaurant import DEFAULT_RESTAURANT_ID
 from app.session.repository import load_session, save_session
 
 
@@ -12,7 +13,7 @@ def main() -> None:
     print("Type 'exit' to quit.\n")
 
     session_id = "cli-" + str(uuid.uuid4())
-    restaurant_id = "demo"
+    restaurant_id = DEFAULT_RESTAURANT_ID
 
     runtime = build_runtime(restaurant_id=restaurant_id)
     session = load_session(session_id, restaurant_id)

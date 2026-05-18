@@ -31,7 +31,7 @@ def _make_handler() -> WaitingForDeliveryAddressCollectionHandler:
 
 
 def _make_session() -> Session:
-    session = Session(session_id="delivery-1", restaurant_id="demo")
+    session = Session(session_id="delivery-1", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_DELIVERY_ADDRESS_COLLECTION
     session.cart.add_item(
         CartItem.create(

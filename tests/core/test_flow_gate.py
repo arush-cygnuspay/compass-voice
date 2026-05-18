@@ -56,7 +56,7 @@ def _make_gate() -> FlowGate:
 class FlowGateRewriteTests(unittest.TestCase):
     def test_apply_idle_shortcuts_returns_unchanged_when_state_not_idle(self):
         gate = _make_gate()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.WAITING_FOR_MODIFIER
         intent_result = IntentResult(intent=Intent.DENY, raw_text="no")
 
@@ -66,7 +66,7 @@ class FlowGateRewriteTests(unittest.TestCase):
 
     def test_rewrite_confirming_order_to_idle_for_browse_intent(self):
         gate = _make_gate()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.CONFIRMING_ORDER
 
         new_state = gate._rewrite_confirming_order_to_idle_if_needed(
@@ -77,7 +77,7 @@ class FlowGateRewriteTests(unittest.TestCase):
 
     def test_rewrite_confirming_order_keeps_state_for_unrelated_intent(self):
         gate = _make_gate()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.CONFIRMING_ORDER
 
         new_state = gate._rewrite_confirming_order_to_idle_if_needed(
@@ -90,13 +90,13 @@ class FlowGateRewriteTests(unittest.TestCase):
 class FlowGateOrderTypeGateTests(unittest.TestCase):
     def test_order_type_required_true_for_unset_order_type(self):
         gate = _make_gate()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         # default conversation_context.order_type is None
         self.assertTrue(gate._order_type_required(session))
 
     def test_order_type_required_false_for_pickup_or_delivery(self):
         gate = _make_gate()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_context.order_type = "pickup"
         self.assertFalse(gate._order_type_required(session))
         session.conversation_context.order_type = "delivery"
@@ -104,7 +104,7 @@ class FlowGateOrderTypeGateTests(unittest.TestCase):
 
     def test_normalize_order_type_gate_state_routes_to_waiting_state(self):
         gate = _make_gate()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.IDLE
         # order_type is None → required → compute returns WAITING_FOR_ORDER_TYPE
         result = gate._compute_order_type_gate_state(session)
@@ -112,7 +112,7 @@ class FlowGateOrderTypeGateTests(unittest.TestCase):
 
     def test_normalize_order_type_gate_state_does_not_clobber_completed(self):
         gate = _make_gate()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.COMPLETED
         result = gate._compute_order_type_gate_state(session)
         self.assertIsNone(result)
@@ -135,7 +135,7 @@ class FlowGateAgentRequestTests(unittest.TestCase):
     """_handle_phase3_control_shortcuts: agent-request detection is NLU-first."""
 
     def _make_payment_session(self) -> Session:
-        s = Session(session_id="s1", restaurant_id="demo")
+        s = Session(session_id="s1", restaurant_id="steves_grill")
         s.conversation_state = ConversationState.WAITING_FOR_PAYMENT
         return s
 
@@ -230,7 +230,7 @@ class FlowGateQuantityCorrectionTests(unittest.TestCase):
         return gate
 
     def _confirming_order_session(self) -> Session:
-        s = Session(session_id="s1", restaurant_id="demo")
+        s = Session(session_id="s1", restaurant_id="steves_grill")
         s.conversation_state = ConversationState.CONFIRMING_ORDER
         return s
 

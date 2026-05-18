@@ -121,7 +121,7 @@ class CheckoutPhoneOptionalTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             paths = _configure_checkout_dirs(Path(temp_dir))
 
-            voice_session = Session(session_id="chat-1", restaurant_id="demo")
+            voice_session = Session(session_id="chat-1", restaurant_id="steves_grill")
             voice_session.conversation_state = ConversationState.WAITING_FOR_PAYMENT
             saved_voice_session: dict[str, Session] = {}
 
@@ -197,7 +197,7 @@ class CheckoutPhoneOptionalTests(unittest.TestCase):
                     service.live_call_service = DummyLiveCallService()
 
                     checkout_session = service.create_session(
-                        restaurant_id="demo",
+                        restaurant_id="steves_grill",
                         call_sid=None,
                         order_number="7654321",
                         customer_phone_number=None,

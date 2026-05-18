@@ -67,7 +67,7 @@ class _StubSmsService:
 
 
 def _menu_repo() -> MenuRepository:
-    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
     return MenuRepository(MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",
@@ -146,7 +146,7 @@ def test_engine_applies_prompt_field_from_handler_result():
     """Engine writes prompt_field to ctx.current_prompt_field after handler."""
     menu_repo = _menu_repo()
     engine = _engine(menu_repo)
-    session = Session(session_id="pf-main", restaurant_id="demo")
+    session = Session(session_id="pf-main", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     # "delivery" → WaitingForOrderTypeHandler returns prompt_field="delivery_area"
@@ -160,7 +160,7 @@ def test_engine_does_not_overwrite_prompt_field_when_result_is_none():
     """prompt_field=None in HandlerResult means 'do not touch existing value'."""
     menu_repo = _menu_repo()
     engine = _engine(menu_repo)
-    session = Session(session_id="pf-preserve", restaurant_id="demo")
+    session = Session(session_id="pf-preserve", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     # Step 1: establish delivery_area prompt
@@ -182,7 +182,7 @@ def test_engine_applies_prompt_field_on_order_type_fast_path():
     """
     menu_repo = _menu_repo()
     engine = _engine(menu_repo)
-    session = Session(session_id="pf-fastpath", restaurant_id="demo")
+    session = Session(session_id="pf-fastpath", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     result = _turn(engine, session, "delivery")
@@ -197,7 +197,7 @@ def test_engine_order_type_fast_path_pickup_does_not_set_prompt_field():
     """Pickup path returns prompt_field=None → current_prompt_field stays None."""
     menu_repo = _menu_repo()
     engine = _engine(menu_repo)
-    session = Session(session_id="pf-pickup", restaurant_id="demo")
+    session = Session(session_id="pf-pickup", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     result = _turn(engine, session, "pickup")
@@ -289,7 +289,7 @@ def test_engine_applies_interrupt_proposal_from_soft_switch_result():
     """
     menu_repo = _menu_repo()
     engine = _engine(menu_repo)
-    session = Session(session_id="softswitch-engine", restaurant_id="demo")
+    session = Session(session_id="softswitch-engine", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     # Start with pickup so we get to IDLE
@@ -336,7 +336,7 @@ def test_prompt_field_tracks_through_delivery_wizard():
     """
     menu_repo = _menu_repo()
     engine = _engine(menu_repo)
-    session = Session(session_id="wizard-prompts", restaurant_id="demo")
+    session = Session(session_id="wizard-prompts", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     # Step 1: order type → delivery area prompt

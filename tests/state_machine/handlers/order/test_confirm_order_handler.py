@@ -60,7 +60,7 @@ class StubCheckoutService:
 
 
 def _make_session() -> Session:
-    session = Session(session_id="ui-10", restaurant_id="demo")
+    session = Session(session_id="ui-10", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.CONFIRMING_ORDER
     session.cart.add_item(
         CartItem.create(

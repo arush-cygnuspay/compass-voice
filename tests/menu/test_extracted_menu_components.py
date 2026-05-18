@@ -31,7 +31,7 @@ from app.menu.scorer import (
 from app.menu.store import MenuStore
 from app.nlu.nlu_result import SlotValue
 
-_DATA_ROOT = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+_DATA_ROOT = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
 
 
 def _build_store() -> MenuStore:

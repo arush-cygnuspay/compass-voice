@@ -10,6 +10,7 @@ POST-only by design.
 from fastapi import APIRouter, Request
 from pydantic import BaseModel, Field
 
+from app.config.restaurant import DEFAULT_RESTAURANT_ID
 from app.session.repository import load_session, save_session
 from app.core.turn_engine import TurnEngine
 from app.core.response_builder import ResponseBuilder
@@ -226,7 +227,7 @@ def test_chat(req: ChatRequest, request: Request):
     responder: ResponseBuilder = request.app.state.responder
 
     # Load (or create) session
-    session = load_session(req.session_id, restaurant_id="demo")
+    session = load_session(req.session_id, restaurant_id=DEFAULT_RESTAURANT_ID)
     _prepare_chat_session(session)
 
     user_text = (req.text or "").strip()

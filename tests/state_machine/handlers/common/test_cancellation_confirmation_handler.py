@@ -9,7 +9,7 @@ from app.state_machine.models.conversation_state import ConversationState
 
 
 def _session() -> Session:
-    session = Session(session_id="cancel-1", restaurant_id="demo")
+    session = Session(session_id="cancel-1", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.CANCELLATION_CONFIRMATION
     session.cart.add_item(
         CartItem.create(

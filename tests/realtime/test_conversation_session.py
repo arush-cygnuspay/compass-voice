@@ -117,7 +117,7 @@ class _StubTransport:
 def _make_session(
     state: ConversationState = ConversationState.WAITING_FOR_ORDER_TYPE,
 ) -> Session:
-    session = Session(session_id="conv-test", restaurant_id="demo")
+    session = Session(session_id="conv-test", restaurant_id="steves_grill")
     session.conversation_state = state
     session.conversation_context.caller_device_type = "phone"
     return session
@@ -168,11 +168,11 @@ def test_load_app_session_uses_injected_loader() -> None:
         load_session_fn=_load,
     )
 
-    restored = conv_session.load_app_session('CA123', 'demo')
+    restored = conv_session.load_app_session('CA123', 'steves_grill')
 
     assert restored is loaded_session
     assert conv_session.app_session is loaded_session
-    assert loader_calls == [('CA123', 'demo')]
+    assert loader_calls == [('CA123', 'steves_grill')]
 
 
 # ----------------------------------------------------------- happy path

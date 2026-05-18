@@ -21,7 +21,7 @@ from app.state_machine.models.conversation_state import ConversationState
 
 class SessionStartupStateTests(unittest.TestCase):
     def test_session_default_state_is_waiting_for_order_type(self):
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         self.assertEqual(
             session.conversation_state,
             ConversationState.WAITING_FOR_ORDER_TYPE,
@@ -33,18 +33,18 @@ class SessionStartupStateTests(unittest.TestCase):
         self.assertNotIn("WAITING_FOR_LANDLINE_PICKUP_CONFIRMATION", state_names)
 
     def test_new_order_type_session_starts_at_order_type(self):
-        session = _new_order_type_session("call-abc", "demo")
+        session = _new_order_type_session("call-abc", "steves_grill")
         self.assertEqual(
             session.conversation_state,
             ConversationState.WAITING_FOR_ORDER_TYPE,
         )
 
     def test_new_session_caller_device_type_defaults_to_phone(self):
-        session = _new_order_type_session("call-abc", "demo")
+        session = _new_order_type_session("call-abc", "steves_grill")
         self.assertEqual(session.conversation_context.caller_device_type, "phone")
 
     def test_new_session_order_type_is_unset(self):
-        session = _new_order_type_session("call-abc", "demo")
+        session = _new_order_type_session("call-abc", "steves_grill")
         self.assertIsNone(session.conversation_context.order_type)
 
 

@@ -11,6 +11,7 @@ class OrderTypeMatch:
     order_type: str
     matched_phrase: str
     remainder_text: str
+    source: str = "lexical"
 
 
 class OrderTypeResolver:
@@ -29,18 +30,23 @@ class OrderTypeResolver:
         "it is delivery",
         "its delivery",
         "deliver it",
+        "drop it off",
         "drop off",
         "dropoff",
         "delivery",
         "deliver",
         "send it",
+        "bring it",
     )
 
     _PICKUP_PHRASES: tuple[str, ...] = (
+        "ill pick it up",
         "for pickup",
         "pickup please",
         "it is pickup",
         "its pickup",
+        "ill grab it",
+        "come get it",
         "pick up",
         "carry out",
         "take out",

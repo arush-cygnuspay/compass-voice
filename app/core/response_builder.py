@@ -354,6 +354,15 @@ class ResponseBuilder:
             "payment_verification_error": lambda *_: (
                 "Having trouble checking payment. Give it a moment, I'm still checking."
             ),
+
+            # GPT fallback classification responses (phase 2: logged only, never applied)
+            "fallback_off_topic": lambda *_: "I can help you order from our menu. What would you like?",
+            "fallback_restaurant_question": lambda *_: "I can help with our menu and orders. Shall we get started?",
+            "fallback_user_frustrated": lambda *_: "I'm sorry for the trouble. Would you like me to connect you with a team member?",
+            "fallback_request_human": lambda *_: "Let me connect you with a team member right away.",
+            "fallback_unclear": lambda *_: "Sorry, I didn't catch that. Could you repeat it or say your options?",
+            "fallback_unsupported_request": lambda *_: "That's not something I can help with here. Want to add something to your order?",
+            "fallback_back_to_order": lambda *_: "Great! What would you like to add to your order?",
         }
 
     def _build_multi_item_ack_prefix(self, payload: dict) -> str:

@@ -154,7 +154,7 @@ class CheckoutServiceRetryStateTests(unittest.TestCase):
                 service = CheckoutService()
 
                 checkout_session = service.create_session(
-                    restaurant_id="demo",
+                    restaurant_id="steves_grill",
                     call_sid=None,
                     order_number="1234567",
                     customer_phone_number="+15555550123",
@@ -236,7 +236,7 @@ class CheckoutServiceRetryStateTests(unittest.TestCase):
                 service = CheckoutService()
 
                 checkout_session = service.create_session(
-                    restaurant_id="demo",
+                    restaurant_id="steves_grill",
                     call_sid=None,
                     order_number="1234567",
                     customer_phone_number="+15555550123",

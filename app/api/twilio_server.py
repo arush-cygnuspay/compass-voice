@@ -14,6 +14,7 @@ from app.api.checkout_routes import router as checkout_api_router, page_router a
 from app.api.payment_links_webhook import router as payment_links_webhook_router
 from app.api.ui.ui import router as ui_router
 from app.bootstrap.runtime import build_runtime
+from app.config.restaurant import DEFAULT_RESTAURANT_ID
 from app.core.response_builder import ResponseBuilder
 from app.core.turn_engine import TurnEngine
 from app.session.repository import load_session, save_session
@@ -21,7 +22,7 @@ from app.session.repository import load_session, save_session
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    runtime = build_runtime(restaurant_id="demo")
+    runtime = build_runtime(restaurant_id=DEFAULT_RESTAURANT_ID)
 
     app.state.runtime = runtime
     app.state.engine = runtime.engine
@@ -60,7 +61,7 @@ def gather(action_url: str, say: str | None = None) -> Gather:
 async def voice(request: Request):
     form = await request.form()
     call_sid = form.get("CallSid")
-    restaurant_id = "demo"
+    restaurant_id = DEFAULT_RESTAURANT_ID
 
     session = load_session(call_sid, restaurant_id)
 
@@ -91,7 +92,7 @@ async def process_speech(
 
     form = await request.form()
     call_sid = form.get("CallSid")
-    restaurant_id = "demo"
+    restaurant_id = DEFAULT_RESTAURANT_ID
 
     # Empty / whitespace-only STT result: still route through TurnEngine
     # so that the same NoInputEscalationPolicy applies as for unintelligible

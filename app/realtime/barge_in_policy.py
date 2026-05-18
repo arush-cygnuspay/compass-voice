@@ -15,10 +15,7 @@ from app.state_machine.flow_sets import (
 from app.state_machine.handlers.common.preorder_redirect_utils import (
     looks_like_ordering_request,
 )
-from app.state_machine.handlers.order.waiting_for_order_type_handler import (
-    DELIVERY_WORDS,
-    PICKUP_WORDS,
-)
+from app.state_machine.common.order_type_resolver import OrderTypeResolver
 from app.state_machine.models.conversation_state import ConversationState
 from app.utils.quantity_detection import normalize_quantity
 
@@ -245,10 +242,7 @@ def is_actionable_barge_in(
         return True
 
     if state == ConversationState.WAITING_FOR_ORDER_TYPE:
-        return _contains_phrase(normalized, PICKUP_WORDS) or _contains_phrase(
-            normalized,
-            DELIVERY_WORDS,
-        )
+        return OrderTypeResolver.resolve(normalized) is not None
 
     if state == ConversationState.WAITING_FOR_DELIVERY_ELIGIBILITY:
         return _is_delivery_eligibility_reply(context.current_prompt_field or "delivery_area", normalized)

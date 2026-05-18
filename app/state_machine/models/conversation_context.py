@@ -105,6 +105,23 @@ class ConversationContext:
     # reset_item_scope (it's per-call, not per-item).
     consecutive_unknown_count: int = 0
 
+    # Compact turn memory for GPT context: [(role, text), ...] where role ∈ {"user","bot"}
+    # Capped at 6 entries (3 user + 3 bot). Persists across item scope resets.
+    turn_memory: deque = field(default_factory=deque)
+
+    def append_turn_memory(self, role: str, text: str) -> None:
+        """Append a (role, text) pair to the compact turn memory buffer, capped at 6 entries."""
+        if not text or not text.strip():
+            return
+        self.turn_memory.append((role, text.strip()))
+        while len(self.turn_memory) > 6:
+            self.turn_memory.popleft()
+
+    def get_turn_memory(self, limit: int = 3) -> tuple[tuple[str, str], ...]:
+        """Return the last *limit* turns as ((role, text), ...)."""
+        items = list(self.turn_memory)
+        return tuple(items[-limit:])
+
     def bump_reprompt(self, field_name: str) -> int:
         """Increment and return the new attempt count for the field."""
         current = int(self.reprompt_attempts.get(field_name, 0)) + 1
@@ -216,6 +233,7 @@ class ConversationContext:
         self.last_intent_confidence = None
         self.last_slots = ()
         self.delivery_address = DeliveryAddress()
+        self.turn_memory.clear()
 
     # ── Backward-compatible wrappers (do not remove — test code uses these) ──
 

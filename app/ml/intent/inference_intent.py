@@ -208,6 +208,7 @@ def predict_intent(
     texts: str | Sequence[str],
     bundle: IntentBundle,
     max_length: int = 64,
+    top_k: int = 4,
 ) -> List[dict]:
     if isinstance(texts, str):
         texts = [texts]
@@ -238,25 +239,36 @@ def predict_intent(
     probs_sub = F.softmax(logits_sub, dim=-1)
 
     conf_main, pred_main_ids = probs_main.max(dim=-1)
-    conf_sub, pred_sub_ids = probs_sub.max(dim=-1)
+
+    k = min(top_k, probs_sub.size(-1))
+    topk_sub_conf, topk_sub_ids = probs_sub.topk(k, dim=-1)  # (batch, k)
 
     pred_main_ids = pred_main_ids.tolist()
-    pred_sub_ids = pred_sub_ids.tolist()
     conf_main = conf_main.tolist()
-    conf_sub = conf_sub.tolist()
+    topk_sub_conf_list = topk_sub_conf.tolist()
+    topk_sub_ids_list = topk_sub_ids.tolist()
 
     results: List[dict] = []
     for i, text in enumerate(texts):
         main_id = int(pred_main_ids[i])
-        sub_id = int(pred_sub_ids[i])
+        top_sub_id = int(topk_sub_ids_list[i][0])
+
+        top_k_sub_intents = [
+            {
+                "sub_intent": bundle.id2sub.get(int(topk_sub_ids_list[i][j]), f"UNKNOWN_SUB_{j}"),
+                "confidence": float(topk_sub_conf_list[i][j]),
+            }
+            for j in range(k)
+        ]
 
         results.append(
             {
                 "text": text,
                 "pred_main_intent": bundle.id2main.get(main_id, f"UNKNOWN_MAIN_{main_id}"),
-                "pred_sub_intent": bundle.id2sub.get(sub_id, f"UNKNOWN_SUB_{sub_id}"),
+                "pred_sub_intent": bundle.id2sub.get(top_sub_id, f"UNKNOWN_SUB_{top_sub_id}"),
                 "confidence_main": float(conf_main[i]),
-                "confidence_sub": float(conf_sub[i]),
+                "confidence_sub": float(topk_sub_conf_list[i][0]),
+                "top_k_sub_intents": top_k_sub_intents,
                 "device": str(bundle.device),
                 "amp": bundle.use_amp,
             }

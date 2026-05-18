@@ -81,7 +81,7 @@ class _StubEngine:
 
 
 def _make_session(state: ConversationState, field: str, prior_count: int) -> Session:
-    session = Session(session_id="test-1", restaurant_id="demo")
+    session = Session(session_id="test-1", restaurant_id="steves_grill")
     session.conversation_state = state
     session.reprompt_count_by_field = {field: prior_count}
     return session

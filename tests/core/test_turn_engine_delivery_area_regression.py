@@ -80,7 +80,7 @@ class StubSmsService:
 
 
 def _build_menu_repo() -> MenuRepository:
-    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
     store = MenuStore(
         menu_path=data_root / "menu.json",
         entity_index_path=data_root / "entity_index.json",
@@ -131,7 +131,7 @@ def _turn(
 def test_turn_engine_accepts_delivery_area_when_nlu_emits_noisy_item_slot():
     menu_repo = _build_menu_repo()
     engine = _build_engine(menu_repo)
-    session = Session(session_id="delivery-area-regression", restaurant_id="demo")
+    session = Session(session_id="delivery-area-regression", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     first = _turn(engine, session, "delivery")
@@ -154,7 +154,7 @@ def test_turn_engine_accepts_delivery_area_when_nlu_emits_noisy_item_slot():
 def test_turn_engine_accepts_zip_when_nlu_misclassifies_it_as_ask_price():
     menu_repo = _build_menu_repo()
     engine = _build_engine(menu_repo)
-    session = Session(session_id="delivery-zip-regression", restaurant_id="demo")
+    session = Session(session_id="delivery-zip-regression", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     first = _turn(engine, session, "delivery")
@@ -184,7 +184,7 @@ def test_turn_engine_accepts_zip_when_nlu_misclassifies_it_as_ask_price():
 def test_turn_engine_accepts_zip_from_mixed_phrase_when_nlu_misclassifies_it() -> None:
     menu_repo = _build_menu_repo()
     engine = _build_engine(menu_repo)
-    session = Session(session_id="delivery-zip-mixed-regression", restaurant_id="demo")
+    session = Session(session_id="delivery-zip-mixed-regression", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     assert _turn(engine, session, "delivery").response_key == "ask_for_delivery_area"
@@ -204,7 +204,7 @@ def test_turn_engine_accepts_zip_from_mixed_phrase_when_nlu_misclassifies_it() -
 def test_turn_engine_accepts_spoken_number_zip_phrase() -> None:
     menu_repo = _build_menu_repo()
     engine = _build_engine(menu_repo)
-    session = Session(session_id="delivery-zip-spoken-regression", restaurant_id="demo")
+    session = Session(session_id="delivery-zip-spoken-regression", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     assert _turn(engine, session, "delivery").response_key == "ask_for_delivery_area"
@@ -223,7 +223,7 @@ def test_turn_engine_accepts_spoken_number_zip_phrase() -> None:
 def test_turn_engine_accepts_semantic_affirm_for_delivery_eligibility_confirmation() -> None:
     menu_repo = _build_menu_repo()
     engine = _build_engine(menu_repo)
-    session = Session(session_id="delivery-confirm-semantic", restaurant_id="demo")
+    session = Session(session_id="delivery-confirm-semantic", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
 
     assert _turn(engine, session, "delivery").response_key == "ask_for_delivery_area"

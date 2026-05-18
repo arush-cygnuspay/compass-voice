@@ -18,16 +18,20 @@ Covers:
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
 from app.menu.models import (
     MenuItem,
+    ModifierChoice,
     ModifierGroup,
     Pricing,
     SideChoice,
     SideGroup,
 )
+from app.nlu.intent_resolution.intent import Intent
 from app.nlu.query_normalization.text_preprocessor import normalize_text
 from app.state_machine.handlers.item.add_item.add_item_flow import (
     ReadyToFinalize,
@@ -657,3 +661,166 @@ class TestAskForSidePartialFillWording:
         }
         response = ask_for_side(ctx, mock_repo, payload)
         assert "2 side" in response.lower()
+
+
+# ---------------------------------------------------------------------------
+# Handler partial-fill: response key must be ask_for_side / ask_for_modifier
+# ---------------------------------------------------------------------------
+
+def _make_item_with_required_multi_modifier() -> MenuItem:
+    """Item with a required min_selector=2 modifier group."""
+    choices = [
+        ModifierChoice(modifier_id="ketchup", name="Ketchup", normalized_name="ketchup", price_cents=0),
+        ModifierChoice(modifier_id="mustard", name="Mustard", normalized_name="mustard", price_cents=0),
+        ModifierChoice(modifier_id="mayo", name="Mayo", normalized_name="mayo", price_cents=0),
+    ]
+    group = ModifierGroup(
+        group_id="sauce_group",
+        name="Choose 2 Sauces",
+        normalized_name="choose 2 sauces",
+        is_required=True,
+        min_selector=2,
+        max_selector=2,
+        choices=choices,
+    )
+    return MenuItem(
+        item_id="custom_burger",
+        name="Custom Burger",
+        normalized_name="custom burger",
+        aliases=(),
+        normalized_aliases=(),
+        voice_labels=(),
+        pricing=Pricing(mode="fixed", price_cents=799),
+        side_groups=[],
+        modifier_groups=[group],
+        available=True,
+    )
+
+
+class TestHandlerPartialFillSide:
+    """WaitingForSideHandler must return ask_for_side (not repeat_side_options)
+    when M valid sides are given for a min=N group and M < N."""
+
+    def test_partial_side_fill_returns_ask_for_side(self):
+        from app.state_machine.handlers.item.add_item.waiting_for_side_handler import (
+            WaitingForSideHandler,
+        )
+
+        ctx = _ctx_with_item(_make_platter_item())
+        handler = WaitingForSideHandler()
+
+        mock_resolution = SimpleNamespace(
+            matched_item_ids=["potato_salad"],
+            unmatched_values=[],
+            match_debug={},
+        )
+
+        with patch.object(handler.side_resolver, "resolve", return_value=mock_resolution), \
+             patch.object(handler.capture_helper, "prefill_side_groups", return_value=[]), \
+             patch.object(handler.capture_helper, "prefill_selected_side_variants"), \
+             patch.object(handler.capture_helper, "prefill_modifier_groups", return_value=[]), \
+             patch.object(handler.capture_helper, "collect_matched_names", return_value=[]):
+            result = handler.handle(
+                intent=Intent.ADD_ITEM,
+                context=ctx,
+                user_text="potato salad",
+            )
+
+        assert result.response_key == "ask_for_side", (
+            f"Expected ask_for_side for partial fill, got {result.response_key!r}"
+        )
+        assert result.response_payload["min_selector"] == 2
+        assert result.response_payload["selected_count"] == 1
+        assert result.response_payload["remaining_to_min"] == 1
+        assert "Potato Salad" not in result.response_payload["top_choices"]
+
+    def test_full_side_fill_finalizes(self):
+        from app.state_machine.handlers.item.add_item.waiting_for_side_handler import (
+            WaitingForSideHandler,
+        )
+
+        ctx = _ctx_with_item(_make_platter_item())
+        handler = WaitingForSideHandler()
+
+        mock_resolution = SimpleNamespace(
+            matched_item_ids=["potato_salad", "rice"],
+            unmatched_values=[],
+            match_debug={},
+        )
+
+        with patch.object(handler.side_resolver, "resolve", return_value=mock_resolution), \
+             patch.object(handler.capture_helper, "prefill_side_groups", return_value=[]), \
+             patch.object(handler.capture_helper, "prefill_selected_side_variants"), \
+             patch.object(handler.capture_helper, "prefill_modifier_groups", return_value=[]), \
+             patch.object(handler.capture_helper, "collect_matched_names", return_value=[]):
+            result = handler.handle(
+                intent=Intent.ADD_ITEM,
+                context=ctx,
+                user_text="potato salad and rice",
+            )
+
+        assert result.response_key == "item_added_successfully"
+
+
+class TestHandlerPartialFillModifier:
+    """WaitingForModifierHandler must return ask_for_modifier (not repeat_modifier_options)
+    when M valid modifiers are given for a min=N group and M < N."""
+
+    def test_partial_modifier_fill_returns_ask_for_modifier(self):
+        from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import (
+            WaitingForModifierHandler,
+        )
+        from app.state_machine.models.pending_item_models import ModifierSelection
+
+        ctx = _ctx_with_item(_make_item_with_required_multi_modifier())
+        handler = WaitingForModifierHandler()
+
+        mock_resolution = SimpleNamespace(
+            selections=[ModifierSelection(modifier_id="ketchup", name="Ketchup", action="add", instruction=None)],
+            duplicate_names=[],
+            unmatched_values=[],
+            match_debug={},
+        )
+
+        with patch.object(handler.modifier_resolver, "resolve", return_value=mock_resolution):
+            result = handler.handle(
+                intent=Intent.ADD_ITEM,
+                context=ctx,
+                user_text="ketchup",
+            )
+
+        assert result.response_key == "ask_for_modifier", (
+            f"Expected ask_for_modifier for partial fill, got {result.response_key!r}"
+        )
+        assert result.response_payload["min_selector"] == 2
+        assert result.response_payload["selected_count"] == 1
+        assert result.response_payload["remaining_to_min"] == 1
+        assert "Ketchup" not in result.response_payload["top_choices"]
+
+    def test_full_modifier_fill_finalizes(self):
+        from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import (
+            WaitingForModifierHandler,
+        )
+        from app.state_machine.models.pending_item_models import ModifierSelection
+
+        ctx = _ctx_with_item(_make_item_with_required_multi_modifier())
+        handler = WaitingForModifierHandler()
+
+        mock_resolution = SimpleNamespace(
+            selections=[
+                ModifierSelection(modifier_id="ketchup", name="Ketchup", action="add", instruction=None),
+                ModifierSelection(modifier_id="mustard", name="Mustard", action="add", instruction=None),
+            ],
+            duplicate_names=[],
+            unmatched_values=[],
+            match_debug={},
+        )
+
+        with patch.object(handler.modifier_resolver, "resolve", return_value=mock_resolution):
+            result = handler.handle(
+                intent=Intent.ADD_ITEM,
+                context=ctx,
+                user_text="ketchup and mustard",
+            )
+
+        assert result.response_key == "item_added_successfully"

@@ -56,7 +56,7 @@ def _build_client(engine=None, responder=None) -> TestClient:
 
 class ChatDemoTests(unittest.TestCase):
     def test_blank_chat_bootstraps_browser_session_and_sets_default_sms_number(self):
-        session = Session(session_id="ui-1", restaurant_id="demo")
+        session = Session(session_id="ui-1", restaurant_id="steves_grill")
 
         with patch.object(chat_demo, "load_session", return_value=session), patch.object(
             chat_demo,
@@ -83,7 +83,7 @@ class ChatDemoTests(unittest.TestCase):
         mocked_save.assert_called_once_with(session)
 
     def test_waiting_checkout_response_exposes_direct_link_and_auto_check_signal(self):
-        session = Session(session_id="ui-2", restaurant_id="demo")
+        session = Session(session_id="ui-2", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.WAITING_FOR_CHECKOUT_COMPLETION
         session.last_response_key = "waiting_for_checkout_completion"
         session.conversation_context.delivery_address.order_number = "98765"

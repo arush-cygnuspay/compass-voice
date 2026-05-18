@@ -69,25 +69,40 @@ def ask_for_modifier(
     except Exception:
         pass
 
-    # Progressive lead
-    position = int(payload.get("modifier_group_position") or 0)
-    total = int(payload.get("total_modifier_groups") or 1)
-    is_last = bool(payload.get("is_last_modifier_prompt", total <= 1))
     speech_noun = str(payload.get("speech_noun") or _GENERIC_MODIFIER_NOUN)
-
-    lead = build_modifier_prompt_lead(
-        position=position,
-        total=total,
-        is_last=is_last,
-        speech_noun=speech_noun,
-    )
-
     total_choices = int(payload.get("total_choices") or len(top_choices))
     options_str = _format_options(
         top_choices,
         max_items=6,
         overflow_hint=_MODIFIER_OVERFLOW_HINT if total_choices > 6 else None,
         has_more=total_choices > 6 if total_choices else None,
+    )
+
+    # ── Multi-select path (required group, min ≥ 2) ──────────────────────────
+    if min_selector > 1:
+        selected_count = int(payload.get("selected_count") or 0)
+        remaining = int(
+            payload.get("remaining_to_min") or max(min_selector - selected_count, 0)
+        )
+        if remaining > 1:
+            if options_str:
+                return f"Choose {remaining} {speech_noun}s: {options_str}."
+            return f"Choose {remaining} {speech_noun}s."
+        # remaining == 1
+        if options_str:
+            return f"Choose 1 more {speech_noun}: {options_str}."
+        return f"Choose 1 more {speech_noun}."
+
+    # Progressive lead
+    position = int(payload.get("modifier_group_position") or 0)
+    total = int(payload.get("total_modifier_groups") or 1)
+    is_last = bool(payload.get("is_last_modifier_prompt", total <= 1))
+
+    lead = build_modifier_prompt_lead(
+        position=position,
+        total=total,
+        is_last=is_last,
+        speech_noun=speech_noun,
     )
 
     if options_str:

@@ -1,0 +1,48 @@
+{
+  "restaurant_id": "steves_grill",
+  "name": "Steve's Grill",
+  "brand_type": "Fast Casual",
+  "description": "Steve's Grill voice ordering experience.",
+  "contact": {
+    "phone": "",
+    "email": "",
+    "website": ""
+  },
+  "links": {
+    "order_confirmation": "",
+    "menu": ""
+  },
+  "location": {
+    "address_line_1": "",
+    "address_line_2": "",
+    "city": "",
+    "state": "",
+    "postal_code": "",
+    "country": ""
+  },
+  "hours": {
+    "monday": "",
+    "tuesday": "",
+    "wednesday": "",
+    "thursday": "",
+    "friday": "",
+    "saturday": "",
+    "sunday": ""
+  },
+  "services": {
+    "dine_in": true,
+    "takeout": true,
+    "delivery": true,
+    "drive_thru": false
+  },
+  "payment_methods": [
+    "Cash",
+    "Credit Card",
+    "Debit Card",
+    "Apple Pay",
+    "Google Pay"
+  ],
+  "timezone": "America/New_York",
+  "currency": "USD",
+  "support_voice_ordering": true
+}

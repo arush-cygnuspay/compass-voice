@@ -40,7 +40,7 @@ from tests.support.voice_test_harness import (
 
 _MENU_PATH = (
     Path(__file__).resolve().parents[2]
-    / "app" / "data" / "restaurants" / "demo" / "menu.json"
+    / "app" / "data" / "restaurants" / "steves_grill" / "menu.json"
 )
 
 

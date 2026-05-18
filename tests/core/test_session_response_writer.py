@@ -53,7 +53,7 @@ class _StubMenuRepo:
 class SessionResponseWriterApplyTests(unittest.TestCase):
     def test_apply_session_response_writes_session_state(self):
         writer = SessionResponseWriter(_StubResponder(), _StubMenuRepo())
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         session.turn_count = 4
 
         writer._apply_session_response(
@@ -70,7 +70,7 @@ class SessionResponseWriterApplyTests(unittest.TestCase):
         self.assertIsNotNone(session.last_response_at_epoch)
 
     def test_session_round_trip_preserves_last_response_timestamp(self):
-        session = Session(session_id="s3", restaurant_id="demo")
+        session = Session(session_id="s3", restaurant_id="steves_grill")
         session.last_response_at_epoch = 1712345678.9
 
         restored = Session.from_dict(session.to_dict())
@@ -97,7 +97,7 @@ class SessionResponseWriterApplyTests(unittest.TestCase):
 
     def test_hydrate_output_round_trip_fills_text_fields(self):
         writer = SessionResponseWriter(_StubResponder(), _StubMenuRepo())
-        session = Session(session_id="s2", restaurant_id="demo")
+        session = Session(session_id="s2", restaurant_id="steves_grill")
         session.conversation_state = ConversationState.IDLE
 
         skeleton = TurnOutput(

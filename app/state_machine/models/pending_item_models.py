@@ -72,6 +72,10 @@ class PendingSideGroup:
     top_choice_names: tuple[str, ...] = ()
     # Mirrors SideGroup.allow_duplicate_selections.
     allow_duplicate_selections: bool = True
+    # Mirrors SideGroup.is_suggested_addon.
+    is_suggested_addon: bool = False
+    # Mirrors SideGroup.default_item_ids.
+    default_item_ids: tuple[str, ...] = ()
 
 
 @dataclass(slots=True)

@@ -11,8 +11,8 @@ Conventions
 -----------
 * `pickup` is the cheapest order-type so we don't have to walk the delivery
   address collection state machine in every test.
-* Items are picked from the actual demo restaurant menu (see
-  app/data/restaurants/demo/menu.json) so resolution paths are real.
+* Items are picked from the active restaurant menu (see
+  app/data/restaurants/steves_grill/menu.json) so resolution paths are real.
 * Assertions favor architectural invariants (state, cart shape, no loops)
   over exact response strings, which are reviewed in
   Compass_Voice_Response_Review.md.

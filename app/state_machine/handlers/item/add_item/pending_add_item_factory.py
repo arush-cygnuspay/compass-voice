@@ -185,7 +185,7 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
             group_id=group.group_id,
             name=group.name,
             is_required=bool(group.is_required),
-            min_selector=int(group.min_selector or 1),
+            min_selector=int(group.min_selector if group.min_selector is not None else 1),
             max_selector=int(group.max_selector or 1),
             choices=pending_choices,
             choices_by_item_id=choices_by_item_id,
@@ -194,6 +194,8 @@ def build_pending_add_item(item: MenuItem) -> PendingAddItem:
             normalized_choice_names=tuple(normalized_choice_names),
             top_choice_names=tuple(choice_names[:6]),
             allow_duplicate_selections=bool(getattr(group, "allow_duplicate_selections", True)),
+            is_suggested_addon=bool(getattr(group, "is_suggested_addon", False)),
+            default_item_ids=tuple(getattr(group, "default_item_ids", None) or ()),
         )
 
         side_groups.append(pending_group)

@@ -1,0 +1,5965 @@
+{
+  "categories": {
+    "7a5f4512-8a1a-5bde-9375-e04c14ac8900": {
+      "category_id": "7a5f4512-8a1a-5bde-9375-e04c14ac8900",
+      "name": "Burgers",
+      "item_ids": [
+        "32cd89e3-0f99-49e6-a8bb-bd710f590c49",
+        "db574278-331f-5746-8e7b-0884e1226a5f",
+        "da39a203-1425-45c2-bb5c-da4a18e5beac",
+        "40a02752-f6e7-459e-879d-aa0bf0672bae",
+        "f915405d-7ae7-4ff7-95ab-9638684863cd"
+      ]
+    },
+    "53d58585-d926-5807-bffa-875a36ea7351": {
+      "category_id": "53d58585-d926-5807-bffa-875a36ea7351",
+      "name": "Sandwiches & Wraps",
+      "item_ids": [
+        "f2f320ce-df79-42c1-9ff6-1990d5aac025",
+        "a2fb585f-f5c9-4d62-822e-71addd1c75fa",
+        "bc32db05-38d5-45fe-a3f4-3d74ce9bb56a",
+        "6b455da4-1735-4a94-9636-30b30e87d857",
+        "eebb5667-fc66-400c-a1cb-f5e509ec27dd",
+        "868c1c2c-cd89-49a1-9b2d-300e37e36c33"
+      ]
+    },
+    "c9d05824-e7c1-5d2a-b17b-5e300438cfe4": {
+      "category_id": "c9d05824-e7c1-5d2a-b17b-5e300438cfe4",
+      "name": "Sides & Starters",
+      "item_ids": [
+        "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62",
+        "ecbda382-f618-46a4-937d-c6fe2256d4a7",
+        "8069f7ab-e2fe-43ba-a4d4-afc490aee286",
+        "78757950-65b5-49fe-b745-47d2e7f657cd",
+        "01983ede-632d-4099-bbd5-8f53ce396bde",
+        "72dbe8ea-ef63-4fca-86df-97e28a9595de",
+        "67f66486-2ed2-4f6e-8bb5-d09bc4a1946f",
+        "efe8b761-79b7-4a84-a057-de0c0dc937f2"
+      ]
+    },
+    "f7a5fe7f-d61e-5988-b982-25952cf8a1ea": {
+      "category_id": "f7a5fe7f-d61e-5988-b982-25952cf8a1ea",
+      "name": "Wings - Bone-In",
+      "item_ids": [
+        "2f39de0c-e10d-5026-9728-de44e1358385",
+        "5a082f1c-4b66-5d8b-b429-cc55ac3e8c47",
+        "ea25fb62-78f2-5121-8ee6-e0a3c1e87062",
+        "8cbb6874-0391-53b0-be97-074f649b40d7"
+      ]
+    },
+    "eef133ea-cf27-551a-89bb-c0128c399a4c": {
+      "category_id": "eef133ea-cf27-551a-89bb-c0128c399a4c",
+      "name": "Wings - Boneless",
+      "item_ids": [
+        "20868513-a90a-40ac-b020-3ae27aecb8fa",
+        "34edc35f-b4e0-4212-9d15-95ac8e3a7503",
+        "72a8354f-2178-4b61-b5d4-a3114756b4d0"
+      ]
+    },
+    "0498a93c-8d06-5514-838a-7761a4190241": {
+      "category_id": "0498a93c-8d06-5514-838a-7761a4190241",
+      "name": "Combos",
+      "item_ids": [
+        "e994b6e0-1583-536b-aa3e-e53971bfe41e",
+        "28446555-8257-47d3-ba5c-8e3ae491a678",
+        "f9b810cb-eac8-40e8-b956-3521ed0aacee",
+        "f6a4a9df-ba4e-4eb2-816b-617b9024e8d6",
+        "073faff9-e5aa-4261-9eaf-41245ba00b3b",
+        "c7fd5214-9c6e-45cf-bd13-d06e5133136c"
+      ]
+    },
+    "90e01961-1d79-5c7a-88b0-dd58143c401f": {
+      "category_id": "90e01961-1d79-5c7a-88b0-dd58143c401f",
+      "name": "Fountain Drinks",
+      "item_ids": [
+        "23f9fcab-6088-4906-930e-8e627fd46d9d",
+        "2471af1b-76bc-4765-8391-ea62d863eacc",
+        "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18",
+        "203d06b1-09b5-48fe-a3fb-991cd128270e",
+        "914c613c-130a-410f-9ca2-b771377cad35",
+        "27bd9ac9-6034-470d-bfea-f5cfb7f10678"
+      ]
+    },
+    "d4fe04c3-2266-5aaa-8f6c-6171dbfd3f14": {
+      "category_id": "d4fe04c3-2266-5aaa-8f6c-6171dbfd3f14",
+      "name": "Teas & Lemonade",
+      "item_ids": [
+        "1ee9b7cc-a180-47d2-a248-219d0f69ba66",
+        "13a97a65-928a-5221-87d6-65db2bab483a",
+        "2324d601-9d02-450a-9c15-1ae8941c8786"
+      ]
+    },
+    "b670f3b1-ba2c-530f-95f6-369113d68963": {
+      "category_id": "b670f3b1-ba2c-530f-95f6-369113d68963",
+      "name": "Frozen Drinks",
+      "item_ids": [
+        "b1387a54-6804-41aa-8820-75836f44dba2",
+        "edc23d01-846a-4176-9bae-9cfc631dfcb7",
+        "da303233-9682-4a2f-8746-dfb9725236f6"
+      ]
+    },
+    "825a04b2-4f36-566e-90ea-a2f6eb7aafd2": {
+      "category_id": "825a04b2-4f36-566e-90ea-a2f6eb7aafd2",
+      "name": "Desserts",
+      "item_ids": [
+        "35407cfd-91b8-4147-bc9a-b1f4546aff7a",
+        "f3fc8404-a9c8-4aed-bf82-901ed731d7b1",
+        "e30e1c56-fc09-4da7-a166-44f395f9971b",
+        "bfd8c353-e2ae-4100-a234-e91ebbb9a679",
+        "5d57d0ba-5f52-52bb-9890-0bb913d73e90",
+        "d8abde27-6102-4e88-888c-10559fcff778",
+        "c3d355c3-fee8-4a97-b3e6-26488a7cba34"
+      ]
+    }
+  },
+  "items": {
+    "32cd89e3-0f99-49e6-a8bb-bd710f590c49": {
+      "item_id": "32cd89e3-0f99-49e6-a8bb-bd710f590c49",
+      "name": "Hamburger",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "7a5f4512-8a1a-5bde-9375-e04c14ac8900"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 432,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "hamburger",
+        "ham burger",
+        "regular burger",
+        "plain burger",
+        "basic burger"
+      ],
+      "available": true
+    },
+    "db574278-331f-5746-8e7b-0884e1226a5f": {
+      "item_id": "db574278-331f-5746-8e7b-0884e1226a5f",
+      "name": "Cheeseburger",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "7a5f4512-8a1a-5bde-9375-e04c14ac8900"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 479,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "cheeseburger",
+        "cheese burger",
+        "cheesy burger",
+        "burger with cheese"
+      ],
+      "available": true
+    },
+    "da39a203-1425-45c2-bb5c-da4a18e5beac": {
+      "item_id": "da39a203-1425-45c2-bb5c-da4a18e5beac",
+      "name": "Smash Burger",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "7a5f4512-8a1a-5bde-9375-e04c14ac8900"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 960,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "smash burger",
+        "smashburger",
+        "smashed burger"
+      ],
+      "available": true
+    },
+    "40a02752-f6e7-459e-879d-aa0bf0672bae": {
+      "item_id": "40a02752-f6e7-459e-879d-aa0bf0672bae",
+      "name": "Double Bacon Burger",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "7a5f4512-8a1a-5bde-9375-e04c14ac8900"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 846,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "double bacon burger",
+        "double bacon",
+        "bacon double",
+        "2x bacon burger",
+        "double bacon cheeseburger"
+      ],
+      "available": true
+    },
+    "f915405d-7ae7-4ff7-95ab-9638684863cd": {
+      "item_id": "f915405d-7ae7-4ff7-95ab-9638684863cd",
+      "name": "Chicken Burger",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "7a5f4512-8a1a-5bde-9375-e04c14ac8900"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1268,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "chicken burger",
+        "chick burger",
+        "chkn burger",
+        "fried chicken burger"
+      ],
+      "available": true
+    },
+    "f2f320ce-df79-42c1-9ff6-1990d5aac025": {
+      "item_id": "f2f320ce-df79-42c1-9ff6-1990d5aac025",
+      "name": "Grilled Chicken Sandwich",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "53d58585-d926-5807-bffa-875a36ea7351"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1008,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "grilled chicken sandwich",
+        "grilled chicken sammie",
+        "grilled chicken sando",
+        "chicken sandwich grilled",
+        "grilled chx sandwich"
+      ],
+      "available": true
+    },
+    "a2fb585f-f5c9-4d62-822e-71addd1c75fa": {
+      "item_id": "a2fb585f-f5c9-4d62-822e-71addd1c75fa",
+      "name": "Ribeye Sandwich",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "53d58585-d926-5807-bffa-875a36ea7351"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 960,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "ribeye sandwich",
+        "rib eye sandwich",
+        "ribeye sammie",
+        "rib eye sammie",
+        "ribeye sub"
+      ],
+      "available": true
+    },
+    "bc32db05-38d5-45fe-a3f4-3d74ce9bb56a": {
+      "item_id": "bc32db05-38d5-45fe-a3f4-3d74ce9bb56a",
+      "name": "Steak & Cheese Sub",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "53d58585-d926-5807-bffa-875a36ea7351"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 959,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "steak cheese sub",
+        "steak and cheese",
+        "steak and cheese sub",
+        "philly",
+        "philly cheesesteak",
+        "cheese steak sub",
+        "cheese steak",
+        "steak n cheese"
+      ],
+      "available": true
+    },
+    "6b455da4-1735-4a94-9636-30b30e87d857": {
+      "item_id": "6b455da4-1735-4a94-9636-30b30e87d857",
+      "name": "Tuna Melt ",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "53d58585-d926-5807-bffa-875a36ea7351"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1055,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "9d05b63e-9646-52bf-986a-0267fb076899",
+          "name": "Bun Options",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "modifier_id": "0f660140-e25b-4797-acc1-50a4fac62ee7",
+              "name": "Plain Bun",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "regular bun",
+                "normal bun",
+                "standard bun",
+                "plain bun"
+              ]
+            },
+            {
+              "modifier_id": "727c17a4-d35a-462d-9157-27eef2496236",
+              "name": "Sesame Bun",
+              "price_cents": 0,
+              "aliases": [
+                "sesame",
+                "sesame seed bun",
+                "sesame bun"
+              ]
+            },
+            {
+              "modifier_id": "46ae6a67-e423-4a75-b3da-24598cc57b32",
+              "name": "Potato Bun",
+              "price_cents": 0,
+              "aliases": [
+                "potato",
+                "potato bun"
+              ]
+            },
+            {
+              "modifier_id": "4201be88-a37d-40cc-b1e6-aea4c9ddf95e",
+              "name": "Brioche Bun",
+              "price_cents": 0,
+              "aliases": [
+                "brioche",
+                "brioche bun"
+              ]
+            },
+            {
+              "modifier_id": "502fba9e-86d4-4ae1-a6d9-46c943e6add3",
+              "name": "Pretzel Bun",
+              "price_cents": 0,
+              "aliases": [
+                "pretzel",
+                "pretzel bun"
+              ]
+            },
+            {
+              "modifier_id": "324f5681-bf28-4cf4-a847-acd6fceaa50c",
+              "name": "Whole Wheat Bun",
+              "price_cents": 0,
+              "aliases": [
+                "whole wheat",
+                "wheat bun",
+                "wholewheat bun",
+                "whole wheat bun"
+              ]
+            },
+            {
+              "modifier_id": "dd152ade-7652-4b99-982f-fa94bef7de0f",
+              "name": "Gluten-Free Bun",
+              "price_cents": 150,
+              "aliases": [
+                "gluten free",
+                "gluten free bun",
+                "gf bun",
+                "no gluten bun"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "tuna melt",
+        "tuna sandwich",
+        "melted tuna",
+        "tuna melted"
+      ],
+      "available": true
+    },
+    "eebb5667-fc66-400c-a1cb-f5e509ec27dd": {
+      "item_id": "eebb5667-fc66-400c-a1cb-f5e509ec27dd",
+      "name": "Chicken Wrap",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "53d58585-d926-5807-bffa-875a36ea7351"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1339,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "chicken wrap",
+        "chx wrap",
+        "chick wrap"
+      ],
+      "available": true
+    },
+    "868c1c2c-cd89-49a1-9b2d-300e37e36c33": {
+      "item_id": "868c1c2c-cd89-49a1-9b2d-300e37e36c33",
+      "name": "Veggie Wrap ",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "53d58585-d926-5807-bffa-875a36ea7351"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 959,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "6cec82c5-c29c-5a54-8eaa-c776da99aea7",
+          "name": "Cheeses",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 4,
+          "choices": [
+            {
+              "modifier_id": "24ea8e75-8230-4506-ab86-77698329ac56",
+              "name": "American Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "american",
+                "american cheese"
+              ]
+            },
+            {
+              "modifier_id": "1d985c92-04b1-5c8d-93d2-bc4154c4a860",
+              "name": "Cheddar",
+              "price_cents": 0,
+              "aliases": [
+                "cheddar cheese",
+                "ched",
+                "cheddar"
+              ]
+            },
+            {
+              "modifier_id": "1656ceca-a44b-4eb9-8159-465baed71f6e",
+              "name": "Mozzarella Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "mozzarella",
+                "mozz",
+                "mozarella",
+                "mozzarella cheese"
+              ]
+            },
+            {
+              "modifier_id": "f8ea629f-ea5e-4823-b07b-cb8b4cdede02",
+              "name": "Swiss Cheese",
+              "price_cents": 0,
+              "aliases": [
+                "swiss",
+                "swiss cheese"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "a127efba-81d0-595a-ad83-6ec43a49029f",
+          "name": "Toppings",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 7,
+          "choices": [
+            {
+              "modifier_id": "697de25c-b9f1-4a1a-97a4-819c221c74fb",
+              "name": "Lettuce",
+              "price_cents": 0,
+              "aliases": [
+                "lettuce leaves",
+                "lettuces",
+                "lettuce"
+              ]
+            },
+            {
+              "modifier_id": "a2eae138-c3bd-4ea5-87f9-2d74feeec9a5",
+              "name": "Tomato",
+              "price_cents": 0,
+              "aliases": [
+                "tomatoes",
+                "tomato slice",
+                "tomato slices",
+                "tomato"
+              ]
+            },
+            {
+              "modifier_id": "20772c0c-c76c-41f3-a5dc-696c30393b6d",
+              "name": "Onion",
+              "price_cents": 0,
+              "aliases": [
+                "onions",
+                "raw onion",
+                "raw onions",
+                "sliced onion",
+                "onion"
+              ]
+            },
+            {
+              "modifier_id": "9a5a5c67-cef6-5fb9-964f-b3cdbf61d990",
+              "name": "Pickle",
+              "price_cents": 0,
+              "aliases": [
+                "pickles",
+                "pickle slice",
+                "pickle slices",
+                "dill pickle",
+                "pickle"
+              ]
+            },
+            {
+              "modifier_id": "35a78bcf-04c4-45e0-a9d6-bb3a7d013ecb",
+              "name": "Banana Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "banana peppers",
+                "banana pep",
+                "banana pepper"
+              ]
+            },
+            {
+              "modifier_id": "7a74fac3-553b-429d-9dd4-4300e7990c16",
+              "name": "Grilled Onions",
+              "price_cents": 0,
+              "aliases": [
+                "grilled onion",
+                "caramelized onion",
+                "caramelized onions",
+                "sauteed onions",
+                "grilled onions"
+              ]
+            },
+            {
+              "modifier_id": "64bac914-d621-43f3-b7f4-189b25791248",
+              "name": "Jalapenos",
+              "price_cents": 0,
+              "aliases": [
+                "jalapeno",
+                "jalape o",
+                "jalape os",
+                "hot peppers",
+                "jalapenos"
+              ]
+            }
+          ]
+        },
+        {
+          "group_id": "ebae1fc8-523e-597f-bc9f-ab659979e769",
+          "name": "Sauces",
+          "is_required": false,
+          "min_selector": 0,
+          "max_selector": 6,
+          "choices": [
+            {
+              "modifier_id": "e31b6f13-dfbd-4d66-b6c3-4a334ba85aec",
+              "name": "Ketchup",
+              "price_cents": 0,
+              "aliases": [
+                "catsup",
+                "tomato sauce",
+                "red sauce",
+                "ketchup"
+              ]
+            },
+            {
+              "modifier_id": "50c9489f-639c-4abd-a3d5-7e4e93674146",
+              "name": "Mustard",
+              "price_cents": 0,
+              "aliases": [
+                "yellow mustard",
+                "dijon",
+                "mustard"
+              ]
+            },
+            {
+              "modifier_id": "9d2ea03f-7977-4dfb-bbd4-a5192e81e132",
+              "name": "Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "mayonnaise",
+                "mayonaise",
+                "mayo"
+              ]
+            },
+            {
+              "modifier_id": "fa00414f-5853-53cb-97b5-16be1e074868",
+              "name": "BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "barbeque",
+                "barbecue",
+                "bar b que",
+                "bbq sauce",
+                "barbeque sauce",
+                "barbecue sauce",
+                "bbq"
+              ]
+            },
+            {
+              "modifier_id": "792467b6-c69b-55e3-9ccd-57c99ad98d96",
+              "name": "Garlic Aioli",
+              "price_cents": 0,
+              "aliases": [
+                "garlic mayo sauce",
+                "aioli",
+                "garlic sauce",
+                "garlic aioli"
+              ]
+            },
+            {
+              "modifier_id": "b3a4b8a1-b14d-52d3-8f28-b2aea35897af",
+              "name": "Chipotle Mayo",
+              "price_cents": 0,
+              "aliases": [
+                "chipotle sauce",
+                "spicy mayo",
+                "chipotle mayonnaise",
+                "chipotle mayo"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "veggie wrap",
+        "vegetable wrap",
+        "vegetarian wrap",
+        "veg wrap"
+      ],
+      "available": true
+    },
+    "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62": {
+      "item_id": "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62",
+      "name": "Fries",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 223
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 261
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 299
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "fries",
+        "french fries",
+        "fry"
+      ],
+      "available": true
+    },
+    "ecbda382-f618-46a4-937d-c6fe2256d4a7": {
+      "item_id": "ecbda382-f618-46a4-937d-c6fe2256d4a7",
+      "name": "Onion Rings ",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 399
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 479
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 671
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "onion rings",
+        "onion ring",
+        "o rings",
+        "rings"
+      ],
+      "available": true
+    },
+    "8069f7ab-e2fe-43ba-a4d4-afc490aee286": {
+      "item_id": "8069f7ab-e2fe-43ba-a4d4-afc490aee286",
+      "name": "Tater Tots",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 299
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 383
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 479
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "tater tots",
+        "tots",
+        "tater tot"
+      ],
+      "available": true
+    },
+    "78757950-65b5-49fe-b745-47d2e7f657cd": {
+      "item_id": "78757950-65b5-49fe-b745-47d2e7f657cd",
+      "name": "Sweet Potato Fries",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 399
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 479
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 579
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "sweet potato fries",
+        "sweet fries",
+        "sp fries",
+        "sweet potatoes fries",
+        "yam fries"
+      ],
+      "available": true
+    },
+    "01983ede-632d-4099-bbd5-8f53ce396bde": {
+      "item_id": "01983ede-632d-4099-bbd5-8f53ce396bde",
+      "name": "Loaded Fries",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 599
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 750
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 1000
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "loaded fries",
+        "fully loaded fries",
+        "loaded french fries"
+      ],
+      "available": true
+    },
+    "72dbe8ea-ef63-4fca-86df-97e28a9595de": {
+      "item_id": "72dbe8ea-ef63-4fca-86df-97e28a9595de",
+      "name": "Mozzarella Sticks",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 767,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "mozzarella sticks",
+        "mozz sticks",
+        "cheese sticks",
+        "mozzarella stick",
+        "moz sticks"
+      ],
+      "available": true
+    },
+    "67f66486-2ed2-4f6e-8bb5-d09bc4a1946f": {
+      "item_id": "67f66486-2ed2-4f6e-8bb5-d09bc4a1946f",
+      "name": "Jalapeno Poppers",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 719,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "jalapeno poppers",
+        "jalapeno popper",
+        "jalapenos poppers",
+        "stuffed jalapenos",
+        "popper"
+      ],
+      "available": true
+    },
+    "efe8b761-79b7-4a84-a057-de0c0dc937f2": {
+      "item_id": "efe8b761-79b7-4a84-a057-de0c0dc937f2",
+      "name": "Fried Okra",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "c9d05824-e7c1-5d2a-b17b-5e300438cfe4"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 479,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "fried okra",
+        "okra"
+      ],
+      "available": true
+    },
+    "2f39de0c-e10d-5026-9728-de44e1358385": {
+      "item_id": "2f39de0c-e10d-5026-9728-de44e1358385",
+      "name": "6 Bone-In Wings",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "f7a5fe7f-d61e-5988-b982-25952cf8a1ea"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 671,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "6 bone in wings",
+        "six bone in wings",
+        "6 bonein wings",
+        "six bonein wings",
+        "6 wings bone in",
+        "half dozen bone in wings"
+      ],
+      "available": true
+    },
+    "5a082f1c-4b66-5d8b-b429-cc55ac3e8c47": {
+      "item_id": "5a082f1c-4b66-5d8b-b429-cc55ac3e8c47",
+      "name": "12 Bone-In Wings",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "f7a5fe7f-d61e-5988-b982-25952cf8a1ea"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1343,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "12 bone in wings",
+        "twelve bone in wings",
+        "12 bonein wings",
+        "dozen bone in wings",
+        "a dozen bone in wings"
+      ],
+      "available": true
+    },
+    "ea25fb62-78f2-5121-8ee6-e0a3c1e87062": {
+      "item_id": "ea25fb62-78f2-5121-8ee6-e0a3c1e87062",
+      "name": "24 Bone-In Wings",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "f7a5fe7f-d61e-5988-b982-25952cf8a1ea"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 2495,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "24 bone in wings",
+        "twenty four bone in wings",
+        "two dozen bone in wings"
+      ],
+      "available": true
+    },
+    "8cbb6874-0391-53b0-be97-074f649b40d7": {
+      "item_id": "8cbb6874-0391-53b0-be97-074f649b40d7",
+      "name": "50 Bone-In Wings",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "f7a5fe7f-d61e-5988-b982-25952cf8a1ea"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 4799,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "50 bone in wings",
+        "fifty bone in wings"
+      ],
+      "available": true
+    },
+    "20868513-a90a-40ac-b020-3ae27aecb8fa": {
+      "item_id": "20868513-a90a-40ac-b020-3ae27aecb8fa",
+      "name": "8 Boneless Wings",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "eef133ea-cf27-551a-89bb-c0128c399a4c"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1247,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "8 boneless wings",
+        "eight boneless wings",
+        "8 boneless",
+        "8 bnlss wings"
+      ],
+      "available": true
+    },
+    "34edc35f-b4e0-4212-9d15-95ac8e3a7503": {
+      "item_id": "34edc35f-b4e0-4212-9d15-95ac8e3a7503",
+      "name": "16 Boneless Wings",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "eef133ea-cf27-551a-89bb-c0128c399a4c"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 2207,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "16 boneless wings",
+        "sixteen boneless wings",
+        "16 boneless",
+        "16 bnlss wings"
+      ],
+      "available": true
+    },
+    "72a8354f-2178-4b61-b5d4-a3114756b4d0": {
+      "item_id": "72a8354f-2178-4b61-b5d4-a3114756b4d0",
+      "name": "24 Boneless Wings",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "eef133ea-cf27-551a-89bb-c0128c399a4c"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 2975,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "24 boneless wings",
+        "twenty four boneless wings",
+        "24 boneless",
+        "24 bnlss wings",
+        "two dozen boneless wings"
+      ],
+      "available": true
+    },
+    "e994b6e0-1583-536b-aa3e-e53971bfe41e": {
+      "item_id": "e994b6e0-1583-536b-aa3e-e53971bfe41e",
+      "name": "Double Bacon Burger Combo",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "0498a93c-8d06-5514-838a-7761a4190241"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1247,
+        "currency": "USD"
+      },
+      "side_groups": [
+        {
+          "group_id": "5752c79e-0ffe-54fa-936d-ae98acb8cf46",
+          "name": "Side Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62",
+              "name": "Fries",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "8069f7ab-e2fe-43ba-a4d4-afc490aee286",
+              "name": "Tater Tots",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "ecbda382-f618-46a4-937d-c6fe2256d4a7",
+              "name": "Onion Rings",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        },
+        {
+          "group_id": "9e9fb995-4c54-5d42-8404-a4d82afc37cc",
+          "name": "Drink Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "23f9fcab-6088-4906-930e-8e627fd46d9d",
+              "name": "Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2471af1b-76bc-4765-8391-ea62d863eacc",
+              "name": "Diet Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18",
+              "name": "Sprite",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "203d06b1-09b5-48fe-a3fb-991cd128270e",
+              "name": "Root Beer",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "914c613c-130a-410f-9ca2-b771377cad35",
+              "name": "Dr Pepper",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "27bd9ac9-6034-470d-bfea-f5cfb7f10678",
+              "name": "Fanta Orange",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "1ee9b7cc-a180-47d2-a248-219d0f69ba66",
+              "name": "Sweet Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "13a97a65-928a-5221-87d6-65db2bab483a",
+              "name": "Unsweetened Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2324d601-9d02-450a-9c15-1ae8941c8786",
+              "name": "Lemonade",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        }
+      ],
+      "modifier_groups": [],
+      "aliases": [
+        "double bacon burger combo",
+        "double bacon combo",
+        "bacon burger combo",
+        "dbl bacon burger combo"
+      ],
+      "available": true
+    },
+    "28446555-8257-47d3-ba5c-8e3ae491a678": {
+      "item_id": "28446555-8257-47d3-ba5c-8e3ae491a678",
+      "name": "Grilled Chicken Combo",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "0498a93c-8d06-5514-838a-7761a4190241"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1416,
+        "currency": "USD"
+      },
+      "side_groups": [
+        {
+          "group_id": "5752c79e-0ffe-54fa-936d-ae98acb8cf46",
+          "name": "Side Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62",
+              "name": "Fries",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "8069f7ab-e2fe-43ba-a4d4-afc490aee286",
+              "name": "Tater Tots",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "ecbda382-f618-46a4-937d-c6fe2256d4a7",
+              "name": "Onion Rings",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        },
+        {
+          "group_id": "9e9fb995-4c54-5d42-8404-a4d82afc37cc",
+          "name": "Drink Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "23f9fcab-6088-4906-930e-8e627fd46d9d",
+              "name": "Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2471af1b-76bc-4765-8391-ea62d863eacc",
+              "name": "Diet Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18",
+              "name": "Sprite",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "203d06b1-09b5-48fe-a3fb-991cd128270e",
+              "name": "Root Beer",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "914c613c-130a-410f-9ca2-b771377cad35",
+              "name": "Dr Pepper",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "27bd9ac9-6034-470d-bfea-f5cfb7f10678",
+              "name": "Fanta Orange",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "1ee9b7cc-a180-47d2-a248-219d0f69ba66",
+              "name": "Sweet Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "13a97a65-928a-5221-87d6-65db2bab483a",
+              "name": "Unsweetened Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2324d601-9d02-450a-9c15-1ae8941c8786",
+              "name": "Lemonade",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        }
+      ],
+      "modifier_groups": [],
+      "aliases": [
+        "grilled chicken combo",
+        "grilled chx combo",
+        "chicken combo grilled"
+      ],
+      "available": true
+    },
+    "f9b810cb-eac8-40e8-b956-3521ed0aacee": {
+      "item_id": "f9b810cb-eac8-40e8-b956-3521ed0aacee",
+      "name": "Ribeye Combo",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "0498a93c-8d06-5514-838a-7761a4190241"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1368,
+        "currency": "USD"
+      },
+      "side_groups": [
+        {
+          "group_id": "5752c79e-0ffe-54fa-936d-ae98acb8cf46",
+          "name": "Side Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62",
+              "name": "Fries",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "8069f7ab-e2fe-43ba-a4d4-afc490aee286",
+              "name": "Tater Tots",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "ecbda382-f618-46a4-937d-c6fe2256d4a7",
+              "name": "Onion Rings",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        },
+        {
+          "group_id": "9e9fb995-4c54-5d42-8404-a4d82afc37cc",
+          "name": "Drink Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "23f9fcab-6088-4906-930e-8e627fd46d9d",
+              "name": "Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2471af1b-76bc-4765-8391-ea62d863eacc",
+              "name": "Diet Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18",
+              "name": "Sprite",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "203d06b1-09b5-48fe-a3fb-991cd128270e",
+              "name": "Root Beer",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "914c613c-130a-410f-9ca2-b771377cad35",
+              "name": "Dr Pepper",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "27bd9ac9-6034-470d-bfea-f5cfb7f10678",
+              "name": "Fanta Orange",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "1ee9b7cc-a180-47d2-a248-219d0f69ba66",
+              "name": "Sweet Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "13a97a65-928a-5221-87d6-65db2bab483a",
+              "name": "Unsweetened Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2324d601-9d02-450a-9c15-1ae8941c8786",
+              "name": "Lemonade",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        }
+      ],
+      "modifier_groups": [],
+      "aliases": [
+        "ribeye combo",
+        "rib eye combo"
+      ],
+      "available": true
+    },
+    "f6a4a9df-ba4e-4eb2-816b-617b9024e8d6": {
+      "item_id": "f6a4a9df-ba4e-4eb2-816b-617b9024e8d6",
+      "name": "Steak & Cheese Sub Combo",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "0498a93c-8d06-5514-838a-7761a4190241"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 1343,
+        "currency": "USD"
+      },
+      "side_groups": [
+        {
+          "group_id": "5752c79e-0ffe-54fa-936d-ae98acb8cf46",
+          "name": "Side Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "2a2c9fa6-9c8c-487d-b211-3897a5ee3b62",
+              "name": "Fries",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "8069f7ab-e2fe-43ba-a4d4-afc490aee286",
+              "name": "Tater Tots",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "ecbda382-f618-46a4-937d-c6fe2256d4a7",
+              "name": "Onion Rings",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        },
+        {
+          "group_id": "9e9fb995-4c54-5d42-8404-a4d82afc37cc",
+          "name": "Drink Choice",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 1,
+          "choices": [
+            {
+              "item_id": "23f9fcab-6088-4906-930e-8e627fd46d9d",
+              "name": "Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2471af1b-76bc-4765-8391-ea62d863eacc",
+              "name": "Diet Coke",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18",
+              "name": "Sprite",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "203d06b1-09b5-48fe-a3fb-991cd128270e",
+              "name": "Root Beer",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "914c613c-130a-410f-9ca2-b771377cad35",
+              "name": "Dr Pepper",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "27bd9ac9-6034-470d-bfea-f5cfb7f10678",
+              "name": "Fanta Orange",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "1ee9b7cc-a180-47d2-a248-219d0f69ba66",
+              "name": "Sweet Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "13a97a65-928a-5221-87d6-65db2bab483a",
+              "name": "Unsweetened Tea",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            },
+            {
+              "item_id": "2324d601-9d02-450a-9c15-1ae8941c8786",
+              "name": "Lemonade",
+              "pricing": {
+                "mode": "fixed",
+                "price_cents": 0,
+                "currency": "USD"
+              }
+            }
+          ]
+        }
+      ],
+      "modifier_groups": [],
+      "aliases": [
+        "steak cheese sub combo",
+        "philly combo",
+        "cheesesteak combo",
+        "steak and cheese sub combo",
+        "steak and cheese combo"
+      ],
+      "available": true
+    },
+    "073faff9-e5aa-4261-9eaf-41245ba00b3b": {
+      "item_id": "073faff9-e5aa-4261-9eaf-41245ba00b3b",
+      "name": "Family Wing Meal",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "0498a93c-8d06-5514-838a-7761a4190241"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 4320,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [
+        {
+          "group_id": "ab71ddcc-0ab9-5edd-bd18-640cae338eec",
+          "name": "Wing Sauces",
+          "is_required": true,
+          "min_selector": 1,
+          "max_selector": 2,
+          "choices": [
+            {
+              "modifier_id": "f745f049-4f72-5ea3-bdb0-57a10577d130",
+              "name": "Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "buffalo sauce",
+                "buffalo wing sauce",
+                "hot buffalo",
+                "buffalo"
+              ]
+            },
+            {
+              "modifier_id": "6e396b29-aac4-5ccc-ad8f-5f52acca0b30",
+              "name": "Garlic Parmesan",
+              "price_cents": 0,
+              "aliases": [
+                "garlic parm",
+                "garlic parmesean",
+                "parmesan garlic",
+                "garlic parmasan",
+                "garlic parmesan"
+              ]
+            },
+            {
+              "modifier_id": "2143d625-7f4a-5b82-a362-aaa83d055a08",
+              "name": "Honey BBQ",
+              "price_cents": 0,
+              "aliases": [
+                "honey barbeque",
+                "honey barbecue",
+                "honey bbq sauce",
+                "sweet bbq",
+                "honey bbq"
+              ]
+            },
+            {
+              "modifier_id": "23ab4754-51c5-5aee-93ab-630a30891eb7",
+              "name": "Honey Buffalo",
+              "price_cents": 0,
+              "aliases": [
+                "honey buffalo sauce",
+                "sweet buffalo",
+                "honey buffalo"
+              ]
+            },
+            {
+              "modifier_id": "dc0c5540-0449-5f76-8b52-29628874136b",
+              "name": "Lemon Pepper",
+              "price_cents": 0,
+              "aliases": [
+                "lemon pep",
+                "lemon pepper dry rub",
+                "lemon and pepper",
+                "lemon pepper"
+              ]
+            },
+            {
+              "modifier_id": "e50a675e-7ca0-571b-a34a-74bd15380fff",
+              "name": "Mango Habanero",
+              "price_cents": 0,
+              "aliases": [
+                "mango hab",
+                "mango habenero",
+                "mango hot",
+                "mango habanero"
+              ]
+            },
+            {
+              "modifier_id": "a6cb3518-2ecc-5c52-a511-41aab43490f8",
+              "name": "Sriracha",
+              "price_cents": 0,
+              "aliases": [
+                "siracha",
+                "sriracha sauce",
+                "sirracha",
+                "rooster sauce",
+                "sriracha"
+              ]
+            },
+            {
+              "modifier_id": "b04154bb-7691-57e5-93b0-9fc849e200a1",
+              "name": "Teriyaki",
+              "price_cents": 0,
+              "aliases": [
+                "teri",
+                "teriaki",
+                "teryaki",
+                "teriyaki sauce",
+                "teriyaki"
+              ]
+            },
+            {
+              "modifier_id": "8dea4e72-aedf-401b-a3e5-2711999d15cb",
+              "name": "No Sauce",
+              "price_cents": 0,
+              "aliases": [
+                "plain",
+                "no sauce please",
+                "dry",
+                "without sauce",
+                "sauce on the side",
+                "no sauce"
+              ]
+            }
+          ]
+        }
+      ],
+      "aliases": [
+        "family wing meal",
+        "family wings",
+        "wing family meal",
+        "wings family pack",
+        "family pack wings",
+        "family wing pack"
+      ],
+      "available": true
+    },
+    "c7fd5214-9c6e-45cf-bd13-d06e5133136c": {
+      "item_id": "c7fd5214-9c6e-45cf-bd13-d06e5133136c",
+      "name": "Burger Family Deal",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "0498a93c-8d06-5514-838a-7761a4190241"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 3792,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "burger family deal",
+        "family burger deal",
+        "burger family pack",
+        "family burgers",
+        "burger combo family"
+      ],
+      "available": true
+    },
+    "23f9fcab-6088-4906-930e-8e627fd46d9d": {
+      "item_id": "23f9fcab-6088-4906-930e-8e627fd46d9d",
+      "name": "Coke",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "90e01961-1d79-5c7a-88b0-dd58143c401f"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "coke",
+        "coca cola",
+        "cocacola"
+      ],
+      "available": true
+    },
+    "2471af1b-76bc-4765-8391-ea62d863eacc": {
+      "item_id": "2471af1b-76bc-4765-8391-ea62d863eacc",
+      "name": "Diet Coke",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "90e01961-1d79-5c7a-88b0-dd58143c401f"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "diet coke",
+        "diet cola",
+        "diet coca cola",
+        "coke zero"
+      ],
+      "available": true
+    },
+    "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18": {
+      "item_id": "15b4cd17-e3e5-4c53-a2fa-f3b7bace0a18",
+      "name": "Sprite",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "90e01961-1d79-5c7a-88b0-dd58143c401f"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "sprite",
+        "lemon lime soda"
+      ],
+      "available": true
+    },
+    "203d06b1-09b5-48fe-a3fb-991cd128270e": {
+      "item_id": "203d06b1-09b5-48fe-a3fb-991cd128270e",
+      "name": "Root Beer",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "90e01961-1d79-5c7a-88b0-dd58143c401f"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "root beer",
+        "rootbeer",
+        "a w"
+      ],
+      "available": true
+    },
+    "914c613c-130a-410f-9ca2-b771377cad35": {
+      "item_id": "914c613c-130a-410f-9ca2-b771377cad35",
+      "name": "Dr Pepper",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "90e01961-1d79-5c7a-88b0-dd58143c401f"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "dr pepper",
+        "doctor pepper",
+        "drpepper"
+      ],
+      "available": true
+    },
+    "27bd9ac9-6034-470d-bfea-f5cfb7f10678": {
+      "item_id": "27bd9ac9-6034-470d-bfea-f5cfb7f10678",
+      "name": "Fanta Orange",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "90e01961-1d79-5c7a-88b0-dd58143c401f"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "fanta orange",
+        "fanta",
+        "orange soda",
+        "orange fanta"
+      ],
+      "available": true
+    },
+    "1ee9b7cc-a180-47d2-a248-219d0f69ba66": {
+      "item_id": "1ee9b7cc-a180-47d2-a248-219d0f69ba66",
+      "name": "Sweet Tea",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "d4fe04c3-2266-5aaa-8f6c-6171dbfd3f14"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "sweet tea",
+        "sweetened tea",
+        "sweet iced tea",
+        "sugar tea"
+      ],
+      "available": true
+    },
+    "13a97a65-928a-5221-87d6-65db2bab483a": {
+      "item_id": "13a97a65-928a-5221-87d6-65db2bab483a",
+      "name": "Unsweetened Tea",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "d4fe04c3-2266-5aaa-8f6c-6171dbfd3f14"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 228
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 248
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 277
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "unsweetened tea",
+        "unsweet tea",
+        "no sugar tea",
+        "plain tea",
+        "unsweetened iced tea",
+        "unsweet iced tea"
+      ],
+      "available": true
+    },
+    "2324d601-9d02-450a-9c15-1ae8941c8786": {
+      "item_id": "2324d601-9d02-450a-9c15-1ae8941c8786",
+      "name": "Lemonade",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "d4fe04c3-2266-5aaa-8f6c-6171dbfd3f14"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 224
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 273
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 304
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "lemonade",
+        "fresh lemonade",
+        "iced lemonade"
+      ],
+      "available": true
+    },
+    "b1387a54-6804-41aa-8820-75836f44dba2": {
+      "item_id": "b1387a54-6804-41aa-8820-75836f44dba2",
+      "name": "Vanilla Shake",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "b670f3b1-ba2c-530f-95f6-369113d68963"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 272
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 324
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 383
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "vanilla shake",
+        "vanilla milkshake",
+        "van shake",
+        "vanilla milk shake"
+      ],
+      "available": true
+    },
+    "edc23d01-846a-4176-9bae-9cfc631dfcb7": {
+      "item_id": "edc23d01-846a-4176-9bae-9cfc631dfcb7",
+      "name": "Chocolate Shake",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "b670f3b1-ba2c-530f-95f6-369113d68963"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 272
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 324
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 383
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "chocolate shake",
+        "chocolate milkshake",
+        "choc shake",
+        "chocolate milk shake"
+      ],
+      "available": true
+    },
+    "da303233-9682-4a2f-8746-dfb9725236f6": {
+      "item_id": "da303233-9682-4a2f-8746-dfb9725236f6",
+      "name": "Strawberry Shake",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "b670f3b1-ba2c-530f-95f6-369113d68963"
+      ],
+      "pricing": {
+        "mode": "variant",
+        "variants": [
+          {
+            "variant_id": "small",
+            "label": "Small",
+            "price_cents": 272
+          },
+          {
+            "variant_id": "medium",
+            "label": "Medium",
+            "price_cents": 324
+          },
+          {
+            "variant_id": "large",
+            "label": "Large",
+            "price_cents": 383
+          }
+        ],
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "strawberry shake",
+        "strawberry milkshake",
+        "straw shake",
+        "strawberry milk shake",
+        "berry shake"
+      ],
+      "available": true
+    },
+    "35407cfd-91b8-4147-bc9a-b1f4546aff7a": {
+      "item_id": "35407cfd-91b8-4147-bc9a-b1f4546aff7a",
+      "name": "Apple Pie",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "825a04b2-4f36-566e-90ea-a2f6eb7aafd2"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 180,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "apple pie",
+        "apple pie slice"
+      ],
+      "available": true
+    },
+    "f3fc8404-a9c8-4aed-bf82-901ed731d7b1": {
+      "item_id": "f3fc8404-a9c8-4aed-bf82-901ed731d7b1",
+      "name": "Apple Pie a la mode",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "825a04b2-4f36-566e-90ea-a2f6eb7aafd2"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 272,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "apple pie a la mode",
+        "apple pie alamode",
+        "apple pie ala mode",
+        "apple pie with ice cream",
+        "apple pie and ice cream"
+      ],
+      "available": true
+    },
+    "e30e1c56-fc09-4da7-a166-44f395f9971b": {
+      "item_id": "e30e1c56-fc09-4da7-a166-44f395f9971b",
+      "name": "Carrot Cake",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "825a04b2-4f36-566e-90ea-a2f6eb7aafd2"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 383,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "carrot cake",
+        "carrot slice",
+        "carrot cake slice"
+      ],
+      "available": true
+    },
+    "bfd8c353-e2ae-4100-a234-e91ebbb9a679": {
+      "item_id": "bfd8c353-e2ae-4100-a234-e91ebbb9a679",
+      "name": "Chocolate Cake",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "825a04b2-4f36-566e-90ea-a2f6eb7aafd2"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 383,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "chocolate cake",
+        "choc cake",
+        "chocolate slice",
+        "chocolate cake slice"
+      ],
+      "available": true
+    },
+    "5d57d0ba-5f52-52bb-9890-0bb913d73e90": {
+      "item_id": "5d57d0ba-5f52-52bb-9890-0bb913d73e90",
+      "name": "Cheesecake",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "825a04b2-4f36-566e-90ea-a2f6eb7aafd2"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 600,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "cheesecake",
+        "cheese cake",
+        "ny cheesecake",
+        "new york cheesecake",
+        "cheesecake slice"
+      ],
+      "available": true
+    },
+    "d8abde27-6102-4e88-888c-10559fcff778": {
+      "item_id": "d8abde27-6102-4e88-888c-10559fcff778",
+      "name": "Baklava",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "825a04b2-4f36-566e-90ea-a2f6eb7aafd2"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 575,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "baklava",
+        "baclava",
+        "baklawa"
+      ],
+      "available": true
+    },
+    "c3d355c3-fee8-4a97-b3e6-26488a7cba34": {
+      "item_id": "c3d355c3-fee8-4a97-b3e6-26488a7cba34",
+      "name": "Red Velvet Cake",
+      "description": "",
+      "status": "active",
+      "categories": [
+        "825a04b2-4f36-566e-90ea-a2f6eb7aafd2"
+      ],
+      "pricing": {
+        "mode": "fixed",
+        "price_cents": 575,
+        "currency": "USD"
+      },
+      "side_groups": [],
+      "modifier_groups": [],
+      "aliases": [
+        "red velvet cake",
+        "red velvet",
+        "red velvet slice"
+      ],
+      "available": true
+    }
+  }
+}

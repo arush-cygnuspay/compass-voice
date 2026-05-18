@@ -63,7 +63,7 @@ class TurnDiagnosticsSmokeTests(unittest.TestCase):
         self.assertEqual(len(recorded), 2)
 
     def test_snapshot_context_for_logging_round_trip(self):
-        session = Session(session_id="diag-1", restaurant_id="demo")
+        session = Session(session_id="diag-1", restaurant_id="steves_grill")
         ctx = session.conversation_context
         ctx.current_item_id = "burger_1"
         ctx.current_item_name = "Chicken Burger"
@@ -83,7 +83,7 @@ class TurnDiagnosticsSmokeTests(unittest.TestCase):
 
     def test_infer_prompt_field_for_response_classifies_keys(self):
         diag = self._make_diag()
-        session = Session(session_id="s1", restaurant_id="demo")
+        session = Session(session_id="s1", restaurant_id="steves_grill")
         for key, expected in (
             ("repeat_modifier_options", "modifier"),
             ("repeat_side_size_options", "side_size"),

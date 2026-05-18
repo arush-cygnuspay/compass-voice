@@ -424,10 +424,9 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             if len(existing_selections) < min_selector:
                 return HandlerResult(
                     next_state=ConversationState.WAITING_FOR_MODIFIER,
-                    response_key="repeat_modifier_options",
+                    response_key="ask_for_modifier",
                     response_payload={
                         **self._choice_payload(group, existing_selections),
-                        "repeat_reason": "need_more",
                         "matched_names": carried.matched_names,
                     },
                 )
@@ -557,10 +556,9 @@ class WaitingForModifierHandler(GroupResolutionHandler):
         if len(proposed) < min_selector:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_MODIFIER,
-                response_key="repeat_modifier_options",
+                response_key="ask_for_modifier",
                 response_payload={
                     **self._choice_payload(group, proposed),
-                    "repeat_reason": "need_more",
                     "matched_names": newly_added_names,
                     "unmatched_names": _unmatched,
                     **self._match_debug_payload(match_debug),

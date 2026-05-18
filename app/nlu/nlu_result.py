@@ -9,6 +9,17 @@ from app.nlu.intent_resolution.intent import Intent
 
 
 @dataclass(frozen=True, slots=True)
+class IntentCandidate:
+    """One entry in the top-K sub-intent distribution from the local NLU model."""
+
+    intent_main: str
+    intent_sub_intent: str
+    canonical_intent: str  # Intent enum value string
+    confidence: float
+    source: str = "model_sub"
+
+
+@dataclass(frozen=True, slots=True)
 class SlotValue:
     """
     A single extracted slot/entity from the user's utterance.
@@ -49,3 +60,6 @@ class NLUResult:
 
     slots: tuple[SlotValue, ...] = ()
     slot_model_ran: bool = False
+    intent_candidates: tuple[IntentCandidate, ...] = ()
+    nlu_skipped: bool = False
+    nlu_skip_reason: str | None = None

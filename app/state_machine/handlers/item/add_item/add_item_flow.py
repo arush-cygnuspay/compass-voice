@@ -228,6 +228,19 @@ def _build_side_step(
     selected_ids = list(context.selected_side_groups.get(group.group_id, []))
     total_side_groups = len(pending.side_groups)
     _is_drink = is_drink_like_group(group.name)
+    min_sel, max_sel = effective_group_selector_bounds(group)
+    selected_count = len(selected_ids)
+    remaining_to_min = max(min_sel - selected_count, 0)
+
+    allow_dupes = bool(getattr(group, "allow_duplicate_selections", True))
+    if allow_dupes:
+        top_choices_filtered = list(group.top_choice_names)
+    else:
+        selected_id_set = set(selected_ids)
+        top_choices_filtered = [
+            choice.name for choice in group.choices
+            if choice.item_id not in selected_id_set
+        ][:6]
 
     context.current_prompt_field = "side"
     context.available_choices_kind = "side"
@@ -239,11 +252,12 @@ def _build_side_step(
         response_payload={
             "item_name": pending.item_name,
             "group_name": group.name,
-            "top_choices": list(group.top_choice_names),
+            "top_choices": top_choices_filtered,
             "total_choices": len(group.choice_names),
-            "min_selector": effective_group_selector_bounds(group)[0],
-            "max_selector": effective_group_selector_bounds(group)[1],
-            "selected_count": len(selected_ids),
+            "min_selector": min_sel,
+            "max_selector": max_sel,
+            "selected_count": selected_count,
+            "remaining_to_min": remaining_to_min,
             # Progressive prompt metadata
             "side_group_position": next_side_index,
             "total_side_groups": total_side_groups,
@@ -261,8 +275,17 @@ def _build_modifier_step(
 ) -> AddItemNextStep:
     context.current_modifier_group_index = next_modifier_index
     group = pending.modifier_groups[next_modifier_index]
-    selected_ids = list(context.selected_modifier_groups.get(group.group_id, []))
+    selected_selections = list(context.selected_modifier_groups.get(group.group_id, []))
     total_modifier_groups = len(pending.modifier_groups)
+    min_sel, max_sel = effective_group_selector_bounds(group)
+    selected_count = len(selected_selections)
+    remaining_to_min = max(min_sel - selected_count, 0)
+
+    selected_modifier_ids = {sel.modifier_id for sel in selected_selections}
+    top_choices_filtered = [
+        choice.name for choice in group.choices
+        if choice.modifier_id not in selected_modifier_ids
+    ][:6]
 
     context.current_prompt_field = "modifier"
     context.available_choices_kind = "modifier"
@@ -274,11 +297,12 @@ def _build_modifier_step(
         response_payload={
             "item_name": pending.item_name,
             "group_name": group.name,
-            "top_choices": list(group.top_choice_names),
+            "top_choices": top_choices_filtered,
             "total_choices": len(group.choice_names),
-            "min_selector": effective_group_selector_bounds(group)[0],
-            "max_selector": effective_group_selector_bounds(group)[1],
-            "selected_count": len(selected_ids),
+            "min_selector": min_sel,
+            "max_selector": max_sel,
+            "selected_count": selected_count,
+            "remaining_to_min": remaining_to_min,
             # Progressive prompt metadata
             "modifier_group_position": next_modifier_index,
             "total_modifier_groups": total_modifier_groups,
@@ -324,6 +348,8 @@ def _find_next_unresolved_side_group_index(
 
 
 def _side_group_satisfied(group, selected_item_ids: list[str] | tuple[str, ...], skipped: bool) -> bool:
+    if bool(getattr(group, "is_suggested_addon", False)):
+        return True
     selected_count = len(selected_item_ids)
     min_selector, _ = effective_group_selector_bounds(group)
     if bool(getattr(group, "is_required", False)):

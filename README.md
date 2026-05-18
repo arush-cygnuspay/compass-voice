@@ -49,7 +49,7 @@ Primary components:
 - `app/state_machine/`: deterministic flow sets, router, conversation models, and handlers
 - `app/ml/`: intent and slot inference assets
 - `app/services/`: SMS, checkout, live-call, and payment-related integrations
-- `app/menu/` and `app/data/restaurants/demo/`: menu and restaurant data used at runtime
+- `app/menu/` and `app/data/restaurants/steves_grill/`: menu and restaurant data used at runtime (active restaurant is configurable via `COMPASS_RESTAURANT_ID`)
 - `app/logging/`: latency and NLU CSV logging
 
 ## Key Design Choices
@@ -149,6 +149,6 @@ The `tests/` directory covers the turn engine, cart logic, menu resolution, stat
 
 ## Notes
 
-- Runtime bootstrap loads restaurant data from `app/data/restaurants/demo/` by default.
+- Runtime bootstrap loads restaurant data from `app/data/restaurants/steves_grill/` by default. Override with the `COMPASS_RESTAURANT_ID` environment variable (resolved in `app/config/restaurant.py`).
 - The browser demo is useful for validating flows before wiring Twilio.
 - Logs and CSV traces are intended to help with latency tuning and NLU debugging in production-like runs.

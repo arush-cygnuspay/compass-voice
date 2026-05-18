@@ -12,6 +12,28 @@ from app.state_machine.models.conversation_context import ConversationContext
 from app.state_machine.models.conversation_state import ConversationState
 
 
+def _apply_group_defaults(context: ConversationContext) -> None:
+    """Silently apply default_item_ids for any side group the customer skipped.
+
+    Called just before ReadyToFinalize so finalized cart data includes the
+    menu-defined defaults (e.g. a sauce that comes with the item unless
+    the customer explicitly refused it).
+    """
+    pending = context.pending_add_item
+    if pending is None:
+        return
+    for group in pending.side_groups:
+        if not group.default_item_ids:
+            continue
+        group_id = group.group_id
+        if group_id in context.skipped_side_groups:
+            continue
+        existing = list(context.selected_side_groups.get(group_id) or [])
+        if existing:
+            continue
+        context.selected_side_groups[group_id] = list(group.default_item_ids)
+
+
 def _spoken_modifiers_for(context: ConversationContext) -> list[str]:
     """Render the customer's selected modifiers as spoken phrases.
 
@@ -56,6 +78,7 @@ class ConfirmationDecisionHelper:
         prefill_feedback: str,
         prefill_debug: dict,
     ) -> HandlerResult:
+        _apply_group_defaults(context)
         step = determine_next_add_item_step(context)
 
         if isinstance(step, ReadyToFinalize):
