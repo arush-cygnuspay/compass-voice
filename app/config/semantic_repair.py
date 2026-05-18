@@ -74,6 +74,20 @@ class SemanticRepairConfig:
     # How many consecutive failed reprompts trigger INLINE_GPT (repeat-loop recovery)
     option_resolver_repeat_threshold: int = 2
 
+    # ── Phase 4: GPT Add-Item Planner (inline multi-item / complex utterance) ─
+    # "disabled" → planner never runs (default — safe)
+    # "shadow"   → GPT called for complex utterances, result logged only, never applied
+    # "inline"   → GPT called; result applied when apply gate approves
+    add_item_planner_mode: str = "disabled"
+    # Per-call timeout for the add-item planner (ms)
+    add_item_planner_timeout_ms: int = 1800
+    # Minimum GPT confidence for apply gate approval (0.0–1.0)
+    add_item_planner_min_confidence: float = 0.75
+    # Maximum candidate menu items sent to GPT (not full menu)
+    add_item_planner_max_item_candidates: int = 10
+    # Maximum option names per modifier/side group sent to GPT
+    add_item_planner_max_option_candidates: int = 20
+
     def __post_init__(self) -> None:
         if self.call_mode is not None and self.call_mode not in VALID_CALL_MODES:
             raise ValueError(
@@ -88,6 +102,11 @@ class SemanticRepairConfig:
         if self.option_resolver_mode not in {"disabled", "shadow", "inline"}:
             raise ValueError(
                 f"Invalid option_resolver_mode {self.option_resolver_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
+            )
+        if self.add_item_planner_mode not in {"disabled", "shadow", "inline"}:
+            raise ValueError(
+                f"Invalid add_item_planner_mode {self.add_item_planner_mode!r}. "
                 "Allowed: ['disabled', 'shadow', 'inline']"
             )
 
@@ -145,5 +164,19 @@ def get_semantic_repair_config() -> SemanticRepairConfig:
         ),
         option_resolver_repeat_threshold=int(
             os.getenv("COMPASS_GPT_OPTION_RESOLVER_REPEAT_THRESHOLD", "2")
+        ),
+        # Phase 4: Add-Item Planner
+        add_item_planner_mode=os.getenv("COMPASS_GPT_ADD_ITEM_PLANNER_MODE", "disabled"),
+        add_item_planner_timeout_ms=int(
+            os.getenv("COMPASS_GPT_ADD_ITEM_PLANNER_TIMEOUT_MS", "1800")
+        ),
+        add_item_planner_min_confidence=float(
+            os.getenv("COMPASS_GPT_ADD_ITEM_PLANNER_MIN_CONFIDENCE", "0.75")
+        ),
+        add_item_planner_max_item_candidates=int(
+            os.getenv("COMPASS_GPT_ADD_ITEM_PLANNER_MAX_ITEM_CANDIDATES", "10")
+        ),
+        add_item_planner_max_option_candidates=int(
+            os.getenv("COMPASS_GPT_ADD_ITEM_PLANNER_MAX_OPTION_CANDIDATES", "20")
         ),
     )

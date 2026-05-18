@@ -6,6 +6,7 @@ delegation. Behavior moved verbatim from ``turn_engine.py``.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.cart.read_models.cart_summary_builder import CartSummaryBuilder
@@ -36,6 +37,8 @@ from app.state_machine.handlers.delivery.waiting_for_delivery_eligibility_handle
 from app.state_machine.handlers.info.ask_menu_info_handler import AskMenuInfoHandler
 from app.state_machine.handlers.info.ask_price_handler import AskPriceHandler
 from app.state_machine.handlers.item.add_item.add_item_handler import AddItemHandler
+from app.nlu.semantic_repair.add_item_planner_service import GptAddItemPlannerService
+from app.config.semantic_repair import get_semantic_repair_config
 from app.state_machine.handlers.item.add_item.waiting_for_modifier_handler import (
     WaitingForModifierHandler,
 )
@@ -68,6 +71,33 @@ from app.state_machine.handlers.payment.waiting_for_pickup_sms_permission_handle
 )
 from app.state_machine.models.conversation_state import ConversationState
 
+logger = logging.getLogger(__name__)
+
+
+def _build_add_item_planner() -> "GptAddItemPlannerService | None":
+    """Instantiate the Phase 4 GPT Add-Item Planner iff mode != 'disabled'.
+
+    Called once at HandlerDispatcher construction time.  Returns None when
+    COMPASS_GPT_ADD_ITEM_PLANNER_MODE=disabled (the default), which causes
+    AddItemHandler to skip the planner path entirely — zero overhead.
+
+    Never raises: any config/import error returns None (safe fallback).
+    """
+    try:
+        cfg = get_semantic_repair_config()
+        mode = getattr(cfg, "add_item_planner_mode", "disabled")
+        if mode == "disabled":
+            return None
+        planner = GptAddItemPlannerService(config=cfg)
+        logger.info(
+            "add_item_planner_wired",
+            extra={"add_item_planner_mode": mode},
+        )
+        return planner
+    except Exception as exc:
+        logger.warning("add_item_planner_build_failed: %s", exc)
+        return None
+
 
 class HandlerDispatcher:
     """Builds and owns the handlers dict; handles dispatch, reprompt
@@ -92,8 +122,14 @@ class HandlerDispatcher:
         self.command_executor = command_executor
         self.diagnostics = diagnostics
 
+        # Phase 4: build the planner once (returns None when mode=disabled).
+        _gpt_add_item_planner = _build_add_item_planner()
+
         self.handlers: dict[str, Any] = {
-            "add_item_handler": AddItemHandler(menu_repo=menu_repo),
+            "add_item_handler": AddItemHandler(
+                menu_repo=menu_repo,
+                gpt_planner=_gpt_add_item_planner,
+            ),
             "waiting_for_side_handler": WaitingForSideHandler(menu_repo),
             "waiting_for_modifier_handler": WaitingForModifierHandler(menu_repo),
             "waiting_for_size_handler": WaitingForSizeHandler(menu_repo),

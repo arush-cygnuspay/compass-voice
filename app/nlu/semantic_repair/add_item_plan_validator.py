@@ -590,3 +590,190 @@ class AddItemPlanValidator:
             if callable(getter):
                 return getter()
         return None
+
+    def validate_planner_items(
+        self,
+        *,
+        planner_items: "tuple[Any, ...]",
+        menu_store: "MenuStore | None" = None,
+        menu_repo: Any = None,
+    ) -> ValidatedAddItemPlan:
+        """Validate Phase 4 PlannerGptItem list against live menu data.
+
+        Adapts PlannerGptItem objects into GptAddItem-compatible objects and
+        delegates to the existing validate() method via a synthetic plan.
+
+        Parameters
+        ----------
+        planner_items:
+            Tuple of PlannerGptItem from the Phase 4 planner output.
+        menu_store / menu_repo:
+            Menu data source (same as validate()).
+        """
+        from app.nlu.semantic_repair.add_item_extractor import (
+            GptAddItem,
+            GptAddItemChild,
+            GptAddItemPlan,
+        )
+
+        # Convert PlannerGptItem → GptAddItem (drop candidate_item_id, adapt operations)
+        gpt_items: list[GptAddItem] = []
+        for pi in (planner_items or ()):
+            mods = tuple(
+                GptAddItemChild(
+                    name=getattr(m, "name", ""),
+                    operation=getattr(m, "operation", "add"),
+                    quantity=getattr(m, "quantity", 1),
+                )
+                for m in (getattr(pi, "modifiers", ()) or ())
+            )
+            sides = tuple(
+                GptAddItemChild(
+                    name=getattr(s, "name", ""),
+                    operation="add",
+                    quantity=getattr(s, "quantity", 1),
+                    size=getattr(s, "size", None),
+                )
+                for s in (getattr(pi, "sides", ()) or ())
+            )
+            gpt_items.append(GptAddItem(
+                item=getattr(pi, "item_name", "") or "",
+                quantity=getattr(pi, "quantity", None),
+                size=getattr(pi, "size", None),
+                variant=getattr(pi, "variant", None),
+                modifiers=mods,
+                sides=sides,
+            ))
+
+        synthetic_plan = GptAddItemPlan(
+            decision="add_items",
+            items=tuple(gpt_items),
+        )
+        return self.validate(
+            plan=synthetic_plan,
+            menu_store=menu_store,
+            menu_repo=menu_repo,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 Apply Gate
+# ---------------------------------------------------------------------------
+
+
+class PlannerApplyGate:
+    """Decides whether a validated Phase 4 plan is safe to apply.
+
+    The apply gate is the single authority that controls whether GPT planner
+    results are allowed to feed into the FSM / cart mutation path.
+
+    Contract
+    --------
+    * should_apply() returns (safe: bool, reason: str).
+    * Returns (False, reason) whenever ANY blocking condition is true.
+    * Returns (True, "approved") only when ALL conditions pass.
+    * Never raises — all exceptions produce (False, "gate_exception").
+    * Mode "shadow" always produces (False, "shadow_mode_never_applies").
+    * Mode "disabled" always produces (False, "mode_disabled").
+    """
+
+    def should_apply(
+        self,
+        *,
+        route_mode: str,
+        decision: str,
+        validated_plan: "ValidatedAddItemPlan | None",
+        confidence: float | None,
+        min_confidence: float,
+        parse_error: str | None = None,
+        gpt_called: bool = True,
+        timed_out: bool = False,
+    ) -> tuple[bool, str]:
+        """Return (safe_to_apply, reason).
+
+        Parameters
+        ----------
+        route_mode:
+            "no_gpt" | "shadow_gpt" | "inline_gpt"
+        decision:
+            GPT decision string (must be "add_items" to proceed).
+        validated_plan:
+            ValidatedAddItemPlan from AddItemPlanValidator (None → not run).
+        confidence:
+            GPT confidence (0.0–1.0).  None → treated as 0.0.
+        min_confidence:
+            Minimum threshold for apply gate approval.
+        parse_error:
+            Non-None → gate rejects.
+        gpt_called:
+            False → gate rejects (nothing to apply).
+        timed_out:
+            True → gate rejects.
+        """
+        try:
+            return self._evaluate(
+                route_mode=route_mode,
+                decision=decision,
+                validated_plan=validated_plan,
+                confidence=confidence,
+                min_confidence=min_confidence,
+                parse_error=parse_error,
+                gpt_called=gpt_called,
+                timed_out=timed_out,
+            )
+        except Exception:
+            return False, "gate_exception"
+
+    @staticmethod
+    def _evaluate(
+        *,
+        route_mode: str,
+        decision: str,
+        validated_plan: "ValidatedAddItemPlan | None",
+        confidence: float | None,
+        min_confidence: float,
+        parse_error: str | None,
+        gpt_called: bool,
+        timed_out: bool,
+    ) -> tuple[bool, str]:
+        # Gate 1: mode must be inline
+        if route_mode != "inline_gpt":
+            return False, "shadow_mode_never_applies" if route_mode == "shadow_gpt" else "not_inline_mode"
+
+        # Gate 2: GPT must have been called
+        if not gpt_called:
+            return False, "gpt_not_called"
+
+        # Gate 3: no timeout
+        if timed_out:
+            return False, "gpt_timeout"
+
+        # Gate 4: no parse error
+        if parse_error:
+            return False, f"parse_error:{parse_error[:80]}"
+
+        # Gate 5: decision must be "add_items"
+        if decision != "add_items":
+            return False, f"decision_not_add_items:{decision}"
+
+        # Gate 6: confidence >= threshold
+        conf = float(confidence) if confidence is not None else 0.0
+        if conf < min_confidence:
+            return False, f"confidence_too_low:{conf:.3f}<{min_confidence:.3f}"
+
+        # Gate 7: validated plan must exist and pass
+        if validated_plan is None:
+            return False, "validator_not_run"
+
+        if validated_plan.has_blocking_warnings:
+            return False, "validator_blocking_warnings"
+
+        if not validated_plan.items:
+            return False, "no_valid_items"
+
+        # Gate 8: all validated items must have a resolved item_id
+        for vi in validated_plan.items:
+            if not getattr(vi, "item_id", ""):
+                return False, f"unresolved_item_id:{getattr(vi, 'item_name', '?')}"
+
+        return True, "approved"
