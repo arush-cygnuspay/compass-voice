@@ -71,22 +71,41 @@ _SYSTEM_PROMPTS: dict[str, str] = {
         "Output strict JSON only."
     ),
     TASK_MODIFIER_OPTION_RESOLUTION: (
-        "You are a voice ordering assistant. "
-        "The customer is choosing a modifier or add-on for a pending item. "
-        "Resolve their selection from the allowed_options list only. "
+        "You are a voice ordering assistant classifier. "
+        "The customer is answering a modifier or add-on question for a pending item. "
+        "Your job is to resolve their utterance against the allowed_options list ONLY. "
+        "Never invent options not in allowed_options. "
+        "Phonetic / fuzzy matches are allowed: 'plain bun' → 'Plain Bun', "
+        "'whole wheat pan' → 'Whole Wheat Bun', 'Swiss' → 'Swiss Cheese'. "
+        "If the utterance asks to see choices ('what do you have', 'options', …), "
+        "return action='list_options'. "
+        "If the utterance is ambiguous between two or more allowed options, "
+        "return action='clarify' with a clarification_text naming the ambiguous choices. "
+        "If the customer says checkout / cancel / change order type, return that action. "
         "Output strict JSON only."
     ),
     TASK_SIDE_OPTION_RESOLUTION: (
-        "You are a voice ordering assistant. "
-        "The customer is choosing a side dish or drink for a pending item. "
-        "Resolve their selection from the allowed_options list only. "
-        "Preserve any size (small/medium/large) the customer mentions. "
+        "You are a voice ordering assistant classifier. "
+        "The customer is answering a side dish or drink question for a pending item. "
+        "Your job is to resolve their utterance against the allowed_options list ONLY. "
+        "Never invent options not in allowed_options. "
+        "If the customer mentions a size (small / medium / large), capture it in "
+        "the 'size' field of the matching selected_options entry. "
+        "'small coke' → select Coke with size='Small' (if Coke is allowed). "
+        "If the customer negates a choice ('no coke', 'not that'), return action='negate'. "
+        "If the utterance asks for choices, return action='list_options'. "
+        "If ambiguous, return action='clarify'. "
         "Output strict JSON only."
     ),
     TASK_SIZE_OPTION_RESOLUTION: (
-        "You are a voice ordering assistant. "
-        "The customer is choosing a size or variant for a pending item. "
-        "Resolve their selection from the allowed_options list only. "
+        "You are a voice ordering assistant classifier. "
+        "The customer is answering a size or variant question for a pending item. "
+        "Your job is to resolve their utterance against the allowed_options list ONLY. "
+        "Never invent options not in allowed_options. "
+        "Ordinal references ('first one', 'second one', 'the last one') refer to the "
+        "option at that 0-based index position in allowed_options. "
+        "'six piece' or '6 piece' → match the option whose name contains '6' or 'six'. "
+        "If ambiguous, return action='clarify'. "
         "Output strict JSON only."
     ),
     TASK_CORRECTION_CANCEL_RESOLUTION: (
@@ -142,25 +161,46 @@ _TASK_INSTRUCTIONS: dict[str, str] = {
         "size, variant, sides[], modifiers[]."
     ),
     TASK_MODIFIER_OPTION_RESOLUTION: (
-        "The customer is selecting a modifier/add-on for the current pending item.\n"
-        "Choose only from the allowed_options list.\n"
-        "If the customer's choice is ambiguous between options, return decision='clarify'.\n"
-        "If the customer asks to see the options, return decision='list_options'.\n"
-        "If the modifier group is optional and the customer wants to skip, "
-        "return decision='skip'."
+        "The customer is answering the current modifier/add-on question.\n"
+        "Select ONLY from the allowed_options list provided in the user message.\n"
+        "Use fuzzy/phonetic matching: 'plain bun' → 'Plain Bun', "
+        "'whole wheat pan' → 'Whole Wheat Bun', 'Swiss' → 'Swiss Cheese'.\n"
+        "If the utterance asks for choices ('what do you have?', 'options', …), "
+        "set action='list_options'.\n"
+        "If the utterance is ambiguous between ≥2 allowed options, set action='clarify' "
+        "and include clarification_text naming the ambiguous choices.\n"
+        "For example: 'Honey' when both 'Honey BBQ' and 'Honey Buffalo' are allowed → "
+        "action='clarify', clarification_text='Did you mean Honey BBQ or Honey Buffalo?'\n"
+        "If the modifier group is optional and the customer explicitly skips, "
+        "set action='skip'.\n"
+        "If the customer says cancel/checkout/change order type, set that action.\n"
+        "Never invent options not in allowed_options.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_SIDE_OPTION_RESOLUTION: (
-        "The customer is selecting a side dish or drink for the current pending item.\n"
-        "Choose only from the allowed_options list.\n"
-        "If the customer mentions a size (small/medium/large), include it in the response.\n"
-        "If ambiguous, return decision='clarify'.\n"
-        "If the side group is optional and the customer wants to skip, "
-        "return decision='skip'."
+        "The customer is answering the current side dish or drink question.\n"
+        "Select ONLY from the allowed_options list provided in the user message.\n"
+        "If the customer mentions a size (small/medium/large), capture it in the "
+        "'size' field of the matching selected_options entry.\n"
+        "Example: 'small coke' → action='select', selected_options=[{\"name\": \"Coke\", \"size\": \"Small\"}]\n"
+        "If the customer negates ('no coke', 'without that'), set action='negate' "
+        "with negated_options listing the relevant choice.\n"
+        "If the utterance asks for choices, set action='list_options'.\n"
+        "If ambiguous, set action='clarify' with clarification_text.\n"
+        "If the side group is optional and the customer explicitly skips, "
+        "set action='skip'.\n"
+        "Never invent options not in allowed_options.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_SIZE_OPTION_RESOLUTION: (
-        "The customer is selecting a size or variant for the current pending item.\n"
-        "Choose only from the allowed_options list.\n"
-        "If ambiguous, return decision='clarify'."
+        "The customer is answering the current size or variant question.\n"
+        "Select ONLY from the allowed_options list provided in the user message.\n"
+        "Ordinal references ('first one', 'second option', 'the last one') refer to the "
+        "option at that numeric position in allowed_options (0-indexed).\n"
+        "'six piece' or '6 piece' → match the option whose name contains '6' or 'six'.\n"
+        "If ambiguous, set action='clarify' with clarification_text.\n"
+        "Never invent options not in allowed_options.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_CORRECTION_CANCEL_RESOLUTION: (
         "Determine whether the customer is:\n"
@@ -216,18 +256,28 @@ _OUTPUT_CONTRACTS: dict[str, str] = {
         '"confidence": 0.0-1.0, "reason": "optional string"}'
     ),
     TASK_MODIFIER_OPTION_RESOLUTION: (
-        '{"decision": "select"|"list_options"|"skip"|"clarify"|"no_match", '
-        '"selected_option": str|null, "confidence": 0.0-1.0, '
+        '{"action": "select"|"negate"|"list_options"|"skip"|"cancel"'
+        '|"checkout_request"|"change_order_type"|"clarify"|"fallback", '
+        '"selected_options": [{"id": str|null, "name": str, "variant": str|null}], '
+        '"negated_options": [{"id": str|null, "name": str}], '
+        '"confidence": 0.0-1.0, '
+        '"clarification_text": str|null, '
         '"reason": "optional string"}'
     ),
     TASK_SIDE_OPTION_RESOLUTION: (
-        '{"decision": "select"|"list_options"|"skip"|"clarify"|"no_match", '
-        '"selected_option": str|null, "size_hint": str|null, '
-        '"confidence": 0.0-1.0, "reason": "optional string"}'
+        '{"action": "select"|"negate"|"list_options"|"skip"|"cancel"'
+        '|"checkout_request"|"change_order_type"|"clarify"|"fallback", '
+        '"selected_options": [{"id": str|null, "name": str, "size": "Small"|"Medium"|"Large"|null, "variant": str|null}], '
+        '"negated_options": [{"id": str|null, "name": str}], '
+        '"confidence": 0.0-1.0, '
+        '"clarification_text": str|null, '
+        '"reason": "optional string"}'
     ),
     TASK_SIZE_OPTION_RESOLUTION: (
-        '{"decision": "select"|"clarify"|"no_match", '
-        '"selected_option": str|null, "confidence": 0.0-1.0, '
+        '{"action": "select"|"clarify"|"list_options"|"fallback", '
+        '"selected_options": [{"id": str|null, "name": str, "variant": str|null}], '
+        '"confidence": 0.0-1.0, '
+        '"clarification_text": str|null, '
         '"reason": "optional string"}'
     ),
     TASK_CORRECTION_CANCEL_RESOLUTION: (

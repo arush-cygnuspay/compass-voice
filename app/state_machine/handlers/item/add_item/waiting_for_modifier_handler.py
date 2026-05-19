@@ -119,6 +119,9 @@ class WaitingForModifierHandler(GroupResolutionHandler):
         # Phase 3: GPT Option Resolver — lazy-initialized on first call.
         # This is None until _ensure_option_resolver() is invoked.
         self._option_resolver: object | None = None
+        # Bucket 2: WaitingOptionResolver (GptSafeClient-based) — lazy-initialized.
+        # This is None until _ensure_waiting_resolver() is invoked.
+        self._waiting_resolver: object | None = None
 
     def handle(
         self,
@@ -497,6 +500,22 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             return _smart_mod
         # ── END SmartTurnPlanner hook ─────────────────────────────────────────
 
+        # ── Bucket 2: WaitingOptionResolver (GptSafeClient-based) ────────────
+        # Runs BEFORE Phase 3. When bucket_2_mode='inline' and the resolution
+        # passes validation, the selection is applied and Phase 3 is skipped.
+        # On failure, disabled mode, or invalid result → falls through to Phase 3.
+        _b2_modifier = self._try_bucket2_resolver(
+            user_text=normalized_user_text,
+            group=group,
+            pending=pending,
+            existing_selections=existing_selections,
+            context=context,
+            deterministic_result=resolution,
+        )
+        if _b2_modifier is not None:
+            return _b2_modifier
+        # ── END Bucket 2 ──────────────────────────────────────────────────────
+
         # ── Phase 3: GPT Option Resolver ─────────────────────────────────────
         # Attempt GPT resolution when local deterministic matching failed.
         # In "shadow" mode the result is logged only (safe_to_apply=False).
@@ -677,6 +696,221 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             unmatched_names=_unmatched,
             match_debug=match_debug,
         )
+
+    # ------------------------------------------------------------------
+    # Bucket 2: WaitingOptionResolver helpers
+    # ------------------------------------------------------------------
+
+    def _ensure_waiting_resolver(self) -> object:
+        """Lazily initialize the WaitingOptionResolver and return it."""
+        if self._waiting_resolver is None:
+            from app.nlu.turn_resolver.waiting_option_resolver import WaitingOptionResolver
+            self._waiting_resolver = WaitingOptionResolver()
+        return self._waiting_resolver
+
+    def _try_bucket2_resolver(
+        self,
+        *,
+        user_text: str,
+        group: "PendingModifierGroup",
+        pending: object,
+        existing_selections: "list[ModifierSelection]",
+        context: "ConversationContext",
+        deterministic_result: object = None,
+    ) -> "HandlerResult | None":
+        """Try bucket-2 WaitingOptionResolver for modifier option resolution.
+
+        Returns a HandlerResult when the resolution was applied or is a
+        structural control action (list_options / clarify / skip).
+        Returns None to fall through to Phase 3 / unmatched fallback.
+        Never raises.
+        """
+        try:
+            from app.config.semantic_repair import get_semantic_repair_config
+            cfg = get_semantic_repair_config()
+            if getattr(cfg, "bucket_2_mode", "disabled") == "disabled":
+                return None
+
+            from app.nlu.turn_resolver.waiting_option_policy import (
+                should_call_waiting_option_gpt,
+            )
+            from app.nlu.turn_resolver.waiting_option_validator import (
+                validate_waiting_option_resolution,
+            )
+            from app.nlu.turn_resolver.waiting_option_resolver import WaitingOptionAction
+            from app.nlu.turn_resolver.allowed_option_extractor import AllowedOptionExtractor
+
+            state = ConversationState.WAITING_FOR_MODIFIER.value
+            last_nlu = getattr(context, "last_nlu", None)
+            local_intent = str(getattr(last_nlu, "intent", None) or "") if last_nlu else ""
+            local_confidence = float(context.last_intent_confidence or 0.0)
+            local_slots = list(context.last_slots or ())
+
+            should_call, trigger_reason = should_call_waiting_option_gpt(
+                state=state,
+                user_text=user_text,
+                local_intent=local_intent,
+                local_confidence=local_confidence,
+                local_slots=local_slots,
+                deterministic_match_result=deterministic_result,
+            )
+            if not should_call:
+                return None
+
+            resolver = self._ensure_waiting_resolver()
+            resolution = resolver.resolve_sync(  # type: ignore[attr-defined]
+                context=context,
+                user_text=user_text,
+                normalized_text=user_text,
+                local_intent=local_intent,
+                local_confidence=local_confidence,
+                local_candidates=None,
+                local_slots=local_slots,
+                state=state,
+                deterministic_match_result=deterministic_result,
+            )
+
+            _logger.info(
+                "waiting_option_gpt_trigger",
+                extra={
+                    "event": "waiting_option_gpt_trigger",
+                    "waiting_option_gpt_trigger_reason": trigger_reason,
+                    "waiting_option_gpt_action": resolution.action,
+                    "waiting_option_gpt_confidence": resolution.confidence,
+                    "waiting_option_gpt_status": resolution.raw_gpt_status,
+                    "state": state,
+                    "group_id": group.group_id,
+                },
+            )
+
+            # Build allowed_options for validation
+            allowed_options = AllowedOptionExtractor().extract(context, state)
+            min_conf = float(getattr(cfg, "bucket_2_min_confidence", 0.70))
+            validation = validate_waiting_option_resolution(
+                resolution, allowed_options, state, context,
+                min_confidence=min_conf,
+            )
+            _logger.info(
+                "waiting_option_gpt_validation_result",
+                extra={
+                    "event": "waiting_option_gpt_validation_result",
+                    "waiting_option_gpt_validation_result": (
+                        "ok" if validation.is_valid else f"failed:{validation.reason}"
+                    ),
+                    "state": state,
+                    "group_id": group.group_id,
+                },
+            )
+
+            if not validation.is_valid:
+                return None
+
+            action = resolution.action
+
+            if action == WaitingOptionAction.LIST_OPTIONS:
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="repeat_modifier_options",
+                    response_payload={
+                        **self._choice_payload(group, existing_selections),
+                        "list_options_requested": True,
+                    },
+                )
+
+            if action == WaitingOptionAction.CLARIFY:
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_MODIFIER,
+                    response_key="repeat_modifier_options",
+                    response_payload={
+                        **self._choice_payload(group, existing_selections),
+                        "repeat_reason": "clarify",
+                        **({"clarification_text": resolution.clarification_text}
+                           if resolution.clarification_text else {}),
+                    },
+                )
+
+            if action == WaitingOptionAction.SKIP:
+                _b2_min_sel, _ = effective_group_selector_bounds(group)
+                _skip = evaluate_group_skip(_b2_min_sel, len(existing_selections))
+                if _skip.decision == GroupSkipDecision.BLOCK_UNDER_MIN:
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_MODIFIER,
+                        response_key="required_modifier_cannot_skip",
+                        response_payload={
+                            **self._choice_payload(group, existing_selections),
+                            "remaining_to_min": _skip.remaining_to_min,
+                            "selected_count": _skip.selected_count,
+                            "min_required": _skip.min_required,
+                        },
+                    )
+                if _skip.decision == GroupSkipDecision.SKIP_OPTIONAL and not existing_selections:
+                    context.skipped_modifier_groups.add(group.group_id)
+                    context.selected_modifier_groups.pop(group.group_id, None)
+                step = determine_next_add_item_step(context)
+                return self._step_to_result(context, step)
+
+            # Control actions (cancel / checkout / change type) — do not apply;
+            # let existing control intent flow handle them.
+            if action in {
+                WaitingOptionAction.CANCEL,
+                WaitingOptionAction.CHECKOUT_REQUEST,
+                WaitingOptionAction.CHANGE_ORDER_TYPE,
+            }:
+                return None
+
+            # SELECT — build modifier selections from GPT-returned names
+            if action == WaitingOptionAction.SELECT and resolution.ok:
+                selected_names = list(resolution.selected_option_names)
+                if not selected_names and resolution.selected_option_ids:
+                    # Resolve IDs → names via allowed_options
+                    id_to_name = {
+                        str(opt.get("modifier_id") or ""): str(opt.get("name") or "")
+                        for opt in allowed_options
+                    }
+                    selected_names = [
+                        id_to_name[oid]
+                        for oid in resolution.selected_option_ids
+                        if oid in id_to_name and id_to_name[oid]
+                    ]
+
+                if selected_names:
+                    gpt_selections = build_modifier_selections_from_names(
+                        selected_names=tuple(selected_names),
+                        group=group,
+                        existing_ids={sel.modifier_id for sel in existing_selections},
+                    )
+                    if gpt_selections:
+                        _logger.info(
+                            "waiting_option_gpt_applied",
+                            extra={
+                                "event": "waiting_option_gpt_applied",
+                                "waiting_option_gpt_applied": True,
+                                "final_option_source": "gpt",
+                                "selected_names": [s.name for s in gpt_selections],
+                                "group_id": group.group_id,
+                                "state": state,
+                            },
+                        )
+                        return self._apply_modifier_selection(
+                            context=context,
+                            pending=pending,
+                            group=group,
+                            matched_selections=gpt_selections,
+                            normalized_user_text=user_text,
+                        )
+
+            return None
+
+        except Exception as exc:
+            _logger.warning(
+                "waiting_option_bucket2_error",
+                extra={
+                    "event": "waiting_option_bucket2_error",
+                    "error": str(exc)[:200],
+                    "state": ConversationState.WAITING_FOR_MODIFIER.value,
+                },
+            )
+            return None
 
     # ------------------------------------------------------------------
     # Phase 3: GPT Option Resolver helpers

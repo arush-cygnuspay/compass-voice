@@ -98,6 +98,8 @@ class WaitingForSideHandler(GroupResolutionHandler):
         self.menu_repo = menu_repo
         self.side_resolver = SideGroupResolver()
         self.capture_helper = PendingItemCaptureHelper(side_resolver=self.side_resolver)
+        # Bucket 2: WaitingOptionResolver — lazy-initialized on first call.
+        self._waiting_resolver: object | None = None
 
     def handle(
         self,
@@ -488,6 +490,21 @@ class WaitingForSideHandler(GroupResolutionHandler):
         if _smart_side is not None:
             return _smart_side
         # ── END SmartTurnPlanner hook ─────────────────────────────────────────
+
+        # ── Bucket 2: WaitingOptionResolver (GptSafeClient-based) ────────────
+        # Runs when local resolution failed and SmartTurnPlanner did not apply.
+        # On failure, disabled mode, or invalid result → falls through.
+        _b2_side = self._try_bucket2_resolver_side(
+            user_text=normalized_user_text,
+            group=group,
+            pending=pending,
+            existing_ids=existing_ids,
+            context=context,
+            deterministic_result=resolution,
+        )
+        if _b2_side is not None:
+            return _b2_side
+        # ── END Bucket 2 ──────────────────────────────────────────────────────
 
         if resolution.unmatched_values:
             return HandlerResult(
@@ -885,6 +902,196 @@ class WaitingForSideHandler(GroupResolutionHandler):
             "remaining_to_min": max(min_selector - selected_count, 0),
             "remaining_to_max": max(max_selector - selected_count, 0),
         }
+
+    # ------------------------------------------------------------------
+    # Bucket 2: WaitingOptionResolver helpers
+    # ------------------------------------------------------------------
+
+    def _ensure_waiting_resolver(self) -> object:
+        """Lazily initialize the WaitingOptionResolver and return it."""
+        if self._waiting_resolver is None:
+            from app.nlu.turn_resolver.waiting_option_resolver import WaitingOptionResolver
+            self._waiting_resolver = WaitingOptionResolver()
+        return self._waiting_resolver
+
+    def _try_bucket2_resolver_side(
+        self,
+        *,
+        user_text: str,
+        group: "PendingSideGroup",
+        pending: object,
+        existing_ids: "set[str]",
+        context: "ConversationContext",
+        deterministic_result: object = None,
+    ) -> "HandlerResult | None":
+        """Try bucket-2 WaitingOptionResolver for side option resolution.
+
+        Returns a HandlerResult when the resolution was applied or is a
+        structural control action.  Returns None to fall through.
+        Never raises.
+        """
+        try:
+            from app.config.semantic_repair import get_semantic_repair_config
+            cfg = get_semantic_repair_config()
+            if getattr(cfg, "bucket_2_mode", "disabled") == "disabled":
+                return None
+
+            from app.nlu.turn_resolver.waiting_option_policy import (
+                should_call_waiting_option_gpt,
+            )
+            from app.nlu.turn_resolver.waiting_option_validator import (
+                validate_waiting_option_resolution,
+            )
+            from app.nlu.turn_resolver.waiting_option_resolver import WaitingOptionAction
+            from app.nlu.turn_resolver.allowed_option_extractor import AllowedOptionExtractor
+
+            state = ConversationState.WAITING_FOR_SIDE.value
+            last_nlu = getattr(context, "last_nlu", None)
+            local_intent = str(getattr(last_nlu, "intent", None) or "") if last_nlu else ""
+            local_confidence = float(context.last_intent_confidence or 0.0)
+            local_slots = list(context.last_slots or ())
+
+            should_call, trigger_reason = should_call_waiting_option_gpt(
+                state=state,
+                user_text=user_text,
+                local_intent=local_intent,
+                local_confidence=local_confidence,
+                local_slots=local_slots,
+                deterministic_match_result=deterministic_result,
+            )
+            if not should_call:
+                return None
+
+            resolver = self._ensure_waiting_resolver()
+            resolution = resolver.resolve_sync(  # type: ignore[attr-defined]
+                context=context,
+                user_text=user_text,
+                normalized_text=user_text,
+                local_intent=local_intent,
+                local_confidence=local_confidence,
+                local_candidates=None,
+                local_slots=local_slots,
+                state=state,
+                deterministic_match_result=deterministic_result,
+            )
+
+            _logger.info(
+                "waiting_option_gpt_trigger",
+                extra={
+                    "event": "waiting_option_gpt_trigger",
+                    "waiting_option_gpt_trigger_reason": trigger_reason,
+                    "waiting_option_gpt_action": resolution.action,
+                    "waiting_option_gpt_confidence": resolution.confidence,
+                    "waiting_option_gpt_status": resolution.raw_gpt_status,
+                    "state": state,
+                    "group_id": group.group_id,
+                },
+            )
+
+            allowed_options = AllowedOptionExtractor().extract(context, state)
+            min_conf = float(getattr(cfg, "bucket_2_min_confidence", 0.70))
+            validation = validate_waiting_option_resolution(
+                resolution, allowed_options, state, context,
+                min_confidence=min_conf,
+            )
+            if not validation.is_valid:
+                return None
+
+            action = resolution.action
+
+            if action == WaitingOptionAction.LIST_OPTIONS:
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE,
+                    response_key="repeat_side_options",
+                    response_payload={
+                        **self._choice_payload(context, group),
+                        "list_options_requested": True,
+                    },
+                )
+
+            if action == WaitingOptionAction.CLARIFY:
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIDE,
+                    response_key="repeat_side_options",
+                    response_payload={
+                        **self._choice_payload(context, group),
+                        "repeat_reason": "clarify",
+                        **({"clarification_text": resolution.clarification_text}
+                           if resolution.clarification_text else {}),
+                    },
+                )
+
+            if action == WaitingOptionAction.SKIP:
+                min_sel, _ = effective_group_selector_bounds(group)
+                _skip = evaluate_group_skip(min_sel, len(existing_ids))
+                if _skip.decision == GroupSkipDecision.BLOCK_UNDER_MIN:
+                    return HandlerResult(
+                        next_state=ConversationState.WAITING_FOR_SIDE,
+                        response_key="required_side_cannot_skip",
+                        response_payload={
+                            **self._choice_payload(context, group),
+                            "remaining_to_min": _skip.remaining_to_min,
+                        },
+                    )
+                if _skip.decision == GroupSkipDecision.SKIP_OPTIONAL and not existing_ids:
+                    context.skipped_side_groups.add(group.group_id)
+                    context.selected_side_groups.pop(group.group_id, None)
+                step = determine_next_add_item_step(context)
+                return self._step_to_result(context, step)
+
+            if action in {
+                WaitingOptionAction.CANCEL,
+                WaitingOptionAction.CHECKOUT_REQUEST,
+                WaitingOptionAction.CHANGE_ORDER_TYPE,
+            }:
+                return None
+
+            # SELECT — map GPT names to item_ids via group.choices_by_item_id
+            if action == WaitingOptionAction.SELECT and resolution.ok:
+                selected_names_lower = {n.lower() for n in resolution.selected_option_names}
+                # Also try IDs from allowed_options
+                id_set = set(resolution.selected_option_ids)
+                matched_ids: list[str] = []
+                for item_id, choice in group.choices_by_item_id.items():
+                    if (
+                        choice.name.lower() in selected_names_lower
+                        or item_id in id_set
+                    ):
+                        matched_ids.append(item_id)
+
+                if matched_ids:
+                    _logger.info(
+                        "waiting_option_gpt_applied",
+                        extra={
+                            "event": "waiting_option_gpt_applied",
+                            "waiting_option_gpt_applied": True,
+                            "final_option_source": "gpt",
+                            "matched_ids": matched_ids,
+                            "group_id": group.group_id,
+                            "state": state,
+                        },
+                    )
+                    pending_item_name = getattr(pending, "item_name", "")
+                    return self._apply_side_selection(
+                        context=context,
+                        pending_item_name=pending_item_name,
+                        group=group,
+                        matched_ids=matched_ids,
+                        normalized_user_text=user_text,
+                    )
+
+            return None
+
+        except Exception as exc:
+            _logger.warning(
+                "waiting_option_bucket2_side_error",
+                extra={
+                    "event": "waiting_option_bucket2_side_error",
+                    "error": str(exc)[:200],
+                    "state": ConversationState.WAITING_FOR_SIDE.value,
+                },
+            )
+            return None
 
     @staticmethod
     def _filter_unmatched_values(

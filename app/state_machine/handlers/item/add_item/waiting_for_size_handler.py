@@ -228,6 +228,8 @@ class WaitingForSizeHandler(GroupResolutionHandler, _VariantMatchMixin):
     def __init__(self, menu_repo: MenuRepository | None = None) -> None:
         self.menu_repo = menu_repo
         self.capture_helper = PendingItemCaptureHelper()
+        # Bucket 2: WaitingOptionResolver — lazy-initialized on first call.
+        self._waiting_resolver: object | None = None
 
     def handle(
         self,
@@ -467,6 +469,19 @@ class WaitingForSizeHandler(GroupResolutionHandler, _VariantMatchMixin):
                     },
                 )
 
+        # ── Bucket 2: WaitingOptionResolver (GptSafeClient-based) ────────────
+        # Reached when deterministic matching found no confident variant match.
+        # On failure, disabled mode, or invalid result → falls through.
+        _b2_size = self._try_bucket2_resolver_size(
+            user_text=normalized_user_text,
+            pending=pending,
+            choices_by_normalized_name=choices_by_normalized_name,
+            context=context,
+        )
+        if _b2_size is not None:
+            return _b2_size
+        # ── END Bucket 2 ──────────────────────────────────────────────────────
+
         self._capture_remaining_slots(context, normalized_user_text)
         return HandlerResult(
             next_state=ConversationState.WAITING_FOR_SIZE,
@@ -477,6 +492,172 @@ class WaitingForSizeHandler(GroupResolutionHandler, _VariantMatchMixin):
                 **match_debug,
             },
         )
+
+    # ------------------------------------------------------------------
+    # Bucket 2: WaitingOptionResolver helpers
+    # ------------------------------------------------------------------
+
+    def _ensure_waiting_resolver(self) -> object:
+        """Lazily initialize the WaitingOptionResolver and return it."""
+        if self._waiting_resolver is None:
+            from app.nlu.turn_resolver.waiting_option_resolver import WaitingOptionResolver
+            self._waiting_resolver = WaitingOptionResolver()
+        return self._waiting_resolver
+
+    def _try_bucket2_resolver_size(
+        self,
+        *,
+        user_text: str,
+        pending: object,
+        choices_by_normalized_name: dict,
+        context: "ConversationContext",
+    ) -> "HandlerResult | None":
+        """Try bucket-2 WaitingOptionResolver for size/variant resolution.
+
+        Returns a HandlerResult when a variant was resolved and applied.
+        Returns None to fall through to the repeat_size_options fallback.
+        Never raises.
+        """
+        try:
+            from app.config.semantic_repair import get_semantic_repair_config
+            cfg = get_semantic_repair_config()
+            if getattr(cfg, "bucket_2_mode", "disabled") == "disabled":
+                return None
+
+            import logging as _logging
+            from app.nlu.turn_resolver.waiting_option_policy import (
+                should_call_waiting_option_gpt,
+            )
+            from app.nlu.turn_resolver.waiting_option_validator import (
+                validate_waiting_option_resolution,
+            )
+            from app.nlu.turn_resolver.waiting_option_resolver import WaitingOptionAction
+            from app.nlu.turn_resolver.allowed_option_extractor import AllowedOptionExtractor
+            from app.nlu.query_normalization.text_preprocessor import normalize_text as _norm
+
+            _log = _logging.getLogger(__name__)
+
+            state = ConversationState.WAITING_FOR_SIZE.value
+            last_nlu = getattr(context, "last_nlu", None)
+            local_intent = str(getattr(last_nlu, "intent", None) or "") if last_nlu else ""
+            local_confidence = float(context.last_intent_confidence or 0.0)
+            local_slots = list(context.last_slots or ())
+
+            should_call, trigger_reason = should_call_waiting_option_gpt(
+                state=state,
+                user_text=user_text,
+                local_intent=local_intent,
+                local_confidence=local_confidence,
+                local_slots=local_slots,
+            )
+            if not should_call:
+                return None
+
+            resolver = self._ensure_waiting_resolver()
+            resolution = resolver.resolve_sync(  # type: ignore[attr-defined]
+                context=context,
+                user_text=user_text,
+                normalized_text=user_text,
+                local_intent=local_intent,
+                local_confidence=local_confidence,
+                local_candidates=None,
+                local_slots=local_slots,
+                state=state,
+            )
+
+            allowed_options = AllowedOptionExtractor().extract(context, state)
+            min_conf = float(getattr(cfg, "bucket_2_min_confidence", 0.70))
+            validation = validate_waiting_option_resolution(
+                resolution, allowed_options, state, context,
+                min_confidence=min_conf,
+            )
+            if not validation.is_valid:
+                return None
+
+            action = resolution.action
+
+            if action == WaitingOptionAction.LIST_OPTIONS:
+                item_name = getattr(pending, "item_name", "")
+                available = getattr(pending, "item_variant_names", [])
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIZE,
+                    response_key="repeat_size_options",
+                    response_payload={
+                        "item_name": item_name,
+                        "available_sizes": list(available),
+                        "list_options_requested": True,
+                    },
+                )
+
+            if action == WaitingOptionAction.CLARIFY:
+                item_name = getattr(pending, "item_name", "")
+                available = getattr(pending, "item_variant_names", [])
+                return HandlerResult(
+                    next_state=ConversationState.WAITING_FOR_SIZE,
+                    response_key="repeat_size_options",
+                    response_payload={
+                        "item_name": item_name,
+                        "available_sizes": list(available),
+                        "repeat_reason": "clarify",
+                        **({"clarification_text": resolution.clarification_text}
+                           if resolution.clarification_text else {}),
+                    },
+                )
+
+            # SELECT — find the variant by name in choices_by_normalized_name
+            if action == WaitingOptionAction.SELECT and resolution.ok:
+                gpt_name = (
+                    resolution.selected_option_names[0]
+                    if resolution.selected_option_names
+                    else (resolution.selected_variant or "")
+                )
+                if not gpt_name:
+                    return None
+
+                # Try exact normalized match
+                norm_gpt = _norm(gpt_name) if gpt_name else ""
+                variant_choice = choices_by_normalized_name.get(norm_gpt)
+                # Fall back to case-insensitive name scan
+                if variant_choice is None:
+                    gpt_lower = gpt_name.lower()
+                    for choice in choices_by_normalized_name.values():
+                        if choice.name.lower() == gpt_lower:
+                            variant_choice = choice
+                            break
+
+                if variant_choice is None:
+                    return None
+
+                _log.info(
+                    "waiting_option_gpt_applied",
+                    extra={
+                        "event": "waiting_option_gpt_applied",
+                        "waiting_option_gpt_applied": True,
+                        "final_option_source": "gpt",
+                        "variant_name": variant_choice.name,
+                        "state": state,
+                    },
+                )
+                context.selected_variant_id = variant_choice.variant_id
+                self._clear_pending_size_prompt(context)
+                self._clear_pending_size_confirmation(context)
+                self._capture_remaining_slots(context, user_text)
+                step = determine_next_add_item_step(context)
+                return self._step_to_result(context, step)
+
+            return None
+
+        except Exception as exc:
+            import logging as _logging
+            _logging.getLogger(__name__).warning(
+                "waiting_option_bucket2_size_error",
+                extra={
+                    "event": "waiting_option_bucket2_size_error",
+                    "error": str(exc)[:200],
+                    "state": ConversationState.WAITING_FOR_SIZE.value,
+                },
+            )
+            return None
 
     def _set_pending_size_confirmation(
         self,

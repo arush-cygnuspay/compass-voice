@@ -120,6 +120,11 @@ class SemanticRepairConfig:
     bucket_3_mode: str = "disabled"
     # Shared timeout for all bucket GPT calls (ms).
     bucket_timeout_ms: int = 1200
+    # Bucket 2 — per-call timeout (ms); separate from the shared bucket_timeout_ms.
+    # Default 700 ms keeps total turn latency well under SLO.
+    bucket_2_timeout_ms: int = 700
+    # Bucket 2 — minimum GPT confidence for auto-apply (0.0–1.0).
+    bucket_2_min_confidence: float = 0.70
 
     # ── SmartTurnPlanner (surgical GPT for risky turns) ──────────────────────
     # Enabled via SMART_TURN_PLANNER_ENABLED env var (default: false).
@@ -253,6 +258,8 @@ def get_semantic_repair_config() -> SemanticRepairConfig:
         bucket_2_mode=os.getenv("COMPASS_GPT_BUCKET_2_MODE", "disabled"),
         bucket_3_mode=os.getenv("COMPASS_GPT_BUCKET_3_MODE", "disabled"),
         bucket_timeout_ms=int(os.getenv("COMPASS_GPT_BUCKET_TIMEOUT_MS", "1200")),
+        bucket_2_timeout_ms=int(os.getenv("COMPASS_GPT_BUCKET_2_TIMEOUT_MS", "700")),
+        bucket_2_min_confidence=float(os.getenv("COMPASS_GPT_BUCKET_2_MIN_CONFIDENCE", "0.70")),
         # SmartTurnPlanner
         smart_turn_planner_enabled=os.getenv(
             "SMART_TURN_PLANNER_ENABLED", "false"
