@@ -134,6 +134,24 @@ class SemanticRepairConfig:
     # Bucket 2 — minimum GPT confidence for auto-apply (0.0–1.0).
     bucket_2_min_confidence: float = 0.70
 
+    # ── Priority 6: Control-flow buckets (checkout / payment / order-type) ───
+    # Bucket 5 — checkout_confirmation_resolution
+    #   Triggers in idle/confirming_order when the utterance looks like a
+    #   checkout or order-confirmation phrase.
+    bucket_5_mode: str = "disabled"
+    # Bucket 6 — order_type_change / pickup_delivery_initial
+    #   Triggers when utterance contains a pickup/delivery phrase or the
+    #   state is waiting_for_order_type.
+    bucket_6_mode: str = "disabled"
+    # Bucket payment — payment_permission_resolution
+    #   Triggers in waiting_for_pickup_sms_permission when the utterance
+    #   looks like a payment preference phrase.
+    bucket_payment_mode: str = "disabled"
+    # Shared timeout for all control-flow GPT calls (ms).
+    control_flow_timeout_ms: int = 700
+    # Minimum GPT confidence for auto-apply in control-flow buckets (0.0–1.0).
+    control_flow_min_confidence: float = 0.70
+
     # ── SmartTurnPlanner (surgical GPT for risky turns) ──────────────────────
     # Enabled via SMART_TURN_PLANNER_ENABLED env var (default: false).
     # These config fields mirror env vars for test injection convenience;
@@ -183,6 +201,21 @@ class SemanticRepairConfig:
         if self.bucket_3_mode not in _bucket_modes:
             raise ValueError(
                 f"Invalid bucket_3_mode {self.bucket_3_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
+            )
+        if self.bucket_5_mode not in _bucket_modes:
+            raise ValueError(
+                f"Invalid bucket_5_mode {self.bucket_5_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
+            )
+        if self.bucket_6_mode not in _bucket_modes:
+            raise ValueError(
+                f"Invalid bucket_6_mode {self.bucket_6_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
+            )
+        if self.bucket_payment_mode not in _bucket_modes:
+            raise ValueError(
+                f"Invalid bucket_payment_mode {self.bucket_payment_mode!r}. "
                 "Allowed: ['disabled', 'shadow', 'inline']"
             )
 
@@ -272,6 +305,12 @@ def get_semantic_repair_config() -> SemanticRepairConfig:
         idle_item_high_conf_threshold=float(os.getenv("COMPASS_IDLE_ITEM_HIGH_CONF_LOCAL_THRESHOLD", "0.85")),
         bucket_2_timeout_ms=int(os.getenv("COMPASS_GPT_BUCKET_2_TIMEOUT_MS", "700")),
         bucket_2_min_confidence=float(os.getenv("COMPASS_GPT_BUCKET_2_MIN_CONFIDENCE", "0.70")),
+        # Priority 6: Control-flow buckets
+        bucket_5_mode=os.getenv("COMPASS_GPT_BUCKET_5_CHECKOUT_MODE", "disabled"),
+        bucket_6_mode=os.getenv("COMPASS_GPT_BUCKET_6_ORDER_TYPE_MODE", "disabled"),
+        bucket_payment_mode=os.getenv("COMPASS_GPT_BUCKET_PAYMENT_PERMISSION_MODE", "disabled"),
+        control_flow_timeout_ms=int(os.getenv("COMPASS_GPT_CONTROL_FLOW_TIMEOUT_MS", "700")),
+        control_flow_min_confidence=float(os.getenv("COMPASS_GPT_CONTROL_FLOW_MIN_CONFIDENCE", "0.70")),
         # SmartTurnPlanner
         smart_turn_planner_enabled=os.getenv(
             "SMART_TURN_PLANNER_ENABLED", "false"

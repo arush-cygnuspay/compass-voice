@@ -50,13 +50,22 @@ _OUTPUT_CONTRACT_BASE = (
 _SYSTEM_PROMPTS: dict[str, str] = {
     TASK_PICKUP_DELIVERY_INITIAL: (
         "You are a voice ordering assistant classifier. "
-        "Determine whether the customer wants pickup or delivery based on their response. "
+        "The customer was asked whether they want pickup or delivery. "
+        "Determine their choice based on their response. "
+        "'I'll come get it', 'I'll pick it up', 'carryout' → pickup. "
+        "'bring it to me', 'send it to my house', 'delivery' → delivery. "
+        "If unclear, return action='clarify'. "
         "Output strict JSON only."
     ),
     TASK_ORDER_TYPE_CHANGE: (
         "You are a voice ordering assistant classifier. "
         "Determine whether the customer wants to switch from their current order type "
-        "(pickup ↔ delivery) and to which type. Output strict JSON only."
+        "(pickup ↔ delivery) and to which type. "
+        "'make it delivery', 'switch to delivery', 'bring it to me' → delivery. "
+        "'I'll come get it', 'actually pickup', 'make it pickup' → pickup. "
+        "'don't deliver it' usually means pickup if currently delivery. "
+        "Do NOT change the order type if payment or the order is already submitted. "
+        "Output strict JSON only."
     ),
     TASK_IDLE_ADD_ITEM_OR_MENU_QUERY: (
         "You are a voice ordering assistant classifier. "
@@ -124,15 +133,24 @@ _SYSTEM_PROMPTS: dict[str, str] = {
         "or cancelling the pending item entirely. Output strict JSON only."
     ),
     TASK_CHECKOUT_CONFIRMATION_RESOLUTION: (
-        "You are a voice ordering assistant. "
-        "Determine whether the customer is confirming their order for placement "
-        "or rejecting/modifying it. Do not skip required order lifecycle rules. "
+        "You are a voice ordering assistant classifier. "
+        "Determine whether the customer wants to confirm/place their order, "
+        "keep ordering/add more items, or something else. "
+        "'that's it', 'done', 'checkout', 'yeah do it' after order review → confirm_checkout. "
+        "'keep ordering', 'add more', 'not yet' → continue_ordering (deny_checkout). "
+        "'that's it' in idle with a non-empty cart → request_checkout (start order review). "
+        "Do NOT skip required order lifecycle rules — the deterministic FSM validates those. "
+        "Do NOT send a payment link directly. "
         "Output strict JSON only."
     ),
     TASK_PAYMENT_PERMISSION_RESOLUTION: (
-        "You are a voice ordering assistant. "
-        "Determine whether the customer wants to receive a payment link via SMS "
-        "or pay on arrival / in person. Output strict JSON only."
+        "You are a voice ordering assistant classifier. "
+        "Determine whether the customer wants a payment link via SMS or to pay in person. "
+        "'send the link', 'text me the link', 'yeah do it' after payment-link prompt → confirm_payment_link. "
+        "'no payment link', 'no link', 'pay there', 'pay when I arrive', 'no I'll pay there' → deny_payment_link (pay_on_arrival). "
+        "Do NOT send the payment link directly — return interpretation only. "
+        "The deterministic payment handler sends the link. "
+        "Output strict JSON only."
     ),
     TASK_GENERIC_UNKNOWN_REPAIR: (
         "You are a voice ordering assistant fallback classifier. "
@@ -146,12 +164,23 @@ _SYSTEM_PROMPTS: dict[str, str] = {
 
 _TASK_INSTRUCTIONS: dict[str, str] = {
     TASK_PICKUP_DELIVERY_INITIAL: (
-        "Classify the customer's response as 'pickup' or 'delivery'.\n"
-        "If unclear, return decision='clarify'."
+        "The customer was asked 'Would you like pickup or delivery?'.\n"
+        "Classify their response as 'pickup' or 'delivery'.\n"
+        "Set action='select_initial_order_type' and requested_order_type='pickup' or 'delivery'.\n"
+        "'I'll come get it', 'I'll pick it up', 'carryout', 'takeout' → pickup.\n"
+        "'bring it to me', 'send it', 'to my house', 'delivery' → delivery.\n"
+        "If unclear, set action='clarify' and clarification_text='Would you like pickup or delivery?'.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_ORDER_TYPE_CHANGE: (
-        "Determine if the customer wants to switch order type mid-order.\n"
-        "Return the new type ('pickup' or 'delivery') or decision='clarify'."
+        "The customer wants to switch between pickup and delivery mid-order.\n"
+        "Set action='change_order_type' and requested_order_type='pickup' or 'delivery'.\n"
+        "'make it delivery', 'switch to delivery', 'bring it to me' → delivery.\n"
+        "'I'll come get it', 'actually pickup', 'make it pickup', 'I'll pick it up' → pickup.\n"
+        "'don't deliver it' with current type=delivery → pickup.\n"
+        "If the order or payment is already submitted, set action='clarify' with a polite block.\n"
+        "If unclear, set action='clarify'.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_IDLE_ADD_ITEM_OR_MENU_QUERY: (
         "The customer is responding to 'What would you like to order?'.\n"
@@ -232,19 +261,27 @@ _TASK_INSTRUCTIONS: dict[str, str] = {
         "Return what is being corrected in the 'correction_field' key if applicable."
     ),
     TASK_CHECKOUT_CONFIRMATION_RESOLUTION: (
-        "Determine whether the customer confirms or rejects the order for placement.\n"
-        "  - affirm: customer confirms the order as stated\n"
-        "  - deny: customer wants to change something before checkout\n"
-        "  - clarify: ambiguous\n"
-        "Do NOT skip required order lifecycle rules. "
-        "The FSM validates all payment lifecycle steps."
+        "Determine whether the customer is confirming their order, requesting checkout,\n"
+        "or wants to continue ordering.\n"
+        "- 'that's it', 'done', 'that's all' in idle with cart → action='request_checkout'\n"
+        "- 'yeah do it', 'yes', 'go ahead', 'confirm' after order review → action='confirm_checkout'\n"
+        "- 'keep ordering', 'add more', 'not yet', 'no' → action='deny_checkout'\n"
+        "Set confidence based on how clear the utterance is.\n"
+        "The FSM and OrderLifecycleGuard validate all lifecycle rules — do NOT skip them.\n"
+        "Do NOT send a payment link. Do NOT modify the cart.\n"
+        "If ambiguous, set action='clarify' with clarification_text.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_PAYMENT_PERMISSION_RESOLUTION: (
-        "Determine the customer's payment preference:\n"
-        "  - sms_link: customer wants a payment link via SMS\n"
-        "  - pay_on_arrival: customer will pay in person / on arrival\n"
-        "  - clarify: ambiguous\n"
-        "Do NOT collect or repeat any payment card data."
+        "Determine the customer's preference about receiving a payment link via SMS.\n"
+        "- 'send the link', 'text me', 'yes', 'yeah do it' → action='confirm_payment_link',\n"
+        "  payment_preference='send_link'\n"
+        "- 'no payment link', 'no link', 'pay there', 'pay on arrival', 'no I'll pay there',\n"
+        "  'pay when I get there' → action='deny_payment_link', payment_preference='pay_on_arrival'\n"
+        "Do NOT send the payment link or process any payment.\n"
+        "Do NOT collect or repeat card data.\n"
+        "If ambiguous, set action='clarify'.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_GENERIC_UNKNOWN_REPAIR: (
         "The local NLU could not confidently resolve this utterance.\n"
@@ -259,12 +296,20 @@ _TASK_INSTRUCTIONS: dict[str, str] = {
 
 _OUTPUT_CONTRACTS: dict[str, str] = {
     TASK_PICKUP_DELIVERY_INITIAL: (
-        '{"decision": "pickup"|"delivery"|"clarify", "confidence": 0.0-1.0, '
+        '{"action": "select_initial_order_type"|"clarify"|"fallback", '
+        '"intent": "string", '
+        '"requested_order_type": "pickup"|"delivery"|null, '
+        '"confidence": 0.0-1.0, '
+        '"clarification_text": str|null, '
         '"reason": "optional string"}'
     ),
     TASK_ORDER_TYPE_CHANGE: (
-        '{"decision": "pickup"|"delivery"|"no_change"|"clarify", '
-        '"confidence": 0.0-1.0, "reason": "optional string"}'
+        '{"action": "change_order_type"|"continue_ordering"|"clarify"|"fallback", '
+        '"intent": "string", '
+        '"requested_order_type": "pickup"|"delivery"|null, '
+        '"confidence": 0.0-1.0, '
+        '"clarification_text": str|null, '
+        '"reason": "optional string"}'
     ),
     TASK_IDLE_ADD_ITEM_OR_MENU_QUERY: (
         '{"decision": "execute"|"clarify"|"reject"|"fallback", '
@@ -318,12 +363,20 @@ _OUTPUT_CONTRACTS: dict[str, str] = {
         '"reason": "optional string"}'
     ),
     TASK_CHECKOUT_CONFIRMATION_RESOLUTION: (
-        '{"decision": "affirm"|"deny"|"clarify", '
-        '"confidence": 0.0-1.0, "reason": "optional string"}'
+        '{"action": "confirm_checkout"|"deny_checkout"|"request_checkout"|"continue_ordering"|"clarify"|"fallback", '
+        '"intent": "string", '
+        '"confidence": 0.0-1.0, '
+        '"clarification_text": str|null, '
+        '"response_key_hint": str|null, '
+        '"reason": "optional string"}'
     ),
     TASK_PAYMENT_PERMISSION_RESOLUTION: (
-        '{"decision": "sms_link"|"pay_on_arrival"|"clarify", '
-        '"confidence": 0.0-1.0, "reason": "optional string"}'
+        '{"action": "confirm_payment_link"|"deny_payment_link"|"pay_on_arrival"|"clarify"|"fallback", '
+        '"intent": "string", '
+        '"payment_preference": "send_link"|"pay_on_arrival"|null, '
+        '"confidence": 0.0-1.0, '
+        '"clarification_text": str|null, '
+        '"reason": "optional string"}'
     ),
     TASK_GENERIC_UNKNOWN_REPAIR: (
         '{"decision": "intent_resolved"|"no_match"|"clarify", '
