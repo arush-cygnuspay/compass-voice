@@ -177,23 +177,47 @@ FINAL_DECISION_LOCAL = FinalTurnDecision(
 # ---------------------------------------------------------------------------
 
 
-def _call_bucket0_stub(
+def _call_bucket0_live(
     packet: GptTurnContextPacket,
     timeout_ms: int,
+    config: "SemanticRepairConfig",
 ) -> GptTurnResolution:
-    """Stub Bucket 0 call — returns skipped until the service is implemented.
+    """Bucket 0 call — delegates to IdleItemResolver via sync bridge.
 
-    Replace this with a real GPT service call when Bucket 0 is backed by
-    a production GPT service.  The stub ensures the framework is wired
-    correctly and tests can exercise the full decision path without a
-    live GPT call.
+    Converts the lightweight GptTurnContextPacket into the resolver's inputs,
+    runs the async resolver in a dedicated thread, then adapts the result back
+    to a GptTurnResolution for the existing validation/decision framework.
     """
-    return GptTurnResolution(
-        bucket=BUCKET_IDLE_ITEM,
-        decision="skipped",
-        gpt_called=False,
-        skipped_reason="bucket0_not_yet_implemented",
-    )
+    try:
+        from app.nlu.turn_resolver.idle_item_resolver import (
+            IdleItemResolver,
+            to_gpt_turn_resolution,
+        )
+
+        resolver = IdleItemResolver(config=config)
+        resolution = resolver.resolve_sync(
+            user_text=packet.user_text,
+            state=packet.state,
+            local_intent=packet.local_intent,
+            local_confidence=packet.local_confidence,
+            local_slots=list(packet.local_slots),
+            previous_turns=list(packet.previous_turns),
+            menu_candidates=None,   # resolver computes via MenuCandidateProvider
+            timeout_ms=timeout_ms,
+            config=config,
+        )
+        return to_gpt_turn_resolution(resolution)
+    except Exception as exc:
+        _logger.warning(
+            "bucket0_live_error",
+            extra={"event": "bucket0_live_error", "error": str(exc)[:200]},
+        )
+        return GptTurnResolution(
+            bucket=BUCKET_IDLE_ITEM,
+            decision="skipped",
+            gpt_called=False,
+            skipped_reason=f"bucket0_live_error:{str(exc)[:100]}",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +263,7 @@ def _call_gpt_for_bucket(
 
     try:
         if bucket == BUCKET_IDLE_ITEM:
-            return _call_bucket0_stub(packet, timeout_ms)
+            return _call_bucket0_live(packet, timeout_ms, config)
 
         if bucket == BUCKET_OPTION:
             # Bucket 2 delegates to GptOptionResolverService.

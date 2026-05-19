@@ -59,10 +59,20 @@ _SYSTEM_PROMPTS: dict[str, str] = {
         "(pickup ↔ delivery) and to which type. Output strict JSON only."
     ),
     TASK_IDLE_ADD_ITEM_OR_MENU_QUERY: (
-        "You are a voice ordering assistant. "
-        "Determine whether the customer is adding a menu item, asking a menu question, "
-        "asking about a specific item, or saying something unclear. "
-        "Use only the menu_candidates provided. Output strict JSON only."
+        "You are a voice ordering assistant classifier. "
+        "The customer has just been asked what they would like to order. "
+        "They may answer with only item names — no 'I want' or 'add' preamble required. "
+        "Determine whether the customer is: adding one or more menu items, asking about "
+        "menu/item info, checking out, cancelling, or saying something unclear. "
+        "Use ONLY the menu_candidates provided. Do NOT invent items not in the list. "
+        "Preserve item boundaries — do NOT merge separate items. "
+        "Attach sides/drinks/modifiers to their nearest valid parent item. "
+        "Treat piece counts in names as variants, not quantity: "
+        "'six piece wings' → item Wings, variant='6 pc', quantity=1. "
+        "'two 6 piece wings' → item Wings, variant='6 pc', quantity=2. "
+        "Preserve drink/side size: 'hamburger with small coke' → Hamburger + side Coke size=Small. "
+        "'large fries' → item Fries, size=Large, quantity=1. "
+        "Output strict JSON only."
     ),
     TASK_MULTI_ITEM_ADD_PLANNING: (
         "You are a voice ordering assistant. "
@@ -144,11 +154,23 @@ _TASK_INSTRUCTIONS: dict[str, str] = {
         "Return the new type ('pickup' or 'delivery') or decision='clarify'."
     ),
     TASK_IDLE_ADD_ITEM_OR_MENU_QUERY: (
-        "The customer may state a bare item name without 'I want' or 'add'.\n"
-        "Classify as one of: add_item | ask_menu | ask_item_info | unclear.\n"
-        "Match item names only to the menu_candidates list provided.\n"
-        "Do NOT invent items not in menu_candidates.\n"
-        "If multiple items are present, classify as add_item with all names."
+        "The customer is responding to 'What would you like to order?'.\n"
+        "They may say ONLY item names — no preamble required.\n"
+        "Classify intent as one of: add_item | ask_item_info | ask_menu | checkout | cancel | unknown.\n"
+        "If add_item: list each item in the 'items' array with: item_id (from candidates or null), "
+        "item_name, quantity, size (if stated), variant (if stated), sides[], modifiers[].\n"
+        "Use ONLY items from menu_candidates. Do NOT invent items.\n"
+        "Piece counts in names are variants, not quantity:\n"
+        "  'six piece wings' → item_name='Wings', variant='6 pc', quantity=1.\n"
+        "  'two 6 piece wings' → item_name='Wings', variant='6 pc', quantity=2.\n"
+        "Preserve drink/side sizes:\n"
+        "  'hamburger with small coke' → Hamburger with sides=[{name='Coke', size='Small'}].\n"
+        "  'large fries' → item_name='Fries', size='Large', quantity=1.\n"
+        "If multiple items: separate them into individual items[] entries.\n"
+        "If the customer says 'checkout' / 'that's all' / 'place order': intent=checkout, items=[].\n"
+        "If ambiguous between ≥2 menu items: decision=clarify.\n"
+        "Set 'unresolved_spans' for any words you could not match to menu_candidates.\n"
+        "Output ONLY valid JSON — no markdown, no extra text."
     ),
     TASK_MULTI_ITEM_ADD_PLANNING: (
         "Produce a paired item plan for a compound multi-item utterance.\n"
@@ -245,9 +267,19 @@ _OUTPUT_CONTRACTS: dict[str, str] = {
         '"confidence": 0.0-1.0, "reason": "optional string"}'
     ),
     TASK_IDLE_ADD_ITEM_OR_MENU_QUERY: (
-        '{"decision": "add_item"|"ask_menu"|"ask_item_info"|"unclear", '
-        '"items": [{"item_name": str, "quantity": int}], '
-        '"confidence": 0.0-1.0, "reason": "optional string"}'
+        '{"decision": "execute"|"clarify"|"reject"|"fallback", '
+        '"intent": "add_item"|"ask_item_info"|"ask_menu"|"checkout"|"cancel"|"unknown", '
+        '"confidence": 0.0-1.0, '
+        '"items": [{'
+        '"item_id": str|null, "item_name": str, "quantity": int, '
+        '"size": str|null, "variant": str|null, '
+        '"sides": [{"item_id": str|null, "name": str, "size": str|null, "quantity": 1}], '
+        '"modifiers": [{"modifier_id": str|null, "name": str, "operation": "add"}], '
+        '"raw_span": str, "confidence": 0.0-1.0'
+        '}], '
+        '"unresolved_spans": [str], '
+        '"response_key_hint": str|null, '
+        '"reason": "optional string"}'
     ),
     TASK_MULTI_ITEM_ADD_PLANNING: (
         '{"decision": "add_items"|"clarify"|"no_match", '

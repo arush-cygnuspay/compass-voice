@@ -120,6 +120,14 @@ class SemanticRepairConfig:
     bucket_3_mode: str = "disabled"
     # Shared timeout for all bucket GPT calls (ms).
     bucket_timeout_ms: int = 1200
+    # Bucket 0 — per-call timeout (ms); separate from the shared bucket_timeout_ms.
+    bucket_0_timeout_ms: int = 700
+    # Bucket 0 — minimum GPT confidence for auto-apply (0.0–1.0).
+    bucket_0_min_confidence: float = 0.70
+    # Bucket 0 — maximum menu candidates sent to GPT (never the full menu).
+    idle_item_menu_candidate_limit: int = 12
+    # Bucket 0 — local add_item confidence threshold above which GPT is skipped.
+    idle_item_high_conf_threshold: float = 0.85
     # Bucket 2 — per-call timeout (ms); separate from the shared bucket_timeout_ms.
     # Default 700 ms keeps total turn latency well under SLO.
     bucket_2_timeout_ms: int = 700
@@ -258,6 +266,10 @@ def get_semantic_repair_config() -> SemanticRepairConfig:
         bucket_2_mode=os.getenv("COMPASS_GPT_BUCKET_2_MODE", "disabled"),
         bucket_3_mode=os.getenv("COMPASS_GPT_BUCKET_3_MODE", "disabled"),
         bucket_timeout_ms=int(os.getenv("COMPASS_GPT_BUCKET_TIMEOUT_MS", "1200")),
+        bucket_0_timeout_ms=int(os.getenv("COMPASS_GPT_BUCKET_0_TIMEOUT_MS", "700")),
+        bucket_0_min_confidence=float(os.getenv("COMPASS_GPT_BUCKET_0_MIN_CONFIDENCE", "0.70")),
+        idle_item_menu_candidate_limit=int(os.getenv("COMPASS_IDLE_ITEM_MENU_CANDIDATE_LIMIT", "12")),
+        idle_item_high_conf_threshold=float(os.getenv("COMPASS_IDLE_ITEM_HIGH_CONF_LOCAL_THRESHOLD", "0.85")),
         bucket_2_timeout_ms=int(os.getenv("COMPASS_GPT_BUCKET_2_TIMEOUT_MS", "700")),
         bucket_2_min_confidence=float(os.getenv("COMPASS_GPT_BUCKET_2_MIN_CONFIDENCE", "0.70")),
         # SmartTurnPlanner
