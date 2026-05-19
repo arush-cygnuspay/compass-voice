@@ -1,4 +1,6 @@
 # app/nlu/semantic_repair/add_item_planner_service.py
+# TODO(priority-2-migration): Migrate GPT call site here to GptSafeClient
+#   for circuit-breaker protection and structured GptSafeResult failure handling.
 """Phase 4 GPT Add-Item Planner Service.
 
 Orchestrates the full planner pipeline for complex add-item utterances:

@@ -28,16 +28,58 @@ Fallback matrix
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Sequence
+from typing import TYPE_CHECKING, Any, Sequence
 
 from app.state_machine.models.conversation_state import ConversationState
 
 if TYPE_CHECKING:
+    from app.nlu.turn_resolver.gpt_safe_client import GptSafeResult
     from app.state_machine.models.conversation_context import ConversationContext
 
 # ---------------------------------------------------------------------------
-# Fallback response descriptor
+# Fallback descriptors
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True, slots=True)
+class GptFallbackDecision:
+    """Rich fallback decision for GPT failure paths.
+
+    Returned by ``decide_gpt_failure_fallback()``.  The caller uses this to
+    decide whether to continue with the local deterministic path or issue a
+    state-specific clarification prompt.
+
+    Fields
+    ------
+    use_local:
+        True when the local NLU result is safe and the caller should proceed
+        as if GPT was not involved.
+    use_state_clarification:
+        True when use_local=False and the caller should issue the
+        response_key clarification to the customer.
+    fallback_source:
+        One of: ``"local"``, ``"state_clarification"``, ``"handoff"``,
+        ``"no_action"``.
+    response_key:
+        The response template key to use when use_state_clarification=True.
+    response_text:
+        Reserved for future inline response text.  None in current impl.
+    reason:
+        Short code explaining why this decision was made (for logging).
+    local_safe:
+        Whether the local NLU result was deemed safe to use.
+    unsafe_reason:
+        Short code from is_local_result_safe() when local is not safe.
+    """
+
+    use_local: bool
+    use_state_clarification: bool
+    fallback_source: str
+    response_key: str | None
+    response_text: str | None
+    reason: str
+    local_safe: bool
+    unsafe_reason: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -378,4 +420,145 @@ def _build_fallback(
         response_key=_GENERIC_CLARIFY_KEY,
         response_payload={"repeat_reason": "gpt_failure"},
         fallback_source="state_clarification",
+    )
+
+
+# ---------------------------------------------------------------------------
+# High-level decision helper (string-state API for Priority 2 layer)
+# ---------------------------------------------------------------------------
+
+
+def decide_gpt_failure_fallback(
+    *,
+    gpt_result: "GptSafeResult",
+    state: str,
+    local_intent: str | None,
+    local_confidence: float | None,
+    local_slots: list | tuple | None,
+    allowed_intents: list | tuple,
+    context: "ConversationContext",
+    unsafe_local_reason: str | None = None,
+) -> GptFallbackDecision:
+    """Return a structured fallback decision for a GPT failure.
+
+    Accepts a plain string *state* (as produced by GptContextBuilder).
+    Never raises — on any internal error returns a safe state_clarification.
+
+    Parameters
+    ----------
+    gpt_result:
+        The failed GptSafeResult (for status extraction).
+    state:
+        Current conversation state as a lowercase string (e.g. ``"idle"``).
+    local_intent:
+        Intent string from local NLU, or None.
+    local_confidence:
+        Local NLU confidence, or None.
+    local_slots:
+        Slot objects from local NLU (each must have a ``.name`` attribute).
+    allowed_intents:
+        Allowed intents for this state (AllowedIntent objects or plain strings).
+    context:
+        Current ConversationContext (read-only).
+    unsafe_local_reason:
+        Caller-provided override for the unsafe reason code.
+    """
+    try:
+        return _decide_fallback_impl(
+            gpt_result=gpt_result,
+            state=state,
+            local_intent=local_intent,
+            local_confidence=local_confidence,
+            local_slots=local_slots,
+            allowed_intents=allowed_intents,
+            context=context,
+            unsafe_local_reason=unsafe_local_reason,
+        )
+    except Exception:
+        return GptFallbackDecision(
+            use_local=False,
+            use_state_clarification=True,
+            fallback_source="state_clarification",
+            response_key=_GENERIC_CLARIFY_KEY,
+            response_text=None,
+            reason="fallback_error",
+            local_safe=False,
+            unsafe_reason="internal_error",
+        )
+
+
+def _decide_fallback_impl(
+    *,
+    gpt_result: "GptSafeResult",
+    state: str,
+    local_intent: str | None,
+    local_confidence: float | None,
+    local_slots: list | tuple | None,
+    allowed_intents: list | tuple,
+    context: "ConversationContext",
+    unsafe_local_reason: str | None,
+) -> GptFallbackDecision:
+    gpt_status: str = getattr(gpt_result, "status", "unknown_error") if gpt_result else "unknown_error"
+    state_str = (state or "").strip().lower()
+    local_intent_val = (local_intent or "unknown").strip()
+    slots: Sequence[Any] = local_slots or ()
+    confidence = float(local_confidence) if local_confidence is not None else 0.0
+
+    # Map string state → ConversationState (safe fallback to IDLE)
+    try:
+        conv_state = ConversationState(state_str)
+    except (ValueError, AttributeError):
+        conv_state = ConversationState.IDLE
+
+    # Check whether local intent is in the allowed list
+    allowed_names: set[str] = set()
+    for ai in (allowed_intents or []):
+        name = getattr(ai, "name", None) or str(ai)
+        allowed_names.add(name.lower())
+
+    # Local safety check
+    local_safe, detected_unsafe = is_local_result_safe(
+        state=conv_state,
+        local_intent_value=local_intent_val,
+        local_slots=slots,
+        local_confidence=confidence,
+    )
+    unsafe_reason_final = unsafe_local_reason or detected_unsafe
+
+    # Caller-provided override takes priority
+    if unsafe_local_reason:
+        local_safe = False
+
+    # Build underlying fallback response using existing state-aware logic
+    fb = build_gpt_failure_fallback_response(
+        state=conv_state,
+        context=context,
+        local_intent_value=local_intent_val,
+        local_slots=slots,
+        local_confidence=confidence,
+        gpt_status=gpt_status,
+        unsafe_reason=unsafe_reason_final,
+    )
+
+    use_local = fb.use_local
+    use_clarification = not use_local
+
+    if use_local:
+        reason = f"gpt_{gpt_status}_local_safe"
+        fallback_source = "local"
+    else:
+        reason = f"gpt_{gpt_status}_state_clarification"
+        fallback_source = fb.fallback_source
+
+    response_key = fb.response_key if not use_local else None
+
+    return GptFallbackDecision(
+        use_local=use_local,
+        use_state_clarification=use_clarification,
+        fallback_source=fallback_source,
+        response_key=response_key or None,
+        response_text=None,
+        reason=reason,
+        local_safe=local_safe,
+        unsafe_reason=unsafe_reason_final,
     )

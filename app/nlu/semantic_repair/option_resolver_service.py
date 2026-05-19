@@ -1,4 +1,6 @@
 # app/nlu/semantic_repair/option_resolver_service.py
+# TODO(priority-2-migration): Migrate GPT call site here to GptSafeClient
+#   for circuit-breaker protection and structured GptSafeResult failure handling.
 """Phase 3 GPT Option Resolver Service.
 
 Calls OpenAI to resolve modifier option names when local deterministic

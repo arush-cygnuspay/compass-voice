@@ -1,4 +1,7 @@
 # app/nlu/semantic_repair/repair_service.py
+# TODO(priority-2-migration): Migrate call_gpt_for_shadow() to use GptSafeClient
+#   (app/nlu/turn_resolver/gpt_safe_client.py) so circuit-breaker and structured
+#   failure results are applied consistently across all GPT call sites.
 """RepairPolicy eligibility check and GptRepairService shadow-mode caller.
 
 Phase / call_mode contract

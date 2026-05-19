@@ -89,11 +89,17 @@ class SemanticRepairConfig:
     add_item_planner_max_option_candidates: int = 20
 
     # ── GPT Failure Isolation ────────────────────────────────────────────────
+    # Master switch for GptSafeClient async call path (true = enabled).
+    gpt_safe_client_enabled: bool = True
+    # Default per-call timeout for GptSafeClient (ms). Capped at gpt_max_timeout_ms.
+    gpt_timeout_ms: int = 700
     # Hard cap on any single GPT call (enforced by the safe-call wrapper).
     # Per-service timeouts may be lower; this is an absolute ceiling.
     gpt_max_timeout_ms: int = 1200
     # When True, any GPT failure falls back to the local deterministic path.
     gpt_fail_open_to_local: bool = True
+    # Maximum characters of raw GPT output to store/log (safety bound).
+    gpt_raw_output_log_max_chars: int = 2000
 
     # ── Elite Flow Stabilization: bucket-based GPT routing ───────────────────
     # Three buckets, each with an independent mode flag:
@@ -237,8 +243,11 @@ def get_semantic_repair_config() -> SemanticRepairConfig:
             os.getenv("COMPASS_GPT_ADD_ITEM_PLANNER_MAX_OPTION_CANDIDATES", "20")
         ),
         # GPT Failure Isolation
+        gpt_safe_client_enabled=os.getenv("GPT_SAFE_CLIENT_ENABLED", "true").lower() in {"1", "true", "yes", "on"},
+        gpt_timeout_ms=int(os.getenv("GPT_TIMEOUT_MS", "700")),
         gpt_max_timeout_ms=int(os.getenv("GPT_MAX_TIMEOUT_MS", "1200")),
         gpt_fail_open_to_local=os.getenv("GPT_FAIL_OPEN_TO_LOCAL", "true").lower() in {"1", "true", "yes", "on"},
+        gpt_raw_output_log_max_chars=int(os.getenv("GPT_RAW_OUTPUT_LOG_MAX_CHARS", "2000")),
         # Elite Flow Stabilization: bucket modes
         bucket_0_mode=os.getenv("COMPASS_GPT_BUCKET_0_MODE", "disabled"),
         bucket_2_mode=os.getenv("COMPASS_GPT_BUCKET_2_MODE", "disabled"),

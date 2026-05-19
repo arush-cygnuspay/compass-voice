@@ -36,11 +36,30 @@ import os
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CircuitState:
+    """Point-in-time snapshot of a circuit breaker key's state.
+
+    Returned by ``GptCircuitBreaker.get_state()`` for monitoring / tests.
+    """
+
+    failure_count: int
+    opened_until_monotonic: float | None
+    last_failure_status: str | None = None
+
+    @property
+    def is_open(self) -> bool:
+        if self.opened_until_monotonic is None:
+            return False
+        return time.monotonic() < self.opened_until_monotonic
 
 
 @dataclass(frozen=True)
@@ -87,6 +106,8 @@ class GptCircuitBreaker:
         self._failures: dict[str, int] = {}
         # monotonic time when circuit opens; 0 = not open
         self._open_until: dict[str, float] = {}
+        # most recent failure status per key (for diagnostics)
+        self._last_status: dict[str, str] = {}
 
     # ------------------------------------------------------------------
     # Public API
@@ -107,7 +128,7 @@ class GptCircuitBreaker:
                 return False
             return True
 
-    def record_failure(self, key: str) -> bool:
+    def record_failure(self, key: str, status: str = "provider_error") -> bool:
         """Record a provider-side failure.  Returns True if circuit just opened."""
         if not self._config.enabled:
             return False
@@ -119,6 +140,7 @@ class GptCircuitBreaker:
 
             count = self._failures.get(key, 0) + 1
             self._failures[key] = count
+            self._last_status[key] = status
 
             if count >= self._config.failure_threshold:
                 self._open_until[key] = time.monotonic() + self._config.open_seconds
@@ -130,6 +152,19 @@ class GptCircuitBreaker:
         with self._lock:
             self._failures.pop(key, None)
             self._open_until.pop(key, None)
+            self._last_status.pop(key, None)
+
+    def get_state(self, key: str) -> CircuitState:
+        """Return a snapshot of the circuit state for *key* (for monitoring / tests)."""
+        with self._lock:
+            count = self._failures.get(key, 0)
+            until = self._open_until.get(key) or None
+            last = self._last_status.get(key)
+        return CircuitState(
+            failure_count=count,
+            opened_until_monotonic=until,
+            last_failure_status=last,
+        )
 
     def failure_count(self, key: str) -> int:
         """Return the current consecutive failure count for *key* (for tests)."""
@@ -146,6 +181,7 @@ class GptCircuitBreaker:
         with self._lock:
             self._failures.pop(key, None)
             self._open_until.pop(key, None)
+            self._last_status.pop(key, None)
 
     def circuit_key(self, model: str | None, task_mode: str | None) -> str:
         """Build the canonical circuit key from model and task_mode."""

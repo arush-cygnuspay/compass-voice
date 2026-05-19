@@ -1,4 +1,6 @@
 # app/services/smart_turn_planner.py
+# TODO(priority-2-migration): Migrate GPT call site here to GptSafeClient
+#   for circuit-breaker protection and structured GptSafeResult failure handling.
 """SmartTurnPlanner — surgical GPT layer for risky customer turns.
 
 Invoked ONLY for turns that the local FSM is likely to handle poorly:

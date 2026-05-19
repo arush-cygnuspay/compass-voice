@@ -1,8 +1,8 @@
 # app/nlu/turn_resolver/gpt_safe_client.py
 """Safe GPT call wrapper — structured result, never raises into callers.
 
-Usage
------
+Usage (legacy synchronous)
+--------------------------
 Instead of calling the OpenAI client directly, wrap the call::
 
     result = call_gpt_safely(
@@ -16,16 +16,29 @@ Instead of calling the OpenAI client directly, wrap the call::
         # fall back to local deterministic path
         ...
 
+Usage (async GptSafeClient)
+---------------------------
+    client = GptSafeClient(underlying_client=my_async_fn, circuit_breaker=breaker)
+    result = await client.call(
+        task_mode="idle_menu_item_resolution",
+        messages=[...],
+        model="gpt-4o-mini",
+        timeout_ms=700,
+        parse_fn=json.loads,
+    )
+
 Safety contract
 ---------------
 * Never raises into the caller regardless of the exception type.
 * Sanitises error messages — API keys and secrets are redacted.
 * ``should_fallback_to_local=True`` on all failure statuses.
-* ``should_open_circuit=True`` only for provider/network/timeout failures
+* ``should_open_circuit=True`` only for provider/network/timeout/unknown failures
   (not for validation or low-confidence failures).
 """
 from __future__ import annotations
 
+import asyncio
+import inspect
 import os
 import time
 from dataclasses import dataclass, field
@@ -60,6 +73,7 @@ _CIRCUIT_TRIGGERING_STATUSES: frozenset[str] = frozenset({
     GptCallStatus.RATE_LIMITED,
     GptCallStatus.PROVIDER_ERROR,
     GptCallStatus.NETWORK_ERROR,
+    GptCallStatus.UNKNOWN_ERROR,
 })
 
 # Maximum raw_text length preserved in result (to limit memory use)
@@ -116,8 +130,10 @@ class GptSafeResult:
     latency_ms: float | None = None
     model: str | None = None
     timeout_ms: int | None = None
+    provider: str | None = None
     should_fallback_to_local: bool = True
     should_open_circuit: bool = False
+    metadata: dict = field(default_factory=dict, compare=False)
 
 
 # Sentinel for "call not attempted"
@@ -132,6 +148,50 @@ GPT_SAFE_RESULT_NOT_CALLED = GptSafeResult(
 # ---------------------------------------------------------------------------
 # Exception classification
 # ---------------------------------------------------------------------------
+
+
+def classify_exception(exc: Exception) -> str:
+    """Map an exception to a GptCallStatus constant (public API)."""
+    exc_name = type(exc).__name__
+    exc_str = str(exc).lower()
+
+    if "RateLimitError" in exc_name or "429" in exc_str or "rate limit" in exc_str:
+        return GptCallStatus.RATE_LIMITED
+    if (
+        isinstance(exc, (asyncio.TimeoutError, TimeoutError))
+        or "Timeout" in exc_name
+        or "timeout" in exc_name.lower()
+        or "timed out" in exc_str
+    ):
+        return GptCallStatus.TIMEOUT
+    if "APIStatusError" in exc_name or "InternalServerError" in exc_name or "500" in exc_str:
+        return GptCallStatus.PROVIDER_ERROR
+    if (
+        "Connection" in exc_name
+        or "Network" in exc_name
+        or "connection" in exc_str
+        or "network" in exc_str
+    ):
+        return GptCallStatus.NETWORK_ERROR
+    if "JSON" in exc_name or "json" in exc_str or isinstance(exc, (ValueError, KeyError)):
+        return GptCallStatus.INVALID_JSON
+
+    return GptCallStatus.UNKNOWN_ERROR
+
+
+def sanitize_error_message(message: str, *, max_chars: int = _MAX_ERROR_MSG_BYTES) -> str:
+    """Return a sanitised, truncated error string with API keys redacted."""
+    api_key = os.getenv("OPENAI_API_KEY", "")
+    if api_key and api_key in message:
+        message = message.replace(api_key, "[REDACTED]")
+    return message[:max_chars]
+
+
+def truncate_raw_text(raw_text: str, max_chars: int = _MAX_RAW_TEXT_BYTES) -> str:
+    """Truncate raw GPT output to at most *max_chars* characters."""
+    if not raw_text:
+        return raw_text
+    return raw_text[:max_chars]
 
 
 def _classify_exception(exc: Exception) -> str:
@@ -168,7 +228,261 @@ def _sanitize_error(exc: Exception) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Public API
+# Async safe client (Priority 2 — preferred for new GPT call sites)
+# ---------------------------------------------------------------------------
+
+
+class GptSafeClient:
+    """Async, never-raise GPT call wrapper with circuit-breaker integration.
+
+    Parameters
+    ----------
+    underlying_client:
+        Callable ``(messages, model, timeout_s) -> str`` (sync or async).
+        Returns the raw GPT response text.  May be None — returns
+        API_KEY_MISSING when None (client not configured).
+    circuit_breaker:
+        ``GptCircuitBreaker`` instance.  Defaults to DEFAULT_CIRCUIT_BREAKER.
+    config:
+        ``SemanticRepairConfig`` (or any object with ``gpt_max_timeout_ms``).
+        Used to cap timeout.  May be None.
+    parse_fn:
+        Default parse function — overridden per-call via ``call(parse_fn=...)``.
+    logger:
+        Optional logger (unused internally; available for subclasses / hooks).
+    provider:
+        Provider label for metadata (default ``"openai"``).
+    """
+
+    def __init__(
+        self,
+        underlying_client: Callable | None = None,
+        circuit_breaker: Any = None,
+        config: Any = None,
+        parse_fn: Callable[[str], Any] | None = None,
+        logger: Any = None,
+        provider: str | None = None,
+    ) -> None:
+        self._client = underlying_client
+        self._breaker = circuit_breaker
+        self._config = config
+        self._default_parse_fn = parse_fn
+        self._logger = logger
+        self._provider = provider or "openai"
+
+    # ── Public API ────────────────────────────────────────────────────────────
+
+    async def call(
+        self,
+        *,
+        task_mode: str,
+        messages: list[dict],
+        model: str,
+        timeout_ms: int,
+        parse_fn: Callable[[str], Any],
+        enabled: bool = True,
+        budget_allowed: bool = True,
+        metadata: dict | None = None,
+    ) -> "GptSafeResult":
+        """Make a GPT call with full exception isolation.  Never raises.
+
+        Returns ``GptSafeResult`` for every outcome including failures.
+        """
+        try:
+            return await self._call_impl(
+                task_mode=task_mode,
+                messages=messages,
+                model=model,
+                timeout_ms=timeout_ms,
+                parse_fn=parse_fn,
+                enabled=enabled,
+                budget_allowed=budget_allowed,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            return GptSafeResult(
+                ok=False,
+                status=GptCallStatus.UNKNOWN_ERROR,
+                task_mode=task_mode,
+                error_message=sanitize_error_message(f"{type(exc).__name__}: {exc}"),
+                model=model,
+                timeout_ms=timeout_ms,
+                provider=self._provider,
+                should_fallback_to_local=True,
+                should_open_circuit=True,
+                metadata=dict(metadata or {}),
+            )
+
+    # ── Implementation ────────────────────────────────────────────────────────
+
+    async def _call_impl(
+        self,
+        *,
+        task_mode: str,
+        messages: list[dict],
+        model: str,
+        timeout_ms: int,
+        parse_fn: Callable[[str], Any],
+        enabled: bool,
+        budget_allowed: bool,
+        metadata: dict | None,
+    ) -> "GptSafeResult":
+        t0 = time.perf_counter()
+        _meta = dict(metadata or {})
+
+        # Cap timeout at config max
+        max_ms = 1200
+        if self._config is not None:
+            max_ms = int(getattr(self._config, "gpt_max_timeout_ms", 1200))
+        effective_ms = min(int(timeout_ms), max_ms)
+        timeout_s = effective_ms / 1000.0
+
+        def _result(ok: bool, status: str, **kw: Any) -> "GptSafeResult":
+            elapsed = round((time.perf_counter() - t0) * 1000.0, 2)
+            return GptSafeResult(
+                ok=ok,
+                status=status,
+                task_mode=task_mode,
+                model=model,
+                timeout_ms=effective_ms,
+                provider=self._provider,
+                should_fallback_to_local=not ok,
+                should_open_circuit=False,
+                metadata=_meta,
+                latency_ms=kw.pop("latency_ms", elapsed),
+                **kw,
+            )
+
+        # Pre-call guards (in order: enabled → budget → api_key → circuit)
+        if not enabled:
+            return _result(False, GptCallStatus.DISABLED)
+
+        if not budget_allowed:
+            return _result(False, GptCallStatus.BUDGET_EXCEEDED)
+
+        if self._client is None or not os.getenv("OPENAI_API_KEY", ""):
+            return _result(
+                False,
+                GptCallStatus.API_KEY_MISSING,
+                error_message="OPENAI_API_KEY not set or client unavailable",
+            )
+
+        circuit_key = self._circuit_key(model, task_mode)
+        if self._breaker is not None and self._breaker.is_open(circuit_key):
+            return _result(False, GptCallStatus.CIRCUIT_OPEN)
+
+        # ── GPT call with timeout ─────────────────────────────────────────────
+        raw_text: str | None = None
+        call_exc: Exception | None = None
+        call_status: str = GptCallStatus.OK
+
+        try:
+            if inspect.iscoroutinefunction(self._client):
+                coro = self._client(messages, model, timeout_s)
+            else:
+                coro = asyncio.to_thread(self._client, messages, model, timeout_s)
+            raw_text = await asyncio.wait_for(coro, timeout=timeout_s)
+            latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+        except asyncio.TimeoutError as exc:
+            latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            call_exc = exc
+            call_status = GptCallStatus.TIMEOUT
+        except Exception as exc:
+            latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            call_exc = exc
+            call_status = classify_exception(exc)
+
+        if call_exc is not None:
+            should_open = call_status in _CIRCUIT_TRIGGERING_STATUSES
+            if self._breaker is not None and should_open:
+                self._breaker.record_failure(circuit_key)
+            return GptSafeResult(
+                ok=False,
+                status=call_status,
+                task_mode=task_mode,
+                error_message=sanitize_error_message(f"{type(call_exc).__name__}: {call_exc}"),
+                latency_ms=latency_ms,
+                model=model,
+                timeout_ms=effective_ms,
+                provider=self._provider,
+                should_fallback_to_local=True,
+                should_open_circuit=should_open,
+                metadata=_meta,
+            )
+
+        # Empty / null response
+        raw_safe = (raw_text or "").strip()
+        if not raw_safe:
+            latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            return GptSafeResult(
+                ok=False,
+                status=GptCallStatus.INVALID_JSON,
+                task_mode=task_mode,
+                raw_text="",
+                error_message="empty_response",
+                latency_ms=latency_ms,
+                model=model,
+                timeout_ms=effective_ms,
+                provider=self._provider,
+                should_fallback_to_local=True,
+                should_open_circuit=False,
+                metadata=_meta,
+            )
+
+        raw_stored = truncate_raw_text(raw_safe)
+
+        # ── Parse ─────────────────────────────────────────────────────────────
+        parsed: Any = None
+        parse_exc: Exception | None = None
+        try:
+            parsed = parse_fn(raw_safe)
+        except Exception as exc:
+            parse_exc = exc
+
+        latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+
+        if parse_exc is not None:
+            return GptSafeResult(
+                ok=False,
+                status=GptCallStatus.INVALID_JSON,
+                task_mode=task_mode,
+                raw_text=raw_stored,
+                error_message=sanitize_error_message(f"{type(parse_exc).__name__}: {parse_exc}"),
+                latency_ms=latency_ms,
+                model=model,
+                timeout_ms=effective_ms,
+                provider=self._provider,
+                should_fallback_to_local=True,
+                should_open_circuit=False,
+                metadata=_meta,
+            )
+
+        # ── Success ───────────────────────────────────────────────────────────
+        if self._breaker is not None:
+            self._breaker.record_success(circuit_key)
+        return GptSafeResult(
+            ok=True,
+            status=GptCallStatus.OK,
+            task_mode=task_mode,
+            parsed=parsed,
+            raw_text=raw_stored,
+            latency_ms=latency_ms,
+            model=model,
+            timeout_ms=effective_ms,
+            provider=self._provider,
+            should_fallback_to_local=False,
+            should_open_circuit=False,
+            metadata=_meta,
+        )
+
+    def _circuit_key(self, model: str, task_mode: str) -> str:
+        if self._breaker is not None and hasattr(self._breaker, "circuit_key"):
+            return self._breaker.circuit_key(model, task_mode)
+        return f"{(model or 'unknown').strip()}:{(task_mode or 'generic').strip()}"
+
+
+# ---------------------------------------------------------------------------
+# Public API (legacy synchronous wrapper — kept for backward compat)
 # ---------------------------------------------------------------------------
 
 
