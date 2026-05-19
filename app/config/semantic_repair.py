@@ -88,6 +88,47 @@ class SemanticRepairConfig:
     # Maximum option names per modifier/side group sent to GPT
     add_item_planner_max_option_candidates: int = 20
 
+    # ── GPT Failure Isolation ────────────────────────────────────────────────
+    # Hard cap on any single GPT call (enforced by the safe-call wrapper).
+    # Per-service timeouts may be lower; this is an absolute ceiling.
+    gpt_max_timeout_ms: int = 1200
+    # When True, any GPT failure falls back to the local deterministic path.
+    gpt_fail_open_to_local: bool = True
+
+    # ── Elite Flow Stabilization: bucket-based GPT routing ───────────────────
+    # Three buckets, each with an independent mode flag:
+    #   "disabled" → bucket never triggers (default — safe)
+    #   "shadow"   → GPT called, result logged only, never applied
+    #   "inline"   → GPT called, result applied when validator approves
+    #
+    # Bucket 0 — idle_menu_item_resolution
+    #   Triggers when state==IDLE, local intent UNKNOWN or low confidence,
+    #   and text looks like a menu item query.
+    bucket_0_mode: str = "disabled"
+    # Bucket 2 — option_resolution
+    #   Triggers when waiting state (size/side/modifier) and local matcher
+    #   found no selections (option_match_failed=True).
+    bucket_2_mode: str = "disabled"
+    # Bucket 3 — multi_item_add_planning
+    #   Triggers when state==IDLE and multiple ITEM slots or compound markers.
+    bucket_3_mode: str = "disabled"
+    # Shared timeout for all bucket GPT calls (ms).
+    bucket_timeout_ms: int = 1200
+
+    # ── SmartTurnPlanner (surgical GPT for risky turns) ──────────────────────
+    # Enabled via SMART_TURN_PLANNER_ENABLED env var (default: false).
+    # These config fields mirror env vars for test injection convenience;
+    # the service also reads env vars directly for feature-flag safety.
+    smart_turn_planner_enabled: bool = False
+    # Timeout for SmartTurnPlanner GPT call (ms)
+    smart_turn_planner_timeout_ms: int = 1200
+    # Minimum plan confidence for safe application (0.0–1.0)
+    smart_turn_planner_min_confidence: float = 0.75
+    # Daily call budget (0 = unlimited)
+    smart_turn_planner_daily_budget: int = 5000
+    # Low-confidence threshold — triggers planner when local NLU is below this
+    smart_turn_planner_low_confidence_threshold: float = 0.55
+
     def __post_init__(self) -> None:
         if self.call_mode is not None and self.call_mode not in VALID_CALL_MODES:
             raise ValueError(
@@ -107,6 +148,22 @@ class SemanticRepairConfig:
         if self.add_item_planner_mode not in {"disabled", "shadow", "inline"}:
             raise ValueError(
                 f"Invalid add_item_planner_mode {self.add_item_planner_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
+            )
+        _bucket_modes = {"disabled", "shadow", "inline"}
+        if self.bucket_0_mode not in _bucket_modes:
+            raise ValueError(
+                f"Invalid bucket_0_mode {self.bucket_0_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
+            )
+        if self.bucket_2_mode not in _bucket_modes:
+            raise ValueError(
+                f"Invalid bucket_2_mode {self.bucket_2_mode!r}. "
+                "Allowed: ['disabled', 'shadow', 'inline']"
+            )
+        if self.bucket_3_mode not in _bucket_modes:
+            raise ValueError(
+                f"Invalid bucket_3_mode {self.bucket_3_mode!r}. "
                 "Allowed: ['disabled', 'shadow', 'inline']"
             )
 
@@ -178,5 +235,29 @@ def get_semantic_repair_config() -> SemanticRepairConfig:
         ),
         add_item_planner_max_option_candidates=int(
             os.getenv("COMPASS_GPT_ADD_ITEM_PLANNER_MAX_OPTION_CANDIDATES", "20")
+        ),
+        # GPT Failure Isolation
+        gpt_max_timeout_ms=int(os.getenv("GPT_MAX_TIMEOUT_MS", "1200")),
+        gpt_fail_open_to_local=os.getenv("GPT_FAIL_OPEN_TO_LOCAL", "true").lower() in {"1", "true", "yes", "on"},
+        # Elite Flow Stabilization: bucket modes
+        bucket_0_mode=os.getenv("COMPASS_GPT_BUCKET_0_MODE", "disabled"),
+        bucket_2_mode=os.getenv("COMPASS_GPT_BUCKET_2_MODE", "disabled"),
+        bucket_3_mode=os.getenv("COMPASS_GPT_BUCKET_3_MODE", "disabled"),
+        bucket_timeout_ms=int(os.getenv("COMPASS_GPT_BUCKET_TIMEOUT_MS", "1200")),
+        # SmartTurnPlanner
+        smart_turn_planner_enabled=os.getenv(
+            "SMART_TURN_PLANNER_ENABLED", "false"
+        ).lower() in {"1", "true", "yes", "on"},
+        smart_turn_planner_timeout_ms=int(
+            os.getenv("SMART_TURN_PLANNER_TIMEOUT_MS", "1200")
+        ),
+        smart_turn_planner_min_confidence=float(
+            os.getenv("SMART_TURN_PLANNER_MIN_CONFIDENCE", "0.75")
+        ),
+        smart_turn_planner_daily_budget=int(
+            os.getenv("SMART_TURN_PLANNER_DAILY_BUDGET", "5000")
+        ),
+        smart_turn_planner_low_confidence_threshold=float(
+            os.getenv("SMART_TURN_PLANNER_LOW_CONFIDENCE_THRESHOLD", "0.55")
         ),
     )

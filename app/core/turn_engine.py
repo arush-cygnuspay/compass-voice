@@ -82,6 +82,8 @@ from app.nlu.semantic_repair.gpt_log_record_builder import (
 )
 from app.logging.gpt_repair_csv_logger import GptRepairCsvLogger
 from app.logging.gpt_repair_jsonl_logger import GptRepairJsonlLogger
+from app.logging.turn_event_logger import TurnEventLogger
+from app.diagnostics.backends.turn_event_jsonl_backend import TurnEventJsonlBackend
 from app.config.logging import get_logging_config
 from app.config.semantic_repair import get_semantic_repair_config as _get_gpt_cfg
 
@@ -154,6 +156,16 @@ class TurnEngine:
             from app.diagnostics.backends.json_backend import JsonDiagnosticsBackend
             backends.append(JsonDiagnosticsBackend(json_log_path))
 
+        # Canonical per-turn JSONL log — single source of truth for all turn data.
+        # nlu_log.csv / gpt_repair_turns.csv / realtime_turn_latency.csv are
+        # derived / legacy outputs; turn_events.jsonl is the canonical source.
+        _log_cfg_early = get_logging_config()
+        self.turn_event_logger = TurnEventLogger(
+            log_path=_log_cfg_early.turn_events_jsonl_path,
+            rotate_on_start=_log_cfg_early.rotate_turn_events_on_start,
+        )
+        backends.append(TurnEventJsonlBackend(self.turn_event_logger))
+
         self.diagnostics = TurnDiagnostics(backends=backends)
         self.response_writer = SessionResponseWriter(
             responder=responder,
@@ -199,14 +211,13 @@ class TurnEngine:
         self.gpt_repair = GptRepairService()
         self.add_item_extractor = AddItemExtractorService()
 
-        _log_cfg = get_logging_config()
         self.gpt_csv_logger = GptRepairCsvLogger(
-            log_path=_log_cfg.gpt_csv_log_path,
-            rotate_on_start=_log_cfg.rotate_gpt_logs_on_start,
+            log_path=_log_cfg_early.gpt_csv_log_path,
+            rotate_on_start=_log_cfg_early.rotate_gpt_logs_on_start,
         )
         self.gpt_jsonl_logger = GptRepairJsonlLogger(
-            log_path=_log_cfg.gpt_jsonl_log_path,
-            rotate_on_start=_log_cfg.rotate_gpt_logs_on_start,
+            log_path=_log_cfg_early.gpt_jsonl_log_path,
+            rotate_on_start=_log_cfg_early.rotate_gpt_logs_on_start,
         )
         # Background executor for all_shadow GPT calls (fire-and-forget)
         self._shadow_executor: ThreadPoolExecutor | None = None
@@ -333,19 +344,50 @@ class TurnEngine:
         normalized_text: str,
         response_key: str,
         response_payload: dict[str, Any] | None,
+        nlu: Any = None,
+        state_before: "ConversationState | None" = None,
     ) -> None:
-        """Append current user utterance + bot response to the session turn memory buffer."""
+        """Append current user utterance + bot response to the session turn memory buffer.
+
+        Uses structured TurnMemoryEntry objects via turn_memory_service when available,
+        falling back to the simple (role, text) API for robustness.
+        """
         ctx = getattr(session, "conversation_context", None)
         if ctx is None:
             return
-        append = getattr(ctx, "append_turn_memory", None)
-        if not callable(append):
-            return
         try:
-            ctx.append_turn_memory("user", normalized_text)
+            from app.state_machine.services.turn_memory_service import (
+                append_user_turn_memory,
+                append_assistant_turn_memory,
+            )
+            _state_val = state_before.value if state_before is not None else None
+            _intent_val = getattr(getattr(nlu, "effective_intent", None), "value", None)
+            _slots: tuple | None = None
+            if nlu is not None:
+                raw_slots = getattr(nlu, "slots", None)
+                if raw_slots:
+                    _slots = tuple(
+                        {"name": getattr(s, "name", ""), "value": str(getattr(s, "value", ""))}
+                        for s in raw_slots
+                        if hasattr(s, "name")
+                    )
+            append_user_turn_memory(
+                context=ctx,
+                text=normalized_text,
+                normalized_text=normalized_text,
+                state=_state_val,
+                intent=_intent_val,
+                slots=_slots,
+            )
             bot_text = self._build_response_text(session, response_key, response_payload)
             if bot_text:
-                ctx.append_turn_memory("bot", bot_text)
+                _after_state = session.conversation_state.value if session.conversation_state is not None else None
+                append_assistant_turn_memory(
+                    context=ctx,
+                    response_text=bot_text,
+                    response_key=response_key,
+                    state=_after_state,
+                )
         except Exception:
             pass
 
@@ -1376,6 +1418,8 @@ class TurnEngine:
                     normalized_text=nlu.normalized_text or "",
                     response_key=_fb_key,
                     response_payload={},
+                    nlu=nlu,
+                    state_before=state_before,
                 )
                 return self.response_writer._hydrate_output(
                     session=session,
@@ -1946,6 +1990,8 @@ class TurnEngine:
             normalized_text=nlu.normalized_text or "",
             response_key=result.response_key,
             response_payload=result.response_payload,
+            nlu=nlu,
+            state_before=state_before,
         )
 
         if suppress_payment_replay:

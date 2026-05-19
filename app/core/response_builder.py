@@ -248,6 +248,18 @@ class ResponseBuilder:
             "order_type_captured_delivery": lambda *_: "Delivery. What would you like to order?",
 
             # Ordering intents during pre-order setup
+            # Unsafe multi-item slot clarification — used when GPT and local
+            # planner both failed to resolve a compound utterance safely.
+            "multi_item_split_clarify": lambda *_: (
+                "For complex orders, please tell me one item at a time."
+            ),
+            # First-failure compound clarification — compound utterance that
+            # couldn't be parsed; ask for the first item before escalating.
+            "compound_unclear_ask_first": lambda *_: (
+                "I heard a few items but couldn't separate them clearly. "
+                "What's the first item?"
+            ),
+
             "ordering_blocked_need_order_type": lambda *_: (
                 "I'll get to your order right away. First, is this for pickup or delivery?"
             ),

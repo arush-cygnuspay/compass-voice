@@ -80,7 +80,7 @@ COMPASS_GPT_ADD_ITEM_PLANNER_MODE=disabled
 ```
 COMPASS_GPT_OPTION_RESOLVER_MODE=shadow
 COMPASS_GPT_ADD_ITEM_PLANNER_MODE=disabled
-OPENAI_API_KEY=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
+OPENAI_API_KEY=<your-staging-key>
 ```
 
 ### B1 — Phonetic mismatch: "macarola cheese"
@@ -127,7 +127,7 @@ OPENAI_API_KEY=sk-proj-tWmKoXknGTWWzSjge2VbKs1S1VI35nOo-v5b8tut-QLksp1WbX6A2fdnj
 ```
 COMPASS_GPT_OPTION_RESOLVER_MODE=inline
 COMPASS_GPT_ADD_ITEM_PLANNER_MODE=disabled
-OPENAI_API_KEY=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
+OPENAI_API_KEY=<your-staging-key>
 ```
 
 > ⚠ **Inline mode applies GPT results** — validate validator behavior before enabling.
@@ -168,7 +168,7 @@ OPENAI_API_KEY=sk-proj-tWmKoXknGTWWzSjge2VbKs1S1VI35nOo-v5b8tut-QLksp1WbX6A2fdnj
 ```
 COMPASS_GPT_OPTION_RESOLVER_MODE=disabled
 COMPASS_GPT_ADD_ITEM_PLANNER_MODE=shadow
-OPENAI_API_KEY=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
+OPENAI_API_KEY=<your-staging-key>
 ```
 
 ### D1 — Complex multi-entity utterance
@@ -217,7 +217,7 @@ OPENAI_API_KEY=sk-proj-tWmKoXknGTWWzSjge2VbKs1S1VI35nOo-v5b8tut-QLksp1WbX6A2fdnj
 ```
 COMPASS_GPT_OPTION_RESOLVER_MODE=shadow
 COMPASS_GPT_ADD_ITEM_PLANNER_MODE=inline
-OPENAI_API_KEY=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
+OPENAI_API_KEY=<your-staging-key>
 ```
 
 > ⚠ **Inline mode applies single-item GPT plans** — validate apply gate behavior.  

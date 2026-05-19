@@ -79,7 +79,7 @@ class StubSmsService:
 
 
 def _build_menu_repo() -> MenuRepository:
-    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "demo"
+    data_root = Path(__file__).resolve().parents[2] / "app" / "data" / "restaurants" / "steves_grill"
     return MenuRepository(
         MenuStore(
             menu_path=data_root / "menu.json",
@@ -104,7 +104,7 @@ def test_turn_engine_add_item_happy_path():
     menu_repo = _build_menu_repo()
     engine = _build_engine(menu_repo)
 
-    session = Session(session_id="s1", restaurant_id="demo")
+    session = Session(session_id="s1", restaurant_id="steves_grill")
     session.conversation_state = ConversationState.WAITING_FOR_ORDER_TYPE
     session.conversation_context.caller_device_type = "phone"
 

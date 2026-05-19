@@ -22,7 +22,7 @@ from app.state_machine.handlers.item.add_item.item_resolution_handler import (
     ItemResolutionHandler,
 )
 from app.state_machine.models.conversation_context import ConversationContext
-from app.state_machine.models.pending_item_models import QueuedItemRequest
+from app.state_machine.models.pending_item_models import QueuedItemRequest, StagedItemPlan
 
 
 class MultiItemQueueCoordinator:
@@ -52,22 +52,41 @@ class MultiItemQueueCoordinator:
         context: ConversationContext,
         segments: list[ParsedItemSegment],
         get_last_slots: Callable[[ConversationContext], Sequence[SlotValue]],
+        staged_items: "list[StagedItemPlan] | None" = None,
     ) -> HandlerResult:
         first_segment = segments[0]
         remaining_segments = segments[1:]
 
-        # Queue the remaining items — preserve segment slots for better
-        # modifier/side prefilling when dequeued.
-        context.pending_item_queue = deque(
-            QueuedItemRequest(
-                raw_text=seg.raw_text,
-                item_slot_value=seg.item_slot_value,
-                quantity=seg.quantity,
-                acknowledged=False,
-                segment_slots=seg.slots or (),
+        if staged_items is not None:
+            # Structured path: items[1..N] preserved as StagedItemPlan in staged_item_queue.
+            # Clear pending_item_queue so stale raw items from a prior utterance don't bleed in.
+            context.staged_item_queue = deque(staged_items)
+            context.pending_item_queue.clear()
+            # If there are also raw remaining_segments (unusual, but possible), queue them too.
+            if remaining_segments:
+                for seg in remaining_segments:
+                    context.pending_item_queue.append(
+                        QueuedItemRequest(
+                            raw_text=seg.raw_text,
+                            item_slot_value=seg.item_slot_value,
+                            quantity=seg.quantity,
+                            acknowledged=False,
+                            segment_slots=seg.slots or (),
+                        )
+                    )
+        else:
+            # Legacy path: queue all remaining segments as raw QueuedItemRequest.
+            context.staged_item_queue.clear()
+            context.pending_item_queue = deque(
+                QueuedItemRequest(
+                    raw_text=seg.raw_text,
+                    item_slot_value=seg.item_slot_value,
+                    quantity=seg.quantity,
+                    acknowledged=False,
+                    segment_slots=seg.slots or (),
+                )
+                for seg in remaining_segments
             )
-            for seg in remaining_segments
-        )
 
         # Build detailed summary of what we heard (include modifiers/sides)
         item_summaries = [self._build_segment_summary(seg) for seg in segments]
@@ -111,7 +130,7 @@ class MultiItemQueueCoordinator:
         )
 
         # Wrap the response with a multi-item acknowledgement prefix
-        queue_count = len(context.pending_item_queue)
+        queue_count = len(context.pending_item_queue) + len(context.staged_item_queue)
         payload = dict(handler_result.response_payload or {})
         payload["multi_item_ack"] = True
         payload["heard_items_summary"] = item_summaries

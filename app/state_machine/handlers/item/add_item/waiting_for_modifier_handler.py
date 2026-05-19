@@ -479,6 +479,24 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             )
         # ── END interruption policy ────────────────────────────────────────────
 
+        # ── SmartTurnPlanner hook (correction / low-confidence modifier) ─────
+        # Invoked for self-correction phrases and low-confidence modifier turns
+        # BEFORE Phase 3 so that "no I said cheddar" bypasses the option
+        # resolver's phonetic-match path and lands directly at the correction
+        # handler.  If the planner resolves, we return immediately.
+        # If disabled / timed-out / validation fails, falls through to Phase 3.
+        _smart_mod = self._try_smart_planner_modifier(
+            user_text=normalized_user_text,
+            group=group,
+            pending=pending,
+            existing_selections=existing_selections,
+            context=context,
+            session=session,
+        )
+        if _smart_mod is not None:
+            return _smart_mod
+        # ── END SmartTurnPlanner hook ─────────────────────────────────────────
+
         # ── Phase 3: GPT Option Resolver ─────────────────────────────────────
         # Attempt GPT resolution when local deterministic matching failed.
         # In "shadow" mode the result is logged only (safe_to_apply=False).
@@ -789,6 +807,193 @@ class WaitingForModifierHandler(GroupResolutionHandler):
             return result
         except Exception:
             return []
+
+    # ------------------------------------------------------------------
+    # SmartTurnPlanner helpers (modifier correction / low-confidence)
+    # ------------------------------------------------------------------
+
+    def _try_smart_planner_modifier(
+        self,
+        *,
+        user_text: str,
+        group: "PendingModifierGroup",
+        pending: object,
+        existing_selections: "list",
+        context: "ConversationContext",
+        session: object,
+    ) -> "HandlerResult | None":
+        """Try SmartTurnPlanner for correction phrases or low-confidence modifier turns.
+
+        Returns a HandlerResult if the planner resolves a modifier, or None to
+        continue to Phase 3 (GptOptionResolverService) then the local fallback.
+        Never raises.
+        """
+        try:
+            from app.services.smart_turn_planner import _is_enabled as _stp_enabled
+            if not _stp_enabled():
+                return None
+
+            from app.services.smart_turn_policy import (
+                should_use_smart_planner,
+                determine_smart_task_mode,
+                validate_smart_plan,
+            )
+            from app.services.smart_turn_planner import plan_smart_turn
+            from app.services.smart_turn_context_builder import build_smart_turn_context
+
+            local_confidence = float(context.last_intent_confidence or 0.0)
+            state_name = ConversationState.WAITING_FOR_MODIFIER.value
+
+            should_use, trigger_reason = should_use_smart_planner(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+            )
+            if not should_use:
+                return None
+
+            # Gather current group choices as allowed_options
+            allowed_options = [choice.name for choice in group.choices]
+
+            stp_ctx = build_smart_turn_context(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+                context=context,
+                session=session,
+                allowed_options=allowed_options,
+            )
+            task_mode = determine_smart_task_mode(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+            )
+
+            pending_item_name = getattr(pending, "item_name", None)
+
+            plan = plan_smart_turn(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+                menu_context=[],
+                cart_snapshot=stp_ctx.cart_snapshot,
+                last_cart_diff=stp_ctx.last_cart_diff,
+                previous_turns=stp_ctx.previous_turns,
+                trigger_reason=trigger_reason,
+                task_mode=task_mode,
+                allowed_options=allowed_options,
+                pending_item_name=pending_item_name,
+                pending_group_name=group.name if hasattr(group, "name") else None,
+                reprompt_count=stp_ctx.reprompt_count,
+            )
+            if plan is None:
+                return None
+
+            validation = validate_smart_plan(
+                plan,
+                # Pass empty menu_context so Gate 5 (item_name in menu) is
+                # skipped for modifier turns.  The resolved modifier name is
+                # validated separately via build_modifier_selections_from_names,
+                # which checks group membership deterministically.
+                menu_context=[],
+                cart_snapshot=stp_ctx.cart_snapshot,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                trigger_reason=trigger_reason,
+            )
+
+            _logger.info(
+                "smart_turn_planner_modifier",
+                extra={
+                    "smart_planner_invoked": True,
+                    "smart_planner_task_mode": task_mode,
+                    "smart_planner_trigger_reason": trigger_reason,
+                    "smart_planner_decision": getattr(plan, "decision", ""),
+                    "smart_planner_confidence": getattr(plan, "confidence", None),
+                    "smart_planner_latency_ms": getattr(plan, "latency_ms", None),
+                    "smart_planner_validation_result": validation.is_safe,
+                    "smart_planner_fallback_reason": (
+                        validation.block_reason if not validation.is_safe else None
+                    ),
+                    "smart_planner_context_keys": stp_ctx.context_keys,
+                    "allowed_options_count": len(allowed_options),
+                    "state_before": state_name,
+                    "group_id": getattr(group, "group_id", ""),
+                },
+            )
+
+            if not validation.is_safe:
+                return None
+
+            # Extract the resolved modifier name from the plan
+            resolved_name = self._extract_modifier_name_from_plan(plan)
+            if not resolved_name:
+                return None
+
+            # Validate through deterministic modifier path
+            from app.nlu.semantic_repair.option_selection_validator import (
+                build_modifier_selections_from_names,
+            )
+            gpt_selections = build_modifier_selections_from_names(
+                selected_names=(resolved_name,),
+                group=group,
+                existing_ids={sel.modifier_id for sel in existing_selections},
+            )
+            if not gpt_selections:
+                _logger.info(
+                    "smart_turn_planner_modifier_name_not_in_group",
+                    extra={"resolved_name": resolved_name, "group_id": getattr(group, "group_id", "")},
+                )
+                return None
+
+            _logger.info(
+                "smart_turn_planner_modifier_applied",
+                extra={
+                    "resolved_name": resolved_name,
+                    "group_id": getattr(group, "group_id", ""),
+                    "state_after": state_name,
+                },
+            )
+            return self._apply_modifier_selection(
+                context=context,
+                pending=pending,
+                group=group,
+                matched_selections=gpt_selections,
+                normalized_user_text=user_text,
+            )
+        except Exception as exc:
+            _logger.warning("smart_turn_planner_modifier_error: %s", exc)
+            return None
+
+    @staticmethod
+    def _extract_modifier_name_from_plan(plan: object) -> "str | None":
+        """Extract the first resolved modifier name from a SmartTurnPlan.
+
+        For modifier_selection task_mode the plan puts the resolved name in
+        items[0].modifiers[0].name.  For correction task_mode the plan puts
+        it in correction.corrected_text.  Returns None if neither is found.
+        """
+        decision = getattr(plan, "decision", "")
+
+        if decision == "correction":
+            corr = getattr(plan, "correction", None)
+            if corr is not None:
+                name = getattr(corr, "corrected_text", "").strip()
+                return name or None
+
+        if decision == "add_items":
+            items = getattr(plan, "items", ()) or ()
+            if items:
+                mods = getattr(items[0], "modifiers", ()) or ()
+                if mods:
+                    name = getattr(mods[0], "name", "").strip()
+                    return name or None
+
+        return None
 
     # ------------------------------------------------------------------
 

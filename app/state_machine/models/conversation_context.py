@@ -17,11 +17,13 @@ from app.state_machine.models.conversation_context_serde import (
 )
 from app.state_machine.models.conversation_state import ConversationState
 from app.state_machine.models.delivery_address import DeliveryAddress
+from app.state_machine.models.turn_memory import TurnMemoryEntry
 from app.state_machine.models.pending_item_models import (
     InterruptProposal,
     ModifierSelection,
     PendingAddItem,
     QueuedItemRequest,
+    StagedItemPlan,
 )
 
 
@@ -74,6 +76,12 @@ class ConversationContext:
     # Uses deque for O(1) popleft() during queue drain (avoids O(n) list.pop(0)).
     pending_item_queue: deque[QueuedItemRequest] = field(default_factory=deque)
 
+    # Structured staged items from multi-item plans.
+    # Drained by ItemQueueService via PrefillOrchestrator (no handler re-entry).
+    # NOT cleared by reset_item_scope — items waiting in the queue must survive
+    # scope resets between the active item and the next queued item.
+    staged_item_queue: deque[StagedItemPlan] = field(default_factory=deque)
+
     order_type: Optional[str] = None
     delivery_address_required: bool = False
     delivery_address_confirmed: bool = False
@@ -105,22 +113,42 @@ class ConversationContext:
     # reset_item_scope (it's per-call, not per-item).
     consecutive_unknown_count: int = 0
 
-    # Compact turn memory for GPT context: [(role, text), ...] where role ∈ {"user","bot"}
-    # Capped at 6 entries (3 user + 3 bot). Persists across item scope resets.
-    turn_memory: deque = field(default_factory=deque)
+    # Compact turn memory for GPT context: TurnMemoryEntry objects.
+    # Capped at 6 entries (3 exchanges). Persists across item scope resets.
+    # Use turn_memory_service helpers for structured appends; append_turn_memory()
+    # remains for backward-compatible simple (role, text) writes.
+    turn_memory: deque = field(default_factory=lambda: deque(maxlen=6))
 
     def append_turn_memory(self, role: str, text: str) -> None:
-        """Append a (role, text) pair to the compact turn memory buffer, capped at 6 entries."""
+        """Append a simple (role, text) entry. Normalises 'bot' → 'assistant'."""
         if not text or not text.strip():
             return
-        self.turn_memory.append((role, text.strip()))
-        while len(self.turn_memory) > 6:
-            self.turn_memory.popleft()
+        normalized_role = "assistant" if role == "bot" else role
+        entry = TurnMemoryEntry(role=normalized_role, text=text.strip())  # type: ignore[arg-type]
+        self.turn_memory.append(entry)
+
+    def append_turn_memory_entry(self, entry: TurnMemoryEntry) -> None:
+        """Append a fully-typed TurnMemoryEntry (preferred for structured writes)."""
+        if not entry.text or not entry.text.strip():
+            return
+        self.turn_memory.append(entry)
 
     def get_turn_memory(self, limit: int = 3) -> tuple[tuple[str, str], ...]:
-        """Return the last *limit* turns as ((role, text), ...)."""
-        items = list(self.turn_memory)
-        return tuple(items[-limit:])
+        """Return the last *limit* entries as ((role, text), ...) for backward compat."""
+        items = list(self.turn_memory)[-limit:]
+        return tuple(
+            (e.role, e.text) if isinstance(e, TurnMemoryEntry) else (str(e[0]), str(e[1]))
+            for e in items
+        )
+
+    def get_turn_memory_entries(self, limit: int = 6) -> tuple[TurnMemoryEntry, ...]:
+        """Return the last *limit* TurnMemoryEntry objects for GPT context building."""
+        items = list(self.turn_memory)[-limit:]
+        return tuple(
+            e if isinstance(e, TurnMemoryEntry)
+            else TurnMemoryEntry(role=e[0], text=e[1])  # type: ignore[index,arg-type]
+            for e in items
+        )
 
     def bump_reprompt(self, field_name: str) -> int:
         """Increment and return the new attempt count for the field."""
@@ -218,6 +246,7 @@ class ConversationContext:
         """
         self.reset_item_scope()
         self.pending_item_queue.clear()
+        self.staged_item_queue.clear()
         self.item_not_found_attempts.clear()
 
     def reset_session_scope(self) -> None:
@@ -228,6 +257,7 @@ class ConversationContext:
         """
         self.reset_item_scope()
         self.pending_item_queue.clear()
+        self.staged_item_queue.clear()
         self.last_user_text = None
         self.last_nlu = None
         self.last_intent_confidence = None
@@ -301,6 +331,7 @@ class ConversationContext:
                 }
                 for item in self.pending_item_queue
             ],
+            "staged_item_queue_depth": len(self.staged_item_queue),  # depth only, not full objects
             "order_type": self.order_type,
             "delivery_address_required": self.delivery_address_required,
             "delivery_address_confirmed": self.delivery_address_confirmed,

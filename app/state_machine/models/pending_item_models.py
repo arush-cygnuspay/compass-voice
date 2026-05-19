@@ -1,5 +1,7 @@
 # app/state_machine/models/pending_item_models.py
 
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -147,3 +149,37 @@ class QueuedItemRequest:
     # Preserved NLU slots from the multi-item parser so queued items
     # retain their modifier/side/size context when dequeued.
     segment_slots: tuple = ()           # tuple[SlotValue, ...]
+
+
+@dataclass(slots=True, frozen=True)
+class StagedSide:
+    """A side/drink pre-resolved from a compound utterance, preserved for drain."""
+    name: str
+    variant_label: str | None = None   # e.g. "small", "large"
+    quantity: int = 1
+    group_hint: str | None = None      # side group name hint for faster matching
+
+
+@dataclass(slots=True, frozen=True)
+class StagedModifier:
+    """A modifier pre-resolved from a compound utterance."""
+    name: str
+    operation: str = "add"             # add | remove | extra | light
+
+
+@dataclass(slots=True)
+class StagedItemPlan:
+    """Structured snapshot of an items[1..N] entry from a multi-item plan.
+
+    Stored in context.staged_item_queue and drained by ItemQueueService
+    via PrefillOrchestrator — no re-entry into GPT/local planner.
+    """
+    item_id: str                                   # empty str = resolve by name at drain
+    item_name: str
+    quantity: int = 1
+    variant_id: str | None = None                  # pre-resolved variant id
+    variant_label: str | None = None               # e.g. "large", "6 piece"
+    requested_sides: tuple[StagedSide, ...] = ()
+    requested_modifiers: tuple[StagedModifier, ...] = ()
+    raw_span: str = ""                             # original text span, for logging
+    plan_source: str = ""                          # "gpt_planner" | "local_planner" | etc.

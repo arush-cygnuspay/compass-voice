@@ -25,6 +25,9 @@ class LoggingConfig:
     gpt_csv_log_path: str
     gpt_jsonl_log_path: str
     realtime_log_path: str
+    # ── Canonical turn-event JSONL (source of truth for all turn data) ──
+    turn_events_jsonl_path: str
+    rotate_turn_events_on_start: bool
 
 
 @lru_cache(maxsize=1)
@@ -48,4 +51,14 @@ def get_logging_config() -> LoggingConfig:
         realtime_log_path=os.getenv(
             "COMPASS_REALTIME_LOG_PATH", "app/logs/realtime_turn_latency.csv"
         ),
+        # Canonical per-turn JSONL — single source of truth for all turn data.
+        # Legacy CSVs (nlu_log.csv, gpt_repair_turns.csv, realtime_turn_latency.csv)
+        # are derived outputs; turn_events.jsonl is the canonical source.
+        turn_events_jsonl_path=os.getenv(
+            "COMPASS_TURN_EVENTS_JSONL_PATH", "logs/current/turn_events.jsonl"
+        ),
+        rotate_turn_events_on_start=os.getenv(
+            "COMPASS_ROTATE_TURN_EVENTS_ON_START", "false"
+        ).lower()
+        == "true",
     )

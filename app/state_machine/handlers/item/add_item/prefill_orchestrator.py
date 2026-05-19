@@ -624,11 +624,40 @@ class PrefillOrchestrator:
         item: MenuItem,
         user_text: str,
         slots: Sequence[SlotValue],
+        staged: "object | None" = None,
     ) -> HandlerResult:
         context.current_item_id = item.item_id
         context.current_item_name = item.name
         context.candidate_item_id = item.item_id
         context.pending_add_item = build_pending_add_item(item)
+
+        if staged is not None:
+            # ── Structured staged item path ────────────────────────────────────
+            # Apply pre-resolved data from StagedItemPlan directly —
+            # no NLU re-parse, no prefill engine invocation.
+            context.quantity = max(1, int(getattr(staged, "quantity", 1) or 1))
+            self._apply_staged_plan(context, staged)
+            # Build minimal payloads
+            prefilled_summary = self._build_prefilled_summary(context)
+            prefill_debug = {
+                "staged_plan_applied": True,
+                "plan_source": getattr(staged, "plan_source", ""),
+            }
+            logger.debug(
+                "staged_item_prefill_applied",
+                extra={
+                    "item_name": item.name,
+                    "plan_source": getattr(staged, "plan_source", ""),
+                },
+            )
+            return self.confirmation_helper.build_handler_result(
+                context=context,
+                item=item,
+                prefilled_summary=prefilled_summary,
+                prefill_feedback="",
+                prefill_debug=prefill_debug,
+            )
+        # ── Normal NLU-based path (unchanged) ─────────────────────────────────
 
         missing_groups_before_prefill = self._missing_group_names(context)
         prefill_user_text = self._prefill_segment_text_for_item(
@@ -732,6 +761,97 @@ class PrefillOrchestrator:
                 continue
             context.selected_modifier_groups[group_id] = list(selections)
             context.skipped_modifier_groups.discard(group_id)
+
+    def _apply_staged_plan(
+        self,
+        context: ConversationContext,
+        staged: "object",
+    ) -> None:
+        """Apply a StagedItemPlan's resolved data directly to the context.
+
+        Resolves variant, sides, and modifiers against the pending_add_item
+        snapshot using normalized name matching.  Unresolved entries are
+        silently skipped — the flow will ask for the missing requirement.
+        """
+        from app.state_machine.models.pending_item_models import ModifierSelection
+
+        pending = context.pending_add_item
+        if pending is None:
+            return
+
+        # Item-level variant / size
+        variant_id = getattr(staged, "variant_id", None)
+        variant_label = getattr(staged, "variant_label", None)
+        if variant_id and variant_id in pending.item_variants_by_id:
+            context.selected_variant_id = variant_id
+        elif variant_label:
+            vlabel = normalize_text(str(variant_label))
+            pv = pending.item_variants_by_normalized_name.get(vlabel)
+            if pv is not None:
+                context.selected_variant_id = pv.variant_id
+
+        # Requested sides
+        for staged_side in (getattr(staged, "requested_sides", ()) or ()):
+            side_norm = normalize_text(getattr(staged_side, "name", "") or "")
+            if not side_norm:
+                continue
+            for group in pending.side_groups:
+                # Try choices_by_normalized_name first (fuzzy-friendly)
+                choices = group.choices_by_normalized_name.get(side_norm, [])
+                if not choices:
+                    # Fall back to exact scan
+                    choices = [
+                        c for c in group.choices
+                        if normalize_text(c.name) == side_norm
+                        or side_norm in (normalize_text(t) for t in c.match_texts)
+                    ]
+                if not choices:
+                    continue
+                choice = choices[0]
+                gid = group.group_id
+                if gid not in context.selected_side_groups:
+                    context.selected_side_groups[gid] = []
+                if choice.item_id not in context.selected_side_groups[gid]:
+                    context.selected_side_groups[gid].append(choice.item_id)
+                context.skipped_side_groups.discard(gid)
+
+                # Side-level variant (e.g. "small" for "small coke")
+                side_vlabel = getattr(staged_side, "variant_label", None)
+                if side_vlabel and getattr(choice, "variants_by_normalized_name", None):
+                    vlabel = normalize_text(str(side_vlabel))
+                    pvs = choice.variants_by_normalized_name.get(vlabel, [])
+                    if pvs:
+                        context.selected_side_variants[choice.item_id] = pvs[0].variant_id
+                break  # side matched — move on
+
+        # Requested modifiers
+        for staged_mod in (getattr(staged, "requested_modifiers", ()) or ()):
+            mod_norm = normalize_text(getattr(staged_mod, "name", "") or "")
+            if not mod_norm:
+                continue
+            for group in pending.modifier_groups:
+                choices = group.choices_by_normalized_name.get(mod_norm, [])
+                if not choices:
+                    choices = [
+                        c for c in group.choices
+                        if normalize_text(c.name) == mod_norm
+                        or mod_norm in (normalize_text(t) for t in c.match_texts)
+                    ]
+                if not choices:
+                    continue
+                choice = choices[0]
+                gid = group.group_id
+                mod_op = getattr(staged_mod, "operation", "add") or "add"
+                sel = ModifierSelection(
+                    modifier_id=choice.modifier_id,
+                    name=choice.name,
+                    action=mod_op if mod_op in ("add", "remove") else "add",
+                )
+                if gid not in context.selected_modifier_groups:
+                    context.selected_modifier_groups[gid] = []
+                context.selected_modifier_groups[gid].append(sel)
+                context.skipped_modifier_groups.discard(gid)
+                break  # modifier matched
 
     # ------------------------------------------------------------------
     # Missing-group inspection

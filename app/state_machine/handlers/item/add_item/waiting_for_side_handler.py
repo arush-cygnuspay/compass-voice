@@ -1,8 +1,11 @@
 # app/state_machine/handlers/item/add_item/waiting_for_side_handler.py
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from dataclasses import dataclass
+
+_logger = logging.getLogger(__name__)
 
 from app.menu.repository import MenuRepository
 from app.nlu.intent_resolution.intent import Intent
@@ -469,6 +472,23 @@ class WaitingForSideHandler(GroupResolutionHandler):
             )
         # ── END interruption policy ────────────────────────────────────────────
 
+        # ── SmartTurnPlanner hook (side selection / correction) ──────────────
+        # Invoked when local resolution failed and no carry-prefill succeeded.
+        # Handles phonetic/paraphrase mismatches and correction phrases.
+        # If the planner resolves a side, we return through the deterministic
+        # _apply_side_selection path.  Otherwise the local reprompt runs.
+        _smart_side = self._try_smart_planner_side(
+            user_text=normalized_user_text,
+            group=group,
+            pending=pending,
+            existing_ids=existing_ids,
+            context=context,
+            session=session,
+        )
+        if _smart_side is not None:
+            return _smart_side
+        # ── END SmartTurnPlanner hook ─────────────────────────────────────────
+
         if resolution.unmatched_values:
             return HandlerResult(
                 next_state=ConversationState.WAITING_FOR_SIDE,
@@ -635,6 +655,198 @@ class WaitingForSideHandler(GroupResolutionHandler):
             unmatched_names=_unmatched,
             match_debug=match_debug,
         )
+
+    # ------------------------------------------------------------------
+    # SmartTurnPlanner helpers (side selection / correction)
+    # ------------------------------------------------------------------
+
+    def _try_smart_planner_side(
+        self,
+        *,
+        user_text: str,
+        group: "PendingSideGroup",
+        pending: object,
+        existing_ids: "list[str]",
+        context: "ConversationContext",
+        session: object,
+    ) -> "HandlerResult | None":
+        """Try SmartTurnPlanner when local side resolution failed.
+
+        Handles phonetic/paraphrase mismatches and correction phrases.
+        Returns a HandlerResult if the planner resolves a side, or None to
+        continue to the local reprompt fallback.  Never raises.
+        """
+        try:
+            from app.services.smart_turn_planner import _is_enabled as _stp_enabled
+            if not _stp_enabled():
+                return None
+
+            from app.services.smart_turn_policy import (
+                should_use_smart_planner,
+                determine_smart_task_mode,
+                validate_smart_plan,
+            )
+            from app.services.smart_turn_planner import plan_smart_turn
+            from app.services.smart_turn_context_builder import build_smart_turn_context
+
+            local_confidence = float(context.last_intent_confidence or 0.0)
+            state_name = ConversationState.WAITING_FOR_SIDE.value
+
+            should_use, trigger_reason = should_use_smart_planner(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+            )
+            if not should_use:
+                return None
+
+            # Allowed side choices (names only — safe to send to LLM)
+            allowed_options = [choice.name for choice in group.choices]
+
+            stp_ctx = build_smart_turn_context(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+                context=context,
+                session=session,
+                allowed_options=allowed_options,
+            )
+            task_mode = determine_smart_task_mode(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+            )
+
+            pending_item_name = getattr(pending, "item_name", None)
+
+            plan = plan_smart_turn(
+                transcript=user_text,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                local_confidence=local_confidence,
+                menu_context=[],
+                cart_snapshot=stp_ctx.cart_snapshot,
+                last_cart_diff=stp_ctx.last_cart_diff,
+                previous_turns=stp_ctx.previous_turns,
+                trigger_reason=trigger_reason,
+                task_mode=task_mode,
+                allowed_options=allowed_options,
+                pending_item_name=pending_item_name,
+                pending_group_name=group.name if hasattr(group, "name") else None,
+                reprompt_count=stp_ctx.reprompt_count,
+            )
+            if plan is None:
+                return None
+
+            validation = validate_smart_plan(
+                plan,
+                # Pass empty menu_context so Gate 5 (item_name in menu) is
+                # skipped for side turns.  The resolved side name is validated
+                # separately via side_resolver.resolve, which checks group
+                # membership deterministically.
+                menu_context=[],
+                cart_snapshot=stp_ctx.cart_snapshot,
+                state=state_name,
+                local_intent="ADD_ITEM",
+                trigger_reason=trigger_reason,
+            )
+
+            _logger.info(
+                "smart_turn_planner_side",
+                extra={
+                    "smart_planner_invoked": True,
+                    "smart_planner_task_mode": task_mode,
+                    "smart_planner_trigger_reason": trigger_reason,
+                    "smart_planner_decision": getattr(plan, "decision", ""),
+                    "smart_planner_confidence": getattr(plan, "confidence", None),
+                    "smart_planner_latency_ms": getattr(plan, "latency_ms", None),
+                    "smart_planner_validation_result": validation.is_safe,
+                    "smart_planner_fallback_reason": (
+                        validation.block_reason if not validation.is_safe else None
+                    ),
+                    "smart_planner_context_keys": stp_ctx.context_keys,
+                    "allowed_options_count": len(allowed_options),
+                    "state_before": state_name,
+                    "group_id": getattr(group, "group_id", ""),
+                },
+            )
+
+            if not validation.is_safe:
+                return None
+
+            # Extract the resolved side name from the plan
+            resolved_name = self._extract_side_name_from_plan(plan)
+            if not resolved_name:
+                return None
+
+            # Re-run the deterministic side resolver with the resolved name
+            # so all existing selection logic (over-max, variant pricing, etc.)
+            # is applied correctly.
+            side_resolution = self.side_resolver.resolve(
+                group=group,
+                normalized_user_text=resolved_name,
+                already_selected_ids=existing_ids,
+            )
+
+            if not side_resolution.matched_item_ids:
+                _logger.info(
+                    "smart_turn_planner_side_name_not_in_group",
+                    extra={
+                        "resolved_name": resolved_name,
+                        "group_id": getattr(group, "group_id", ""),
+                    },
+                )
+                return None
+
+            _logger.info(
+                "smart_turn_planner_side_applied",
+                extra={
+                    "resolved_name": resolved_name,
+                    "group_id": getattr(group, "group_id", ""),
+                    "state_after": state_name,
+                },
+            )
+            return self._apply_side_selection(
+                context=context,
+                pending_item_name=pending_item_name or "",
+                group=group,
+                matched_ids=side_resolution.matched_item_ids,
+                normalized_user_text=resolved_name,
+            )
+        except Exception as exc:
+            _logger.warning("smart_turn_planner_side_error: %s", exc)
+            return None
+
+    @staticmethod
+    def _extract_side_name_from_plan(plan: object) -> "str | None":
+        """Extract the first resolved side name from a SmartTurnPlan.
+
+        For side_selection: plan.items[0].sides[0].name
+        For correction:     plan.correction.corrected_text
+        Returns None if neither is found.
+        """
+        decision = getattr(plan, "decision", "")
+
+        if decision == "correction":
+            corr = getattr(plan, "correction", None)
+            if corr is not None:
+                name = getattr(corr, "corrected_text", "").strip()
+                return name or None
+
+        if decision == "add_items":
+            items = getattr(plan, "items", ()) or ()
+            if items:
+                sides = getattr(items[0], "sides", ()) or ()
+                if sides:
+                    name = getattr(sides[0], "name", "").strip()
+                    return name or None
+
+        return None
+
+    # ------------------------------------------------------------------
 
     def _choice_payload(self, context: ConversationContext, group: PendingSideGroup) -> dict:
         allow_dupes = bool(getattr(group, "allow_duplicate_selections", False))
