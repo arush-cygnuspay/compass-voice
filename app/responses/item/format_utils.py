@@ -130,6 +130,39 @@ def _format_options(
     return base
 
 
+def format_limited_options(
+    options: "list[str] | tuple[str, ...]",
+    *,
+    max_spoken: int = 4,
+    overflow_suffix: str = "Say options to hear more",
+) -> str:
+    """Format options for voice with a concise spoken limit and an overflow hint.
+
+    Speaks at most *max_spoken* options (default 4).  When more options exist,
+    appends *overflow_suffix* so the customer knows they can request the full
+    list.  The suffix is omitted when all options fit within *max_spoken*.
+
+    Examples
+    --------
+    Six-item list with max_spoken=4:
+        ["Plain", "Sesame", "Potato", "Brioche", "Pretzel", "Wheat"]
+        → "Plain, Sesame, Potato, or Brioche. Say options to hear more"
+
+    Three-item list (no overflow):
+        ["Small", "Medium", "Large"]
+        → "Small, Medium, or Large"
+    """
+    clean = [str(o).strip() for o in (options or []) if str(o).strip()]
+    has_more = len(clean) > max_spoken
+    limited = clean[:max_spoken]
+    if not limited:
+        return ""
+    formatted = _format_options(limited, max_items=max_spoken)
+    if has_more and overflow_suffix:
+        return f"{formatted}. {overflow_suffix}"
+    return formatted
+
+
 def _pluralize(word: str, count: int) -> str:
     return word if count == 1 else f"{word}s"
 
