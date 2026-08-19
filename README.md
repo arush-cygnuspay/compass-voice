@@ -1,154 +1,359 @@
 # Restaurant Voice AI
 
-**Real-time AI voice ordering system for restaurants**.A real-time restaurant voice ordering system built with streaming speech, custom NLU, and deterministic conversational orchestration.
+**Real-time AI voice ordering system for restaurants using Twilio Media Streams, Deepgram STT/TTS, custom NLU, Redis-backed sessions, and deterministic conversational orchestration.**
 
-## Overview
+Restaurant Voice AI handles multi-turn restaurant ordering conversations over live phone calls while maintaining explicit control over conversation state, cart operations, checkout, and payment flows.
 
-This project handles restaurant ordering conversations over phone calls and a browser demo interface. The system is designed for reliability under real-time telephony constraints:
+Rather than relying on an LLM to control the conversation, the system separates **language understanding** from **business logic**: machine-learning-based NLU interprets the caller, while deterministic state-machine logic decides what happens next.
 
-- Twilio voice webhook + media stream ingestion
-- Deepgram streaming speech-to-text and text-to-speech
-- Deterministic state machine routing
-- NLU-backed intent and slot extraction
-- Cart, checkout, SMS, and payment-link flows
-- Real-time latency and NLU logging
+---
 
-This repo is not a generic chatbot wrapper. The LLM/NLU layer is used for understanding, while control flow stays inside explicit state and handler logic.
+## Why This Project
 
-## Demo
+Voice ordering is more difficult than a typical chatbot because the system has to operate under real-time telephony constraints while maintaining reliable transactional state.
 
-The repository includes a browser chat demo that exercises the same turn engine used by the voice flow.
+The system addresses several engineering problems:
 
-![Compass Voice chat demo](./chat_img.png)
+- streaming audio between Twilio and the application over WebSockets
+- real-time speech recognition and speech synthesis
+- intent and slot extraction from conversational speech
+- deterministic multi-turn conversation control
+- stateful cart and order management
+- Redis-backed session persistence
+- checkout, SMS, and payment-link workflows
+- human-agent transfer paths
+- latency and NLU observability
 
-- Browser UI: `/ui`
-- Test chat API: `POST /test/chat`
-- Voice webhook: `POST /voice`
-- Twilio media websocket: `/ws/twilio-media`
+The goal is to combine AI-based language understanding with predictable application behavior suitable for transactional workflows.
+
+---
 
 ## Architecture
 
-High-level request path:
-
 ```text
-Caller / Browser UI
-    -> API layer
-    -> Turn engine
-    -> NLU + slot extraction
-    -> Deterministic state router
-    -> State-specific handlers
-    -> Response builder
-    -> TTS / UI response
+                       ┌─────────────────────┐
+                       │   Restaurant Caller │
+                       └──────────┬──────────┘
+                                  │
+                                  ▼
+                         ┌─────────────────┐
+                         │     Twilio      │
+                         │  Media Streams  │
+                         └────────┬────────┘
+                                  │ WebSocket audio
+                                  ▼
+                     ┌────────────────────────┐
+                     │        FastAPI         │
+                     │  Voice Stream Server   │
+                     └───────────┬────────────┘
+                                 │
+                 ┌───────────────┴────────────────┐
+                 │                                │
+                 ▼                                ▼
+        ┌─────────────────┐              ┌─────────────────┐
+        │ Deepgram STT    │              │ Deepgram TTS    │
+        │ Speech → Text   │              │ Text → Speech   │
+        └────────┬────────┘              └────────▲────────┘
+                 │                                │
+                 ▼                                │
+        ┌─────────────────┐                       │
+        │   NLU Pipeline  │                       │
+        │ Intent + Slots  │                       │
+        └────────┬────────┘                       │
+                 │                                │
+                 ▼                                │
+        ┌──────────────────────┐                  │
+        │      Turn Engine     │                  │
+        └──────────┬───────────┘                  │
+                   │                              │
+                   ▼                              │
+        ┌──────────────────────┐                  │
+        │ Deterministic State  │                  │
+        │ Machine + Router     │                  │
+        └──────────┬───────────┘                  │
+                   │                              │
+                   ▼                              │
+        ┌──────────────────────┐                  │
+        │ State-Specific       │                  │
+        │ Handlers             │                  │
+        └──────────┬───────────┘                  │
+                   │                              │
+          ┌────────┴─────────┐                    │
+          ▼                  ▼                    │
+   ┌─────────────┐    ┌──────────────┐            │
+   │ Cart / Menu │    │ Checkout /   │            │
+   │ Operations  │    │ Payments/SMS │            │
+   └──────┬──────┘    └──────┬───────┘            │
+          └──────────┬────────┘                    │
+                     ▼                             │
+             ┌───────────────┐                     │
+             │   Response    │─────────────────────┘
+             │    Builder    │
+             └───────────────┘
 ```
 
-Primary components:
-
-- `app/api/voice_stream_server.py`: FastAPI app, Twilio voice webhook, media websocket, static mounts, and runtime wiring
-- `app/api/chat_demo.py`: browser chat endpoint for testing the conversation engine without a phone call
-- `app/core/turn_engine.py`: orchestration for transcript -> intent/slots -> routing -> response
-- `app/state_machine/`: deterministic flow sets, router, conversation models, and handlers
-- `app/ml/`: intent and slot inference assets
-- `app/services/`: SMS, checkout, live-call, and payment-related integrations
-- `app/menu/` and `app/data/restaurants/demo/`: menu and restaurant data used at runtime
-- `app/logging/`: latency and NLU CSV logging
-
-## Key Design Choices
-
-- Deterministic state machine controls every transition
-- Response building is centralized to keep phrasing predictable
-- Telephony audio is handled in Twilio-compatible mu-law 8kHz frames
-- Streaming-first design reduces latency for both STT and TTS
-- Payment and checkout status are modeled as explicit waiting states, not inferred conversationally
-
-## Project Layout
+### Conversation Flow
 
 ```text
-compass-voice/
-|- app/
-|  |- api/
-|  |- bootstrap/
-|  |- cart/
-|  |- core/
-|  |- data/
-|  |- logging/
-|  |- menu/
-|  |- ml/
-|  |- realtime/
-|  |- responses/
-|  |- services/
-|  |- session/
-|  |- state_machine/
-|  |- static/
-|  `- utils/
-|- tests/
-|- Dockerfile
-|- docker-compose.yaml
-`- README.md
+Caller audio
+    ↓
+Streaming speech-to-text
+    ↓
+Intent + slot extraction
+    ↓
+Turn engine
+    ↓
+Deterministic state routing
+    ↓
+State-specific business logic
+    ↓
+Response generation
+    ↓
+Streaming text-to-speech
+    ↓
+Audio returned to caller
 ```
 
-## Running Locally
+---
+
+## Engineering Highlights
+
+### Real-Time Voice Pipeline
+
+Twilio Media Streams deliver live call audio to the FastAPI application over WebSockets.
+
+The application processes Twilio-compatible μ-law 8 kHz audio and integrates streaming Deepgram speech-to-text and text-to-speech services to support low-latency conversational turns.
+
+### Custom NLU
+
+The NLU layer identifies user intent and extracts information needed by the ordering workflow.
+
+Instead of allowing the language model or classifier to directly control application behavior, NLU output is passed into explicit routing and business-logic components.
+
+This separation makes conversational behavior more predictable and easier to debug.
+
+### Deterministic Conversation Orchestration
+
+Conversation state is controlled through an explicit state machine.
+
+Examples of stateful interactions include:
+
+```text
+select item
+→ resolve variation
+→ select size
+→ select side
+→ choose quantity
+→ confirm item
+→ update cart
+→ continue ordering / checkout
+```
+
+Each state is handled independently, reducing the risk of unexpected transitions during transactional conversations.
+
+### Stateful Sessions
+
+Redis-backed session storage maintains conversation context across turns, including order state and cart information.
+
+This allows the voice layer, NLU pipeline, and ordering logic to remain separated while sharing consistent session state.
+
+### Checkout and Payment Flows
+
+The system includes application flows for:
+
+- cart management
+- checkout
+- SMS interactions
+- payment links
+- payment-status waiting states
+- order confirmation
+- human-agent transfer
+
+Transactional states are modeled explicitly rather than inferred conversationally.
+
+### Observability
+
+Runtime instrumentation includes:
+
+- turn-level latency tracking
+- NLU decision logging
+- speech-processing diagnostics
+- configurable debug logging
+
+Runtime-generated logs are excluded from source control and can be written to a dedicated `runtime-logs/` directory.
+
+---
+
+## Browser Demo
+
+The repository also contains a lightweight browser interface for exercising the same conversation engine without making a phone call.
+
+Available application routes include:
+
+```text
+/ui                     Browser demo
+POST /test/chat         Test chat API
+POST /voice             Twilio voice webhook
+/ws/twilio-media        Twilio Media Streams WebSocket
+```
+
+This provides a faster way to inspect conversation behavior independently of the telephony layer.
+
+---
+
+## Technology Stack
+
+| Area | Technologies |
+|---|---|
+| Backend | Python, FastAPI, WebSockets |
+| Telephony | Twilio, Twilio Media Streams |
+| Speech | Deepgram STT, Deepgram Aura TTS |
+| NLP / ML | PyTorch, Transformers, custom intent and slot inference |
+| Conversation Control | Deterministic state machine, handler-based routing |
+| Session State | Redis |
+| Infrastructure | Docker, Docker Compose |
+| Deployment | GitHub Actions, Docker Hub, SSH-based deployment |
+| Observability | Structured latency and NLU logging |
+
+---
+
+## Project Structure
+
+```text
+restaurant-voice-ai/
+├── app/
+│   ├── api/              # FastAPI endpoints and voice streaming
+│   ├── bootstrap/        # Runtime dependency wiring
+│   ├── cart/             # Cart operations
+│   ├── core/             # Turn engine and response orchestration
+│   ├── data/             # Synthetic demo restaurant data
+│   ├── logging/          # Latency and NLU logging
+│   ├── menu/             # Menu loading and resolution
+│   ├── ml/               # Intent and slot inference
+│   ├── realtime/         # Streaming STT/TTS and realtime controllers
+│   ├── responses/        # Response construction
+│   ├── services/         # SMS, checkout, payment, and call integrations
+│   ├── session/          # Session persistence
+│   ├── state_machine/    # Conversation states, routing, and handlers
+│   ├── static/
+│   └── utils/
+│
+├── tests/                # Automated tests for core conversation flows
+├── .env.example
+├── Dockerfile
+├── docker-compose.yaml
+├── requirements.txt
+└── README.md
+```
+
+---
+
+## Local Setup
 
 ### Prerequisites
 
 - Python 3.12
 - Redis
-- Twilio account
+- Twilio account for live phone testing
 - Deepgram API key
 
-### Required environment
-
-Set these before starting the app locally or through Docker:
+Create a virtual environment:
 
 ```bash
-DEEPGRAM_API_KEY=your_deepgram_key
-TWILIO_ACCOUNT_SID=your_twilio_sid
+python -m venv .venv
+```
+
+Activate it and install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Copy the example configuration:
+
+```bash
+cp .env.example .env
+```
+
+Configure the required credentials:
+
+```env
+DEEPGRAM_API_KEY=your_deepgram_api_key
+
+TWILIO_ACCOUNT_SID=your_twilio_account_sid
 TWILIO_AUTH_TOKEN=your_twilio_auth_token
+
+PUBLIC_WSS_BASE_URL=https://your-public-host.example
+
 REDIS_HOST=localhost
 REDIS_PORT=6379
-PUBLIC_WSS_BASE_URL=wss://your-public-host
 ```
 
-Common optional runtime settings:
+Additional runtime options are documented in `.env.example`.
 
-```bash
-DEEPGRAM_TTS_MODEL=aura-2-thalia-en
-COMPASS_REALTIME_LATENCY_LOG_PATH=./runtime-logs/realtime_turn_latency.jsonl
-COMPASS_REALTIME_LATENCY_CSV_PATH=./runtime-logs/realtime_turn_latency.csv
-COMPASS_NLU_CSV_LOG_DIR=./runtime-logs/nlu
-```
-
-### Start with Docker Compose
+### Run with Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-The included compose file starts:
+The Compose configuration starts the application and Redis services.
 
-- `voice-stream` on port `8000`
-- `redis` on port `6379`
-
-### Start manually
+### Run Locally
 
 ```bash
-pip install -r requirements.txt
-uvicorn app.api.voice_stream_server:app --host 0.0.0.0 --port 8000 --reload
+uvicorn app.api.voice_stream_server:app \
+  --host 0.0.0.0 \
+  --port 8000 \
+  --reload
 ```
 
-If Twilio needs to reach your machine, expose the app with a public tunnel such as ngrok or a deployed host.
+A public HTTPS/WSS endpoint is required when connecting Twilio Media Streams to a local development environment.
 
-## Testing
+---
 
-Run the automated test suite with:
+## Tests
+
+The repository includes automated tests covering core conversation and state-machine behavior.
+
+Tests can be executed with:
 
 ```bash
 pytest
 ```
 
-The `tests/` directory covers the turn engine, cart logic, menu resolution, state machine handlers, API behavior, and services.
+The current portfolio cleanup focuses on repository structure and presentation; the test suite has not been revalidated as part of that cleanup.
 
-## Notes
+---
 
-- Runtime bootstrap loads restaurant data from `app/data/restaurants/demo/` by default.
-- The browser demo is useful for validating flows before wiring Twilio.
-- Logs and CSV traces are intended to help with latency tuning and NLU debugging in production-like runs.
+## Deployment
+
+The repository includes a GitHub Actions deployment workflow demonstrating:
+
+```text
+GitHub Actions
+    ↓
+Docker Buildx
+    ↓
+Docker image
+    ↓
+Docker Hub
+    ↓
+SSH deployment
+    ↓
+Docker Compose
+```
+
+Deployment is intentionally **manual-triggered** through `workflow_dispatch` rather than running automatically on every push to `main`.
+
+Production credentials and server configuration are supplied through GitHub Actions secrets.
+
+---
+
+## Design Principle
+
+The central design decision in this project is:
+
+> **Use machine learning to understand the conversation, but deterministic software to control transactional behavior.**
+
+This keeps AI where it is useful—interpreting natural language—while keeping ordering, payment, state transitions, and side effects explicit and predictable.
