@@ -1,1 +1,0 @@
-timestamp_utc,date_utc,session_id,turn_index,state_before,state_after,pending_action,current_prompt_field,current_item_id,current_item_name,user_text,normalized_text,pred_main_intent,pred_sub_intent,pred_intent,pred_intent_confidence,slot_model_ran,response_key,command_type,command_summary,outcome,notes

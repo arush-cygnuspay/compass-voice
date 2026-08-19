@@ -1,1 +1,0 @@
-timestamp_utc,date_utc,session_id,turn_index,state_before,pending_action,user_text,normalized_text,pred_main_intent,pred_sub_intent,pred_intent,slot_name,slot_value,slot_raw,start,end,slot_confidence,source,resolution_status,resolved_entity_type,resolved_entity_id,resolved_entity_name
