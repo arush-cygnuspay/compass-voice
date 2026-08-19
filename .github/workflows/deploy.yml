@@ -1,5 +1,5 @@
 # .github/workflows/deploy.yml
-name: Deploy Compass Voice
+name: Deploy Restaurant Voice AI
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: compass-voice-deployment
+  group: restaurant-voice-ai-deployment
   cancel-in-progress: false
 
 jobs:
@@ -40,8 +40,8 @@ jobs:
           context: .
           push: true
           tags: |
-            arushahmd/compass-voice:latest
-            arushahmd/compass-voice:${{ github.sha }}
+            arushahmd/restaurant-voice-ai:latest
+            arushahmd/restaurant-voice-ai:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

@@ -1,8 +1,8 @@
 services:
   voice-stream:
     build: .
-    image: ${COMPASS_IMAGE:-arushahmd/compass-voice:latest}
-    container_name: compass-voice-stream
+    image: ${RESTAURANT_VOICE_IMAGE:-arushahmd/restaurant-voice-ai:latest}
+    container_name: restaurant-voice-ai
 
     command:
       [
@@ -45,5 +45,5 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: compass-redis
+    container_name: restaurant-voice-redis
     restart: unless-stopped

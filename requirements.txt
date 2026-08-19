@@ -87,6 +87,9 @@ srsly==2.5.2
 starlette==0.50.0
 streamlit==1.36.0
 sympy==1.14.0
+torch==2.6.0
+torchvision==0.21.0
+torchaudio==2.6.0
 tenacity==8.5.0
 thinc==8.3.10
 tokenizers==0.21.4
