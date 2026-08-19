@@ -1,7 +1,9 @@
 services:
   voice-stream:
-    image: arushahmd/compass-voice:latest
+    build: .
+    image: ${COMPASS_IMAGE:-arushahmd/compass-voice:latest}
     container_name: compass-voice-stream
+
     command:
       [
         "gunicorn",
@@ -13,26 +15,35 @@ services:
         "--workers",
         "2"
       ]
+
     ports:
       - "8000:8000"
+
     depends_on:
       - redis
+
     environment:
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      PUBLIC_WSS_BASE_URL: https://voice.cygnuscompass.com
+
+      PUBLIC_WSS_BASE_URL: ${PUBLIC_WSS_BASE_URL}
+
       DEEPGRAM_API_KEY: ${DEEPGRAM_API_KEY}
-      DEEPGRAM_TTS_MODEL: aura-2-thalia-en
+      DEEPGRAM_TTS_MODEL: ${DEEPGRAM_TTS_MODEL:-aura-2-thalia-en}
+
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+
       COMPASS_REALTIME_LATENCY_LOG_PATH: /runtime-logs/realtime_turn_latency.jsonl
       COMPASS_REALTIME_LATENCY_CSV_PATH: /runtime-logs/realtime_turn_latency.csv
       COMPASS_NLU_CSV_LOG_DIR: /runtime-logs/nlu
+
     volumes:
-      - /home/ubuntu/compass-voice-logs:/runtime-logs
+      - ./runtime-logs:/runtime-logs
+
     restart: unless-stopped
 
   redis:
     image: redis:7-alpine
     container_name: compass-redis
     restart: unless-stopped
-    ports:
-      - "6379:6379"

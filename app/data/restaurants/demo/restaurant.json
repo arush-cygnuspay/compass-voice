@@ -1,23 +1,23 @@
 {
   "restaurant_id": "rest-001",
-  "name": "Cygnus Demo Restaurant",
+  "name": "Demo Restaurant",
   "brand_type": "Fast Casual",
-  "description": "Cygnus demo ordering experience for testing live cart, checkout, and status tracking flows.",
+  "description": "Demo restaurant used to exercise voice ordering, cart, checkout, and order-status flows.",
   "contact": {
-    "phone": "+1-212-889-6600",
-    "email": "support@cygnuspay.com",
-    "website": "https://www.cygnuspay.com"
+    "phone": "+1-212-555-0100",
+    "email": "support@example.com",
+    "website": "https://example.com"
   },
   "links": {
-    "order_confirmation": "https://www.cygnuspay.com",
-    "menu": "https://www.cygnuspay.com"
+    "order_confirmation": "https://example.com/orders",
+    "menu": "https://example.com/menu"
   },
   "location": {
-    "address_line_1": "Madison Square Park",
-    "address_line_2": "E 23rd St & Madison Ave",
+    "address_line_1": "123 Market Street",
+    "address_line_2": "",
     "city": "New York",
     "state": "NY",
-    "postal_code": "10010",
+    "postal_code": "10001",
     "country": "USA"
   },
   "hours": {
