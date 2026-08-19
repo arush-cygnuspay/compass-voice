@@ -1,10 +1,10 @@
-# Compass Voice
+# Restaurant Voice AI
 
-Production-grade AI voice ordering for restaurants, built around deterministic flow control instead of LLM-led orchestration.
+**Real-time AI voice ordering system for restaurants**.A real-time restaurant voice ordering system built with streaming speech, custom NLU, and deterministic conversational orchestration.
 
 ## Overview
 
-Compass Voice handles restaurant ordering conversations over phone calls and a browser demo interface. The system is designed for reliability under real-time telephony constraints:
+This project handles restaurant ordering conversations over phone calls and a browser demo interface. The system is designed for reliability under real-time telephony constraints:
 
 - Twilio voice webhook + media stream ingestion
 - Deepgram streaming speech-to-text and text-to-speech
